@@ -16,7 +16,7 @@ const animatedProperties = new Set([
   'scale', 'figure_opacity', 'figure_z_order', 'thickness', 'segment_opacity', 'segment_gradient_opacity',
   'camera_x', 'camera_y', 'camera_scale', 'camera_angle',
 ]);
-const integerProperties = new Set(['fps', 'canvas_width', 'canvas_height', 'duration']);
+const integerProperties = new Set(['fps', 'canvas_width', 'canvas_height', 'duration', 'polygon_sides']);
 /** The decimals a property edits with: none for counts, sizes, rates and draw orders, three otherwise. */
 export const propertyPrecision = key => (integerProperties.has(key) || key.endsWith('_z_order') ? 0 : 3);
 

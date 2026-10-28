@@ -6,6 +6,7 @@ import { commitNativePoseRange } from "./native-property-ranges.mjs";
 import { animationStyleValue, setAnimationStyle, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
 import { builderStyleProperty, previewBuilderStyleProperty, beginBuilderOrderAnimation, previewBuilderOrderAnimation } from './editor-builder-style.mjs';
 import { builderBranchStyleBinding } from './editor-builder-branch.mjs';
+import { authoredShapeOf, curvableKind, trapezoidWidths, withCurve, withTrapezoidEnd, POLYGON_SIDES } from './sticknodes/geometry.mjs';
 import { branchOpacityPlan, branchGradientOpacityBinding, beginBranchStyleAnimation, previewBranchStyleAnimation, commitBranchStyleAnimation, cancelBranchStyleAnimation } from './editor-branch-style.mjs';
 
 const active = new WeakMap();
@@ -40,6 +41,10 @@ const keys = new Set([
   "thickness",
   "segment_opacity",
   "segment_gradient_opacity",
+  "trapezoid_start",
+  "trapezoid_end",
+  "polygon_sides",
+  "shape_curve",
   ...poseKeys,
   ...cameraKeys,
 ]);
@@ -53,6 +58,10 @@ const names = {
   thickness: "Joint width",
   segment_opacity: "Joint opacity",
   segment_gradient_opacity: "Gradient end opacity",
+  trapezoid_start: "Trapezoid start thickness",
+  trapezoid_end: "Trapezoid end thickness",
+  polygon_sides: "Polygon sides",
+  shape_curve: "Segment curve",
   group_x: "Selection X",
   group_y: "Selection Y",
   group_width: "Selection width",
@@ -131,6 +140,12 @@ export function canEditNativeProperty(editor, key) {
   if (!keys.has(key)) return false;
   if (key === "segment_gradient_opacity")
     return Boolean(resolveInstanceFigure(editor.figure,editor.object)?.segments[editor.selectedJoint]?.secondary);
+  if (key === "trapezoid_start" || key === "trapezoid_end")
+    return authoredShapeOf(editor.figure?.segments[editor.selectedJoint]) === "trapezoid";
+  if (key === "polygon_sides")
+    return authoredShapeOf(editor.figure?.segments[editor.selectedJoint]) === "polygon";
+  if (key === "shape_curve")
+    return Boolean(curvableKind(editor.figure?.segments[editor.selectedJoint]));
   if (
     key.startsWith("group_") ||
     ["root_x", "root_y", "scale", "rotation", "figure_opacity", "figure_z_order"].includes(key)
@@ -185,6 +200,12 @@ export function getNativePropertyValue(editor, key, { bounds } = {}) {
   if (key === "outline_opacity")
     return (1 - (figure.segment_decode?.global_style?.u30 ?? 0) / 255) * 100;
   if (key === "thickness") return segment.thickness;
+  if (key === "polygon_sides") return segment._sticknodes?.num_polygon_vertices ?? POLYGON_SIDES.initial;
+  if (key === "shape_curve") return segment._sticknodes?.kind === curvableKind(segment) ? segment._sticknodes.sagitta ?? 0 : 0;
+  if (key === "trapezoid_start" || key === "trapezoid_end") {
+    const widths = trapezoidWidths(segment._sticknodes, segment.thickness);
+    return key === "trapezoid_start" ? widths.start : widths.end;
+  }
   if (key === "segment_opacity")
     return (1 - (segment.transparency ?? 0) / 255) * 100;
   if (key === "segment_gradient_opacity")
@@ -217,11 +238,15 @@ function validate(key, value) {
     throw messageError(new Error(''), "errors.nativePropertyEdit.enterAFiniteNumberWithinTheNativeRange", {});
   if (/^polygon_\d+_opacity$/.test(key) && (value < 0 || value > 100))
     throw messageError(new Error(''), "errors.editorBuilderStyle.polygonOpacityMustBeFrom0To100", {});
-  const integer = ["fps", "canvas_width", "canvas_height", "duration", "figure_z_order"].includes(
+  const integer = ["fps", "canvas_width", "canvas_height", "duration", "figure_z_order", "polygon_sides"].includes(
     key,
   );
   const min =
-    key === "figure_z_order"
+    key === "polygon_sides"
+      ? POLYGON_SIDES.min
+      : key === "shape_curve"
+      ? -1e6
+      : key === "figure_z_order"
       ? -1000000
       : key === "duration"
       ? 0
@@ -230,6 +255,8 @@ function validate(key, value) {
         : [
               "outline_width",
               "thickness",
+              "trapezoid_start",
+              "trapezoid_end",
               "joint_length",
               "segment_opacity",
               "segment_gradient_opacity",
@@ -243,7 +270,11 @@ function validate(key, value) {
             ? 0.01
             : -Infinity;
   const max =
-    key === "figure_z_order"
+    key === "polygon_sides"
+      ? POLYGON_SIDES.max
+      : key === "shape_curve"
+      ? 1e6
+      : key === "figure_z_order"
       ? 1000000
       : key === "fps"
       ? 1000
@@ -258,7 +289,7 @@ function validate(key, value) {
                 "figure_opacity",
               ].includes(key)
             ? 100
-            : ["outline_width", "thickness"].includes(key)
+            : ["outline_width", "thickness", "trapezoid_start", "trapezoid_end"].includes(key)
               ? 1e6
               : Infinity;
   if (integer && !Number.isInteger(value))
@@ -418,6 +449,10 @@ export function beginNativePropertyEdit(
         "thickness",
         "segment_opacity",
         "segment_gradient_opacity",
+        "trapezoid_start",
+        "trapezoid_end",
+        "polygon_sides",
+        "shape_curve",
       ].includes(key)),
     timing: ["fps", "duration"].includes(key),
     value: getNativePropertyValue(editor, key, { bounds: b }),
@@ -473,6 +508,8 @@ export function beginNativePropertyEdit(
       ? [["camera"]]
       : ["outline_width", "outline_opacity"].includes(key)
         ? [["segment_decode", "global_style"]]
+        : ["trapezoid_start", "trapezoid_end", "polygon_sides", "shape_curve"].includes(key)
+          ? [["segments", token.joint, "_sticknodes"]]
         : key === "thickness"
           ? [
               ["segments", token.joint, "thickness"],
@@ -620,6 +657,15 @@ export function previewNativePropertyEdit(token, value) {
         data.setFloat32(0, value, true);
         style.u28 = data.getUint32(0, true);
       }
+    } else if (key === "polygon_sides") {
+      const segment = root.segments[token.joint];
+      segment._sticknodes = {...segment._sticknodes, kind: "polygon", num_polygon_vertices: value};
+    } else if (key === "shape_curve") {
+      const segment = root.segments[token.joint], shape = withCurve(segment, value);
+      if (shape) segment._sticknodes = shape; else delete segment._sticknodes;
+    } else if (key === "trapezoid_start" || key === "trapezoid_end") {
+      const segment = root.segments[token.joint];
+      segment._sticknodes = withTrapezoidEnd(segment._sticknodes, segment.thickness, key === "trapezoid_start" ? "start" : "end", value);
     } else if (key === "thickness") {
       const segment = root.segments[token.joint];
       segment.thickness = value;

@@ -17,6 +17,8 @@ What's new in each version of StykAnimate.
 - A new Home page to start an animation in landscape, vertical or square, reopen your projects and organize them with pins and folders.
 - Five short interactive tutorials that guide you step by step through the canvas, posing, the timeline and the panels.
 - Right-click a joint and choose Disconnect segment to turn that part of a figure into a figure of its own.
+- Build a part as a Triangle that tapers to a point (flip it or turn it into a right triangle), an Ellipse (or half ellipse), a Polygon with 3 to 256 sides, or a Trapezoid with its own Start and End thickness and an optional rounded start or end, to shape muscles or fake depth.
+- Bend a round line, square line or trapezoid into an arc with the new Curve setting.
 
 ### Changed
 

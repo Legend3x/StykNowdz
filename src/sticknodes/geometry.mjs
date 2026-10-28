@@ -12,6 +12,52 @@ export function sticknodesSpriteAsset(asset,obj){
  return {...asset,display_width:asset.width,display_height:asset.height*p.ratio,
   anchor_start:{x:asset.width*p.pivotX,y:asset.height*p.ratio*(1-p.pivotY)}};
 }
+/** Triangle and Trapezoid can be authored in Build as well as imported. Both
+ * are primitive 3 segments whose `_sticknodes.kind` selects the drawn shape. */
+export const AUTHORED_SHAPES=Object.freeze(['triangle','trapezoid','ellipse','polygon']);
+export const POLYGON_SIDES=Object.freeze({min:3,max:256,initial:5});
+export const authoredShapeOf=seg=>seg?.primitive_code===3&&AUTHORED_SHAPES.includes(seg._sticknodes?.kind)?seg._sticknodes.kind:null;
+/** Start/end widths of a trapezoid in definition units, mirroring sticknodesDrawables:
+ * a negative top ratio selects the explicit start/end fields, otherwise the end is a ratio of the width. */
+export function trapezoidWidths(shape,thickness){
+ const ratio=shape?.trapezoid_top_thickness_ratio??.5;
+ return ratio<0?{start:Math.abs(shape.trapezoid_thickness_start??thickness),end:Math.abs(shape.trapezoid_thickness_end??thickness/2)}
+  :{start:thickness,end:Math.abs(thickness*ratio)};
+}
+/** The shape written by choosing a shape in Build; Trapezoid starts at the current width and halves toward its end. */
+export const authoredShape=(kind,thickness)=>kind==='trapezoid'
+ ?{kind,trapezoid_top_thickness_ratio:-1,trapezoid_thickness_start:thickness,trapezoid_thickness_end:thickness/2}
+ :kind==='polygon'?{kind,num_polygon_vertices:POLYGON_SIDES.initial}:{kind};
+/** Round lines, square lines and trapezoids can bend into an arc (`sagitta`, in definition units). Returns the shape kind that carries it. */
+export const curvableKind=seg=>authoredShapeOf(seg)==='trapezoid'?'trapezoid':seg?.primitive_code===0?'rounded-segment':seg?.primitive_code===6?'segment':null;
+/** Parts a right-drag can bend into an arc: round lines, square lines and Stick Nodes trapezoids. */
+export const bendableSegment=seg=>[0,6].includes(seg?.primitive_code??((seg?.flags??0)&255))||authoredShapeOf(seg)==='trapezoid';
+/** The shape after setting its curve: zero removes it, and a line left with nothing but its kind returns undefined so it is a plain line again. */
+export function withCurve(seg,sagitta){
+ const kind=curvableKind(seg),shape={...(seg._sticknodes?.kind===kind?seg._sticknodes:{kind})};
+ if(sagitta)shape.sagitta=sagitta;else delete shape.sagitta;
+ return kind!=='trapezoid'&&Object.keys(shape).length===1?undefined:shape;
+}
+/** Shape after toggling an option flag (`true` stores it, `false` drops it); `kind` must match so a stale shape is never edited. */
+export function withShapeFlag(shape,key,on){const next={...shape};if(on)next[key]=true;else delete next[key];return next;}
+/** The shape after one end is set: both ends become explicit and every other imported field is kept. */
+export function withTrapezoidEnd(shape,thickness,end,value){
+ const w=trapezoidWidths(shape,thickness);
+ return {...shape,kind:'trapezoid',trapezoid_top_thickness_ratio:(shape?.trapezoid_top_thickness_ratio??.5)<0?shape.trapezoid_top_thickness_ratio:-1,
+  trapezoid_thickness_start:end==='start'?value:w.start,trapezoid_thickness_end:end==='end'?value:w.end};
+}
+/** The four corners of a straight trapezoid whose sides run tangent to any round cap, so a cap blends into the body instead of leaving a notch.
+ * `a` and `b` are the start and end nodes, `r0` and `r1` their half-widths. A flat end keeps its square corners.
+ * Returns null when neither end is round or a cap swallows the other end, and the caller keeps the plain corners. */
+export function roundedTrapezoid(a,b,r0,r1,roundStart,roundEnd){
+ const L=Math.hypot(b.x-a.x,b.y-a.y);if(!(roundStart||roundEnd)||!(L>1e-9))return null;
+ let ua,ub;
+ if(roundStart&&roundEnd){const s=(r1-r0)/L;if(!(Math.abs(s)<1))return null;const c=Math.sqrt(1-s*s);ua=[-r0*s,r0*c];ub=[L-r1*s,r1*c];}
+ else if(roundStart){const d=Math.hypot(L,r1);if(!(d>r0))return null;const t=Math.atan2(r1,L)+Math.acos(r0/d);ua=[r0*Math.cos(t),r0*Math.sin(t)];ub=[L,r1];}
+ else{const d=Math.hypot(L,r0);if(!(d>r1))return null;const t=Math.atan2(r0,-L)-Math.acos(r1/d);ua=[0,r0];ub=[L+r1*Math.cos(t),r1*Math.sin(t)];}
+ const ux=(b.x-a.x)/L,uy=(b.y-a.y)/L,at=([x,y])=>({x:a.x+ux*x-uy*y,y:a.y+uy*x+ux*y});
+ return [at(ua),at(ub),at([ub[0],-ub[1]]),at([ua[0],-ua[1]])];
+}
 export function sticknodesDrawables(s){
  const n=sticknodesShape(s.seg,s.obj);if(!n)return null;
  const scale=Math.abs(s.obj.scale??1),L=n.connector?(n.drawRatio?s.length*n.drawRatio:n.drawLength*scale):s.length,T=s.thickness;
@@ -30,9 +76,10 @@ export function sticknodesDrawables(s){
   const pts=curvePoints();
   let ws=T,we=T;
   if(n.kind==='trapezoid'){const ratio=n.trapezoid_top_thickness_ratio??.5;we=Math.abs(T*ratio);if(ratio<0){ws=Math.abs(n.trapezoid_thickness_start??T)*scale;we=Math.abs(n.trapezoid_thickness_end??T/2)*scale;}}
-  const a=[],b=[];for(let i=0;i<pts.length;i++){const prev=pts[Math.max(0,i-1)],next=pts[Math.min(i+1,pts.length-1)],d=Math.hypot(next.x-prev.x,next.y-prev.y)||1,r=(ws+(we-ws)*i/(pts.length-1))/2,dx=-(next.y-prev.y)/d*r,dy=(next.x-prev.x)/d*r;a.push({x:pts[i].x+dx,y:pts[i].y+dy});b.push({x:pts[i].x-dx,y:pts[i].y-dy});}poly([...a,...b.reverse()]);
-  if(n.trapezoid_is_rounded_start)circle(start,ws/2);
-  if(n.trapezoid_is_rounded_end)circle(end,we/2);
+  const smooth=n.kind==='trapezoid'&&pts.length===2?roundedTrapezoid(pts[0],pts[1],ws/2,we/2,!!n.trapezoid_is_rounded_start,!!n.trapezoid_is_rounded_end):null;
+  if(smooth)poly(smooth);else{const a=[],b=[];for(let i=0;i<pts.length;i++){const prev=pts[Math.max(0,i-1)],next=pts[Math.min(i+1,pts.length-1)],d=Math.hypot(next.x-prev.x,next.y-prev.y)||1,r=(ws+(we-ws)*i/(pts.length-1))/2,dx=-(next.y-prev.y)/d*r,dy=(next.x-prev.x)/d*r;a.push({x:pts[i].x+dx,y:pts[i].y+dy});b.push({x:pts[i].x-dx,y:pts[i].y-dy});}poly([...a,...b.reverse()]);}
+  if(n.trapezoid_is_rounded_start)circle(pts[0],ws/2);
+  if(n.trapezoid_is_rounded_end)circle(pts[pts.length-1],we/2);
  }else if(n.kind==='circle'){
   const r=(L+T)/2,inner=Math.max(0,(L-T)/2),mid=point(L/2);
   if(n.half_arc)poly(oval(n.triangle_upside_down?L+T/2:-T/2,L+T,L+T,true,n.triangle_upside_down));

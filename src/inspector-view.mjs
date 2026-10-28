@@ -46,6 +46,7 @@ import {sheetKeyAt} from './layer-sheet.mjs';
 import {iconNames} from './icons.mjs';
 import {SectionMemory, renderInspector} from './inspector-kit.mjs';
 import {esc, grid, group, heading, numericField, propertyPrecision} from './inspector-legacy.mjs';
+import {authoredShapeOf, curvableKind, trapezoidWidths, POLYGON_SIDES} from './sticknodes/geometry.mjs';
 
 const hex = rgb => `#${(rgb || [43, 43, 43]).map(n => (Math.round(n)).toString(16).padStart(2, '0')).join('')}`;
 const num = n => Number(Number(n ?? 0).toFixed(2));
@@ -472,10 +473,38 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
   const colour = {kind: 'color', picker: 'paint', id: 'segment-color', label: interfaceText("inspectorView.colour"), labelKey: "inspectorView.colour", description: interfaceText("inspectorView.segmentColor"), descriptionKey: "inspectorView.segmentColor", value: solid ? hex(paint.stops[0].color) : undefined,
     paint: paintCSS(paint), caption: solid ? undefined : interfaceText('inspectorView.valueValue1Gradient', {value: {messageKey: 'colorPicker.' + paint.type}, value1: ''})};
   const width = number(interfaceText("inspectorView.width"), 'thickness', segment.thickness, 'px', {min: 0, labelKey: "inspectorView.width", labelParams: {}});
+  // Triangle and Trapezoid are circle-fill segments drawn from a Stick Nodes shape; a trapezoid trades the single width for one per end.
+  const authored = authoredShapeOf(segment), trapezoid = single && authored === 'trapezoid';
+  const ends = trapezoid ? trapezoidWidths(segment._sticknodes, segment.thickness) : null;
+  const rounded = key => ({kind: 'field-switch', id: `trapezoid-round-${key}`, label: interfaceText(`inspectorView.round${key === 'start' ? 'Start' : 'End'}`), labelKey: `inspectorView.round${key === 'start' ? 'Start' : 'End'}`, checked: Boolean(segment._sticknodes?.[`trapezoid_is_rounded_${key}`])});
+  const roundRows = trapezoid ? [rounded('start'), rounded('end')] : [];
+  // Options that belong to the chosen shape: Triangle flip and tip, Ellipse half, Polygon sides, and a curve for lines and trapezoids.
+  const sn = segment._sticknodes, flag = (id, labelKey, checked) => ({kind: 'field-switch', id, label: interfaceText(labelKey), labelKey, checked: Boolean(checked)});
+  const tipLabels = [['-1', 'inspectorView.tipLeft'], ['0', 'inspectorView.tipCentered'], ['1', 'inspectorView.tipRight']];
+  const kindRows = !single ? [] : authored === 'triangle' ? [
+    {kind: 'select', id: 'shape-lean', label: interfaceText("inspectorView.triangleTip"), labelKey: "inspectorView.triangleTip", description: interfaceText("inspectorView.triangleTip"), descriptionKey: "inspectorView.triangleTip", value: String(Math.sign(sn?.right_triangle_direction ?? 0)), span: 2,
+      options: tipLabels.map(([value, key]) => ({value, label: interfaceText(key), labelKey: key, labelParams: {}}))},
+    flag('shape-flip', 'inspectorView.flip', sn?.triangle_upside_down),
+  ] : authored === 'ellipse' ? [
+    flag('shape-half', 'inspectorView.halfEllipse', sn?.half_arc), ...(sn?.half_arc ? [flag('shape-flip', 'inspectorView.flip', sn?.triangle_upside_down)] : []),
+  ] : authored === 'polygon' ? [
+    number(interfaceText("inspectorView.sides"), 'polygon_sides', sn?.num_polygon_vertices ?? POLYGON_SIDES.initial, '', {min: POLYGON_SIDES.min, max: POLYGON_SIDES.max, labelKey: "inspectorView.sides", labelParams: {}}),
+  ] : [];
+  const curveKind = single ? curvableKind(segment) : null, curved = curveKind && sn?.kind === curveKind ? sn : null;
+  const curveRows = curveKind ? [
+    number(interfaceText("inspectorView.curve"), 'shape_curve', curved?.sagitta ?? 0, 'px', {labelKey: "inspectorView.curve", labelParams: {}}),
+    flag('shape-circular', 'inspectorView.circularArc', curved?.curve_circulization),
+  ] : [];
+  const optionRows = [...roundRows, ...kindRows, ...curveRows];
+  const thicknessRows = trapezoid ? [
+    number(interfaceText("inspectorView.startThickness"), 'trapezoid_start', ends.start, 'px', {min: 0, labelKey: "inspectorView.startThickness", labelParams: {}}),
+    number(interfaceText("inspectorView.endThickness"), 'trapezoid_end', ends.end, 'px', {min: 0, labelKey: "inspectorView.endThickness", labelParams: {}}),
+  ] : [width];
   const alpha = number(secondary ? interfaceText("inspectorView.primaryOpacity") : interfaceText("inspectorView.opacity"), 'segment_opacity', opacity(segment.transparency), '%',
     {min: 0, max: 100, id: 'segment-opacity', field: false, description: interfaceText("inspectorView.primaryColorOpacity"), descriptionKey: "inspectorView.primaryColorOpacity", labelKey: (secondary ? "inspectorView.primaryOpacity" : "inspectorView.opacity"), labelParams: (secondary ? {} : {})});
-  const shapeSelect = {kind: 'select', id: 'segment-shape', label: interfaceText("inspectorView.shape"), labelKey: "inspectorView.shape", description: interfaceText("inspectorView.segmentShape"), descriptionKey: "inspectorView.segmentShape", value: shape, disabled: fixed, span: 2, options: [
+  const shapeSelect = {kind: 'select', id: 'segment-shape', label: interfaceText("inspectorView.shape"), labelKey: "inspectorView.shape", description: interfaceText("inspectorView.segmentShape"), descriptionKey: "inspectorView.segmentShape", value: authored ?? shape, disabled: fixed, span: 2, options: [
     messageTuple(['line', interfaceText("inspectorView.roundLine")], {1: {key: "inspectorView.roundLine", params: {}}}), messageTuple(['squareLine', interfaceText("inspectorView.squareLine")], {1: {key: "inspectorView.squareLine", params: {}}}), messageTuple(['circle', interfaceText("inspectorView.whiteCircle")], {1: {key: "inspectorView.whiteCircle", params: {}}}), messageTuple(['circleFill', interfaceText("inspectorView.filledCircle")], {1: {key: "inspectorView.filledCircle", params: {}}}), messageTuple(['circleClear', interfaceText("inspectorView.clearCircle")], {1: {key: "inspectorView.clearCircle", params: {}}}),
+    messageTuple(['triangle', interfaceText("inspectorView.triangle")], {1: {key: "inspectorView.triangle", params: {}}}), messageTuple(['trapezoid', interfaceText("inspectorView.trapezoid")], {1: {key: "inspectorView.trapezoid", params: {}}}), messageTuple(['ellipse', interfaceText("inspectorView.ellipse")], {1: {key: "inspectorView.ellipse", params: {}}}), messageTuple(['polygon', interfaceText("inspectorView.polygonShape")], {1: {key: "inspectorView.polygonShape", params: {}}}),
     ...(fixed ? [messageTuple([shape, interfaceText(shape === 'image' ? 'builderOutliner.image' : 'inspectorView.text')], {1: {key: shape === 'image' ? 'builderOutliner.image' : 'inspectorView.text'}})] : []),
   ].map((_tuple) => {const [value, label] = _tuple; const _messages = tupleMessages(_tuple); return {value, label, ...(_messages[1] ? {labelKey: _messages[1].key, labelParams: _messages[1].params} : {})};})};
   const sections = {
@@ -511,7 +540,7 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
     return {kind: 'joint', target: {name: title, ...titleBinding, glyph: part ? 'link' : partGlyph(segment), rename: single && !editor.branchSelected && !part ? partRename : undefined},
       quick: {context: 'part'}, scope: scope ?? branchScope, sections: [
         range, drawingSets, sections.connector, sections.slider,
-        {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [{kind: 'grid', rows: [{...colour, span: 2}, width, alpha, shapeSelect]}]},
+        {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [{kind: 'grid', rows: [{...colour, span: 2}, ...thicknessRows, alpha, shapeSelect, ...optionRows]}]},
         sections.secondColour,
         sections.joint,
         {id: 'arrange', title: interfaceText("inspectorView.arrange"), titleKey: "inspectorView.arrange", rows: [{kind: 'grid', ratio: '3:2', rows: [
@@ -528,9 +557,10 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
     range, drawingSets, ...spatial, sections.connector, sections.slider, sections.joint, sections.ik,
     {id: 'style', title: interfaceText("inspectorView.style"), titleKey: "inspectorView.style", hidden: slider, rows: [
       {kind: 'grid', rows: [
-        width, colour, alpha,
+        ...thicknessRows, colour, alpha,
         number(interfaceText("inspectorView.order"), 'segment_z_order', order.get(`segment:${joint}`), '', {min: 1, max: order.size, description: interfaceText("inspectorView.drawOrder"), descriptionKey: "inspectorView.drawOrder", labelKey: "inspectorView.order", labelParams: {}}),
         shapeSelect,
+        ...optionRows,
         {kind: 'field-switch', id: 'builder-branch', label: interfaceText("inspectorView.applyToBranch"), labelKey: "inspectorView.applyToBranch", checked: builderBranch, span: 2, hidden: !(isBuilderContext(tool) && single)},
       ]},
     ]},

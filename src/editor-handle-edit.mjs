@@ -2,6 +2,7 @@ import {messageError} from './localized-error.mjs';
 /** Current-pose Handle Edit Mode; distinct from reusable figure-definition edits.
  * https://www.pivotanimator.net/help5-2/handle_edit_mode.htm
  */
+import {bendableSegment} from './sticknodes/geometry.mjs';
 import {shortest} from './pivot/geometry.mjs';
 
 const EPS = 1e-9;
@@ -16,7 +17,7 @@ export function handleEditSegmentPose(shape, start, end, scale, {bend = false, m
   if (!(Math.abs(scale) > EPS)) throw messageError(new Error(''), "errors.editorHandleEdit.increaseFigureScaleBeforeRepositioningAHandle", {});
   const dx = end.x - start.x, dy = end.y - start.y, distance = Math.hypot(dx, dy);
   let angle = shape.angle, curvature = shape.bend;
-  const line = [0, 6].includes(shape.seg.primitive_code ?? (shape.seg.flags ?? 0) & 255);
+  const line = bendableSegment(shape.seg);
   if (distance > EPS && bend && line) {
     const direction = Math.atan2(dy, dx);
     if (movingEnd) {

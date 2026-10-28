@@ -1,4 +1,5 @@
 import {validationLabel} from "./validation-labels.mjs";
+import {bendableSegment} from './sticknodes/geometry.mjs';
 import {messageError} from './localized-error.mjs';
 import {editorSpatialMethods,spatialBone,spatialSkin} from './editor-spatial.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
@@ -1183,7 +1184,7 @@ export class Editor extends EventTarget {
     // Spatial bones have no curved bend; the secondary drag twists them instead.
     if (spatialBone(segment)) return this.twistSpatialJoint(x, y, {pixel});
     const rigBend = this._drag?.rig?.bend;
-    if (!segment || (isStatic(segment) && !rigBend) || ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255)) return false;
+    if (!segment || (isStatic(segment) && !rigBend) || !bendableSegment(segment)) return false;
     const shape = this.geometry.objects.get(this.selectedSlot)?.segments[this.selectedJoint]; if (!shape) return false;
     if (shape.connector) return this._bendConnector(x, y, shape);
     const distance = Math.hypot(x - shape.start.x, y - shape.start.y);

@@ -26,6 +26,8 @@ import {installInspectorChrome} from './inspector-header.mjs';
 import {changeSurfaceSide} from './builder-surface-ui.mjs';
 import {layerIdForUid} from './layers.mjs';
 import {shortest} from './pivot/geometry.mjs';
+import {authoredShapeOf} from './sticknodes/geometry.mjs';
+import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from './native-property-edit.mjs';
 
 /** The handlers in the order they are tried. Each is [selector, (target, event) => false | anything]. */
 export function inspectorBindings(ctx) {
@@ -82,7 +84,11 @@ export function inspectorBindings(ctx) {
     }],
     ['#segment-gradient-color', (target, event) => { ctx.updateBuilderStyle({ gradient: { color: target.value } }, event); }],
     ['#segment-shape', (target, event) => {
-      if (ctx.usesBuilderBranch(event) && ["line", "squareLine"].includes(target.value))
+      // Triangle and Trapezoid are authored per part; leaving one must also drop its shape, which a branch fill would keep.
+      const authored = ["triangle", "trapezoid", "ellipse", "polygon"];
+      if (authored.includes(target.value) || authored.includes(authoredShapeOf(editor.figure?.segments[editor.selectedJoint])))
+        editor.convertSegment(target.value);
+      else if (ctx.usesBuilderBranch(event) && ["line", "squareLine"].includes(target.value))
         editor.setBranchCaps(target.value === "squareLine");
       else if (
         ctx.usesBuilderBranch(event) &&
@@ -113,6 +119,12 @@ export function inspectorBindings(ctx) {
         ),
       });
     }],
+    ['#shape-lean', (target) => { editor.setShapeOptions({lean: Number(target.value)}); }],
+    ['#shape-flip', (target) => { editor.setShapeOptions({flip: target.checked}); }],
+    ['#shape-half', (target) => { editor.setShapeOptions({half: target.checked}); }],
+    ['#shape-circular', (target) => { editor.setShapeOptions({circular: target.checked}); }],
+    ['#trapezoid-round-start', (target) => { editor.setTrapezoidRounding({start: target.checked}); }],
+    ['#trapezoid-round-end', (target) => { editor.setTrapezoidRounding({end: target.checked}); }],
     ['#static-joint', (target, event) => { ctx.updateBuilderStyle({ static: target.checked }, event); }],
     ['#background-color', (target) => {
       const raw = (0xff000000 | parseInt(target.value.slice(1), 16)) >>> 0;
@@ -206,6 +218,11 @@ function fieldChange(ctx, key, target, event) {
     else editor.updateObject({ [key]: value });
   } else if (key === "thickness")
     ctx.updateBuilderStyle({ thickness: value }, event);
+  else if (["trapezoid_start", "trapezoid_end", "polygon_sides", "shape_curve"].includes(key)) {
+    const token = beginNativePropertyEdit(editor, key);
+    previewNativePropertyEdit(token, value);
+    commitNativePropertyEdit(token);
+  }
   else if (key === "joint_angle") {
     const angle = (value * Math.PI) / 180,
       obj = editor.object,

@@ -79,6 +79,39 @@ settings and warnings under `_styk.sticknodes`. Inserted standalone assets carry
 the same provenance under `_styk.sticknodesImport`. Keep the original source
 file when exact native behavior or future reconversion matters.
 
+## Authoring Stick Nodes shapes
+
+Imported Triangle, Trapezoid, Ellipse and Polygon parts can also be made in Build.
+Choose one in a part's Shape menu. The part keeps its circle-fill primitive and
+stores the same `_sticknodes` shape the importer writes, so it renders, saves and
+undoes through the existing path. Choosing any other shape removes that shape again.
+The Stick Nodes filled circle (legacy type 4) and the circle's outline, hollow and
+half-arc options are not offered.
+
+| Shape | Options in the inspector | Stored as |
+| --- | --- | --- |
+| Triangle | Triangle tip (Centered, Left edge, Right edge), Flip | `right_triangle_direction` (-1, 0, 1), `triangle_upside_down` |
+| Trapezoid | Start thickness, End thickness, Round start, Round end | `trapezoid_thickness_start/_end` with a negative `trapezoid_top_thickness_ratio`, `trapezoid_is_rounded_start/_end` |
+| Ellipse | Half ellipse, Flip (half only) | `half_arc`, `triangle_upside_down` |
+| Polygon | Sides, 3 to 256 | `num_polygon_vertices` |
+| Round line, square line, Trapezoid | Curve (px, negative bends the other way), Circular arc | `sagitta`, `curve_circulization` |
+
+A Triangle is as wide as the part's Width at its start and tapers to a point at its
+end. A Trapezoid replaces the Width field with Start and End thickness (Stick Nodes'
+explicit-width mode); editing one end of an imported trapezoid that used a ratio
+converts both ends to explicit widths and keeps its other imported fields. Round
+start and Round end add a round cap as wide as that end. The straight sides run
+tangent to the caps, so a round end stays flush with the body at any thickness
+(this also applies to imported rounded trapezoids).
+
+A curved round or square line stores its curve in a `rounded-segment` or `segment`
+shape that follows the cap style. A line with no curve and no other option has no
+shape and is an ordinary line, and changing a curved line to any other shape drops
+the curve. Every setting here belongs to the figure definition and is not animated.
+A shape that varies between poses in an imported project is stored per object and
+takes priority over the definition, so editing the definition does not change those
+poses. PIV/STK export still rejects these shapes.
+
 ## Integration and resource behavior
 
 `src/import-worker.mjs` routes the four extensions into

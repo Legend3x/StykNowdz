@@ -1,5 +1,6 @@
 import {messageError} from './localized-error.mjs';
 /** Reusable rig editing: frame-local previews, one definition commit per gesture. */
+import {bendableSegment} from './sticknodes/geometry.mjs';
 import {buildGeometry, shortest} from './pivot/geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 import {authoredRigTarget} from './rig-constraints.mjs';
@@ -38,7 +39,7 @@ export const editorRigMethods = {
   beginRigDrag({reposition = true, bend = false, label = bend ? 'Bend rig joint' : 'Edit rig'} = {}) {
     const segment = this.figure?.segments[this.selectedJoint];
     if (bend && (!segment || segment._stykRig?.spatial ||
-        ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255))) return false;
+        !bendableSegment(segment))) return false;
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw messageError(new Error(''), "errors.editorRig.usePoseOrRotateToArticulateThisJoint", {});
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     if (!bend && this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');

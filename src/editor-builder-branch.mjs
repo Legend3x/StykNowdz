@@ -7,6 +7,7 @@ import {styleColor, polygonIdentity, resolveInstanceFigure, animationStyleValue}
 /** Native Shift operations. Styles journal small fields; topology is committed
  * once across every source pose. See artifacts/native-static/builder-branch-rules.md. */
 import {builderDrawables} from './editor-builder-style.mjs';
+import {AUTHORED_SHAPES, authoredShape, authoredShapeOf, curvableKind, withShapeFlag} from './sticknodes/geometry.mjs';
 
 const clone = value => value === undefined ? undefined : structuredClone(value);
 const kinds = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'];
@@ -169,6 +170,13 @@ function shapePatch(figure, indices, target) {
     const base = ['segments', index], flags = target | ((segment.aux_code ?? 0) << 8);
     entries.push(...Object.entries({primitive_code: target, segment_kind: kinds[target], segment_type: circles.has(target) ? 'circle' : 'line',
       flags, visible: segment.thickness > .01 || target > 0}).map(([key, value]) => field([...base, key], value)));
+    // A curved round/square line stores its curve in a shape whose kind follows the cap style; any other shape drops it.
+    const curve = segment._sticknodes;
+    if (['segment', 'rounded-segment'].includes(curve?.kind)) {
+      const path = [...base, '_sticknodes'], kind = target === 6 ? 'segment' : 'rounded-segment';
+      if (target === 0 || target === 6) {if (curve.kind !== kind) entries.push(field(path, {...curve, kind}));}
+      else entries.push({path, exists: false, value: undefined});
+    }
     if (segment.flag_bits) {
       const bits = {...segment.flag_bits};
       if ('raw' in bits) bits.raw = flags;
@@ -241,13 +249,17 @@ export const editorBuilderBranchMethods = {
     if ('shape' in patch) {
       if (whole) throw messageError(new Error(''), "errors.editorBuilderBranch.useTheBranchCapsOrCircleFillCommand", {});
       if ([2, 5].includes(code(figure.segments[selected]))) throw messageError(new Error(''), "errors.editorBuilderBranch.imageAndTextSegmentsRetainTheirMediaType", {});
-      const target = typeof shape === 'number' ? shape : kinds.indexOf(shape);
+      const authored = AUTHORED_SHAPES.includes(shape), target = authored ? 3 : typeof shape === 'number' ? shape : kinds.indexOf(shape);
       if (![0, 1, 3, 4, 6].includes(target)) throw messageError(new Error(''), "errors.editorBuilderBranch.chooseARoundLineSquareLineOrCircle", {});
       // Resolve combined static + shape patches without overriding the new
       // static bit, while copying neither assets nor the whole definition.
       const preview = {segments: []}; preview.segments[selected] = clone(figure.segments[selected]); apply(preview, changes);
       const merged = new Map(changes.entries.map(entry => [JSON.stringify(entry.path), entry]));
       for (const entry of shapePatch(preview, [selected], target).entries) merged.set(JSON.stringify(entry.path), entry);
+      // Triangle and Trapezoid are a circle-fill segment plus a `_sticknodes` shape; any other shape drops one.
+      const current = figure.segments[selected]._sticknodes, path = ['segments', selected, '_sticknodes'];
+      if (authored && current?.kind !== shape) merged.set(JSON.stringify(path), field(path, authoredShape(shape, figure.segments[selected].thickness)));
+      else if (!authored && AUTHORED_SHAPES.includes(current?.kind)) merged.set(JSON.stringify(path), {path, exists: false, value: undefined});
       changes.entries = [...merged.values()];
     }
     return command(this, whole ? 'Edit segment branch style' : 'Edit segment style', changes);
@@ -270,6 +282,38 @@ export const editorBuilderBranchMethods = {
       entries.push(field(['segments', index, 'thickness'], value), field(['segments', index, 'visible'], value > .01 || code(segment) > 0));
     }
     return command(this, 'Change branch thickness', {entries, removeEmptyParents: []});
+  },
+  /** Rounds or squares the start and/or end of the selected Trapezoid; other imported fields are kept. */
+  setTrapezoidRounding(patch = {}) {
+    const index = this.selectedJoint, segment = this.figure?.segments[index];
+    if (authoredShapeOf(segment) !== 'trapezoid') return false;
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !Object.keys(patch).length ||
+      Object.entries(patch).some(([key, value]) => !['start', 'end'].includes(key) || typeof value !== 'boolean'))
+      throw messageError(new Error(''), "errors.editorBuilderBranch.roundedEndsMustBeTrueOrFalse", {});
+    const shape = {...segment._sticknodes};
+    for (const key of ['start', 'end']) {
+      if (!(key in patch)) continue;
+      if (patch[key]) shape[`trapezoid_is_rounded_${key}`] = true; else delete shape[`trapezoid_is_rounded_${key}`];
+    }
+    return command(this, 'Round trapezoid ends', {entries: [field(['segments', index, '_sticknodes'], shape)], removeEmptyParents: []});
+  },
+  /** Options of the selected shape: Triangle flip and tip, Ellipse half and flip, and a circular curve. */
+  setShapeOptions(patch = {}) {
+    const index = this.selectedJoint, segment = this.figure?.segments[index];
+    const kind = authoredShapeOf(segment) ?? curvableKind(segment);
+    if (!kind) return false;
+    const keys = {triangle: {flip: 'triangle_upside_down', lean: 'right_triangle_direction'}, ellipse: {half: 'half_arc', flip: 'triangle_upside_down'}}[kind] ?? {circular: 'curve_circulization'};
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !Object.keys(patch).length) throw messageError(new Error(''), "errors.editorBuilderBranch.shapeOptionNeedsTrueFalseOrATip", {});
+    let shape = segment._sticknodes?.kind === kind ? {...segment._sticknodes} : {kind};
+    for (const [key, value] of Object.entries(patch)) {
+      if (!(key in keys)) throw messageError(new Error(''), "errors.editorBuilderBranch.thisShapeDoesNotHaveThatOption", {});
+      if (key === 'lean' ? ![-1, 0, 1].includes(value) : typeof value !== 'boolean') throw messageError(new Error(''), "errors.editorBuilderBranch.shapeOptionNeedsTrueFalseOrATip", {});
+      if (key === 'lean') {if (value) shape[keys[key]] = value; else delete shape[keys[key]];}
+      else shape = withShapeFlag(shape, keys[key], value);
+    }
+    // A plain line that is left with nothing but its kind is an ordinary line again.
+    const plain = !AUTHORED_SHAPES.includes(kind) && Object.keys(shape).length === 1, path = ['segments', index, '_sticknodes'];
+    return command(this, 'Change shape options', {entries: [plain ? {path, exists: false, value: undefined} : field(path, shape)], removeEmptyParents: []});
   },
   setBranchCaps(square) {
     const selected = this.figure?.segments[this.selectedJoint]; if (!selected) return false;
