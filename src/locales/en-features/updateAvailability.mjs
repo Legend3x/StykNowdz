@@ -1,4 +1,5 @@
 export default Object.freeze({
+  'desktop.updates.turnedOff': 'Automatic updates are turned off in this version. Download new versions from where you got this one.',
   'desktop.updates.developmentUnavailable': 'Updates are available in the installed app. Development copies do not update.',
   'desktop.updates.linuxAppImageRequired': 'Run the Linux AppImage to enable automatic updates.',
   'desktop.updates.writableAppImageRequired': 'Move the AppImage to a writable folder, such as Applications in your home folder, and reopen it to enable automatic updates.',

@@ -28,6 +28,7 @@ const { LibraryStore } = require('./library-store.cjs');
 const { PublicLibrary, DownloadLedger, isPublicId } = require('./public-library.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
 const { UpdateService, updateAvailabilityDetails } = require('./updates.cjs');
+const serviceConfig = require('./service-config.json');
 const releaseInfo = require('./release-info.json');
 const getReleaseHistory = require('./release-history.cjs').createReleaseHistory();
 let telemetryBuild = {};
@@ -850,8 +851,8 @@ async function start() {
   const saved = await new WorkspacePreferences(app.getPath('userData'), {filename: 'editor-settings.json'}).get();
   localization.setLocale(normalizeLocale(saved.locale));
   const availability = updateAvailabilityDetails({ packaged: app.isPackaged, platform: process.platform,
-    appImage: process.env.APPIMAGE,
-    portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykAnimate.exe')) });
+    appImage: process.env.APPIMAGE, disabled: serviceConfig.updates === false,
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykNowdz.exe')) });
   const unavailable = availability.message;
   const updater = unavailable ? null : process.platform === 'linux'
     ? new (require('./appimage-updater.cjs').LinuxAppImageUpdater)()

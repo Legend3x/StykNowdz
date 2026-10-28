@@ -108,3 +108,16 @@ test('checks after startup and every hour, without duplicate timers', t => {
   service.dispose();
   t.mock.timers.tick(3600000); assert.equal(checks, 3);
 });
+
+test('this version ships with automatic updates turned off, in every install type', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const config = JSON.parse(await readFile(new URL('../desktop/service-config.json', import.meta.url), 'utf8'));
+  assert.equal(config.updates, false);
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const details = updateAvailabilityDetails({packaged: true, platform, portable: false, installed: true, appImage: '/x.AppImage', disabled: true});
+    assert.equal(details.messageKey, 'desktop.updates.turnedOff'); assert.ok(details.message);
+  }
+  assert.equal(updateAvailabilityDetails({packaged: true, platform: 'win32', portable: false, installed: true}).message, '', 'without the switch an installed Windows app can update');
+  const service = new UpdateService({updater: null, currentVersion: '1.0.0', unavailable: 'off', unavailableMessageKey: 'desktop.updates.turnedOff'});
+  assert.equal(service.snapshot().status, 'unavailable');
+});

@@ -105,17 +105,17 @@
   },
   "build": {
     "beforePack": "scripts/before-pack.cjs",
-    "appId": "app.stykanimate.desktop",
+    "appId": "app.styknowdz.desktop",
     "protocols": [
       {
-        "name": "StykAnimate",
+        "name": "StykNowdz",
         "schemes": [
           "stykanimate"
         ]
       }
     ],
-    "productName": "StykAnimate",
-    "artifactName": "StykAnimate-${version}-${os}-${arch}.${ext}",
+    "productName": "StykNowdz",
+    "artifactName": "StykNowdz-${version}-${os}-${arch}.${ext}",
     "toolsets": {
       "appimage": "1.0.3"
     },
@@ -247,13 +247,13 @@
       "uninstallerIcon": "desktop/assets/stykanimate.ico",
       "installerHeaderIcon": "desktop/assets/stykanimate.ico",
       "include": "desktop/installer.nsh",
-      "artifactName": "StykAnimate-${version}-Setup-${arch}.${ext}",
+      "artifactName": "StykNowdz-${version}-Setup-${arch}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
     },
     "portable": {
-      "artifactName": "StykAnimate-${version}-Portable-${arch}.${ext}"
+      "artifactName": "StykNowdz-${version}-Portable-${arch}.${ext}"
     },
     "mac": {
       "icon": "desktop/assets/stykanimate.icns",
@@ -274,15 +274,6 @@
       "syncDesktopName": true,
       "synopsis": "Stick figure animation"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "filippocalippo",
-        "repo": "styk-animate-releases",
-        "private": false,
-        "releaseType": "draft"
-      }
-    ],
     "releaseInfo": {
       "releaseNotesFile": "release-notes.md"
     }

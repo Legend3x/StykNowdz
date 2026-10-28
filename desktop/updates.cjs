@@ -4,7 +4,8 @@ const { messageError } = require('./localization.cjs');
 
 // Keep the release feed and filesystem access in the main process. The renderer
 // receives only status, never installer paths or a configurable download URL.
-function updateAvailabilityDetails({ packaged, platform, portable, installed, appImage }) {
+function updateAvailabilityDetails({ packaged, platform, portable, installed, appImage, disabled = false }) {
+  if (disabled) return {message: 'Automatic updates are turned off in this version. Download new versions from where you got this one.', messageKey: 'desktop.updates.turnedOff'};
   if (!packaged) return {message: 'Updates are available in the installed app. Development copies do not update.', messageKey: 'desktop.updates.developmentUnavailable'};
   if (platform === 'linux') {
     if (!appImage) return {message: 'Run the Linux AppImage to enable automatic updates.', messageKey: 'desktop.updates.linuxAppImageRequired'};
