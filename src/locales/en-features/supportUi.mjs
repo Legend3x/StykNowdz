@@ -13,7 +13,7 @@ export default Object.freeze({
   "supportUi.forkAddsTitle": "What StykNowdz adds",
   "supportUi.forkAddsShapes": "More Stick Nodes shapes: triangles, trapezoids, ellipses, polygons and curved parts, kept when you import Stick Nodes projects.",
   "supportUi.forkAddsMake3d": "Make 3D: turn any stick figure in depth, even a Pivot character made of many joined pieces.",
-  "supportUi.forkAddsModel": "Blender lite, in the Model tab: model, colour and rig your own 3D characters, then pose them in your animation.",
+  "supportUi.forkAddsModel": "3D Nowdz, in the Model tab: model, colour and rig your own 3D characters, then pose them in your animation.",
   "supportUi.forkAddsAnime": "Anime looks and tools: cel shading with ink outlines and toon shadows, face tracing, loop cuts and edge slide, and face rigs.",
   "supportUi.forkNotEndorsed": "StykNowdz is an unofficial fork, not made or endorsed by Alexio, so please report its problems to StykNowdz rather than to StykAnimate.",
   "supportUi.forkOriginalSite": "Visit StykAnimate",

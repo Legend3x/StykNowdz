@@ -1,4 +1,4 @@
-/** Blender lite topology rules (docs/BLENDER-LITE.md, "Data integrity").
+/** 3D Nowdz topology rules (docs/BLENDER-LITE.md, "Data integrity").
  *
  * Meshes are stored as a face-vertex list ({verts, faces: [{v, c}]}), which is
  * simple to save, undo and export. validateMesh() builds the half-edge view of

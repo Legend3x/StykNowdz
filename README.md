@@ -6,7 +6,7 @@
 > **What StykNowdz adds**
 > - More Stick Nodes shapes: triangles, trapezoids, ellipses, polygons and curved parts, kept when you import Stick Nodes projects.
 > - Make 3D: turn any stick figure in depth, even a Pivot character made of many joined pieces.
-> - Blender lite, in the Model tab: model, colour and rig your own 3D characters, then pose them in your animation.
+> - 3D Nowdz, in the Model tab: model, colour and rig your own 3D characters, then pose them in your animation.
 > - Anime looks and tools: cel shading with ink outlines and toon shadows, face tracing, loop cuts and edge slide, and face rigs.
 >
 > The rest of this page is StykAnimate's own description.

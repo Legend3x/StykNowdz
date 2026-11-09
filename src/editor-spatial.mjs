@@ -174,7 +174,7 @@ export const editorSpatialMethods={
  },
  /** Write a world orientation for the selected bone into its native channels. */
  /** Apply a bend (screen-plane roll) to the selected 3D bone. The Figure
-  * rotation bone (segment 0 of Make 3D and Blender lite figures) is the
+  * rotation bone (segment 0 of Make 3D and 3D Nowdz figures) is the
   * figure's own rotation: rolling it turns every channel together, as Rotate
   * figure does, so the turn/tilt controls (stored as screen angles) keep their
   * meaning. Rolling only segment 0 used to twist them, and a trackball drag

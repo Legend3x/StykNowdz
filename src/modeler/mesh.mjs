@@ -1,4 +1,4 @@
-/** Blender lite (docs/BLENDER-LITE.md): the polygon mesh and its edit
+/** 3D Nowdz (docs/BLENDER-LITE.md): the polygon mesh and its edit
  * operations. A mesh is {verts: [[x, y, z]], faces: [{v: [i, j, k, ...], c}]}
  * in the object's local space: Y up, X right, +Z toward the front view.
  * Faces are counter-clockwise seen from outside and may have any number of
@@ -230,6 +230,30 @@ export function softWeights(points, selected, radius, falloff = 'smooth') {
   return out;
 }
 
+/** Where faces around a corner only touch at that corner (a "bow-tie", e.g. after
+ * deleting faces in a checker pattern), give each extra fan its own copy of the
+ * corner. Nothing moves; the mesh just stays one clean surface per fan.
+ * Returns the copies made, as Map(copy → original). */
+export function splitBowTies(mesh) {
+  const around = new Map();
+  mesh.faces.forEach((f, fi) => f.v.forEach((v, i) => { if (!around.has(v)) around.set(v, []); around.get(v).push({fi, prev: f.v[(i + f.v.length - 1) % f.v.length], next: f.v[(i + 1) % f.v.length]}); }));
+  const made = new Map();
+  for (const [v, uses] of around) {
+    if (uses.length < 2) continue;
+    const parent = uses.map((_, i) => i), root = i => { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+    for (let i = 0; i < uses.length; i++) for (let j = i + 1; j < uses.length; j++) {
+      const a = uses[i], b = uses[j];
+      if (a.next === b.prev || a.prev === b.next || a.next === b.next || a.prev === b.prev) parent[root(i)] = root(j);
+    }
+    const fans = [...new Set(uses.map((_, i) => root(i)))];
+    for (const fan of fans.slice(1)) {
+      const copy = mesh.verts.length; mesh.verts.push(mesh.verts[v].slice()); made.set(copy, v);
+      uses.forEach((u, i) => { if (root(i) === fan) { const f = mesh.faces[u.fi].v; f[f.indexOf(v)] = copy; } });
+    }
+  }
+  return made;
+}
+
 /** Delete vertices and every face and wire using them. A traced point left
  * with nothing joined to it stays as a loose point (as in Blender); points of
  * deleted faces go with them. */
@@ -242,12 +266,14 @@ function deleteVertsEdit(mesh, verts) {
   const stranded = [...wireOnly].filter(i => !still.has(i));
   if (stranded.length) mesh.loose = [...(mesh.loose ?? []), ...stranded];
   cleanup(mesh);
+  splitBowTies(mesh);
   return new Set();
 }
 /** Delete faces; vertices no remaining face uses go too. */
 function deleteFacesEdit(mesh, faces) {
   mesh.faces = mesh.faces.filter((f, i) => !faces.has(i));
   cleanup(mesh);
+  splitBowTies(mesh);
   return new Set();
 }
 
@@ -260,15 +286,34 @@ function extrudeFacesEdit(mesh, faces) {
     const v = mesh.faces[fi].v;
     v.forEach((a, i) => { const b = v[(i + 1) % v.length], key = edgeKey(a, b); edges.set(key, (edges.get(key) ?? []).concat([[a, b, fi]])); });
   }
-  const copy = new Map(), dup = i => { if (!copy.has(i)) { copy.set(i, mesh.verts.length); mesh.verts.push(mesh.verts[i].slice()); } return copy.get(i); };
-  for (const fi of faces) mesh.faces[fi].v.forEach(dup);
+  // Like Blender: corners inside the region just move with it; only corners on the
+  // region's border get a copy, so nothing is left behind unused. A corner where
+  // parts of the region touch only at that point gets one copy per part, so each
+  // part gets its own walls and the mesh stays one clean surface.
+  const border = new Set();
+  for (const [, uses] of edges) if (uses.length === 1) { border.add(uses[0][0]); border.add(uses[0][1]); }
+  const parent = new Map(), key = (v, fi) => `${v}:${fi}`;
+  const root = k => { while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  for (const fi of faces) for (const v of mesh.faces[fi].v) if (border.has(v)) parent.set(key(v, fi), key(v, fi));
+  for (const [, uses] of edges) if (uses.length === 2) {
+    const [[a, b, f1], [, , f2]] = uses;
+    for (const v of [a, b]) if (border.has(v)) parent.set(root(key(v, f1)), root(key(v, f2)));
+  }
+  const copies = new Map(), moved = new Set();
+  const copyOf = (v, fi) => {
+    if (!border.has(v)) { moved.add(v); return v; }
+    const r = root(key(v, fi));
+    if (!copies.has(r)) { copies.set(r, mesh.verts.length); mesh.verts.push(mesh.verts[v].slice()); }
+    return copies.get(r);
+  };
+  const next = new Map([...faces].map(fi => [fi, mesh.faces[fi].v.map(v => copyOf(v, fi))]));
   // Border edges are used once inside the region; their walls keep the face's winding.
   for (const [, uses] of edges) if (uses.length === 1) {
-    const [a, b, fi] = uses[0];
-    mesh.faces.push({v: [a, b, copy.get(b), copy.get(a)], c: mesh.faces[fi].c});
+    const [a, b, fi] = uses[0], f = mesh.faces[fi].v, n = next.get(fi);
+    mesh.faces.push({v: [a, b, n[f.indexOf(b)], n[f.indexOf(a)]], c: mesh.faces[fi].c});
   }
-  for (const fi of faces) mesh.faces[fi].v = mesh.faces[fi].v.map(i => copy.get(i));
-  return new Set(copy.values());
+  for (const [fi, v] of next) mesh.faces[fi].v = v;
+  return new Set([...copies.values(), ...moved]);
 }
 
 /** Average normal of a face region (for moving an extrusion outward). */
@@ -425,6 +470,8 @@ function loopCutEdit(mesh, start, t = 0.5, cuts = 1) {
     } else result.push(face);
   }
   mesh.faces = result;
+  // A traced line (no faces) is cut into pieces, like Blender's Subdivide on an edge.
+  if (mesh.edges) mesh.edges = mesh.edges.flatMap(([a, b]) => { const p = along(a, b); if (!p) return [[a, b]]; const chain = [a, ...p, b]; return chain.slice(1).map((x, k) => [chain[k], x]); });
   return selected;
 }
 
@@ -739,11 +786,25 @@ export function growSelection(mesh, verts) {
 function duplicateFacesEdit(mesh, faces) {
   const map = new Map(), dup = i => { if (!map.has(i)) { map.set(i, mesh.verts.length); mesh.verts.push(mesh.verts[i].slice()); } return map.get(i); };
   for (const fi of [...faces]) mesh.faces.push({v: mesh.faces[fi].v.map(dup), c: mesh.faces[fi].c});
-  return new Set(map.values());
+  const made = splitBowTies(mesh);
+  return new Set([...map.values(), ...made.keys()]);
 }
 
 /** Rebuild the -X half as a mirror of the +X half (or the reverse), welding the middle. */
-function symmetrizeEdit(mesh, fromPositive = true, tolerance = 1e-4) {
+/** Symmetrize: make one side of the middle (world X = 0, the plane the mirror uses)
+ * a copy of the other. `fromPositive`: keep +X and copy it to -X, or 'auto' to keep
+ * the side holding more of the mesh. `matrix`: the part's local → world matrix, so a
+ * part placed off the middle still mirrors about the world middle. Lines and points
+ * are copied too; anything crossing the middle on the side being replaced is dropped. */
+function symmetrizeEdit(mesh, fromPositive = true, matrix = null, tolerance = 1e-4) {
+  if (matrix) {
+    const inverse = invert(matrix);
+    mesh.verts = mesh.verts.map(p => [...transformPoint(matrix, p)]);
+    const result = symmetrizeEdit(mesh, fromPositive, null, tolerance);
+    mesh.verts = mesh.verts.map(p => { const q = [...transformPoint(inverse, p)]; return q; });
+    return result;
+  }
+  if (fromPositive === 'auto') fromPositive = symmetrizeSide(mesh);
   const side = x => fromPositive ? x >= -tolerance : x <= tolerance;
   mesh.faces = mesh.faces.filter(f => f.v.every(i => side(mesh.verts[i][0])));
   if (mesh.edges) mesh.edges = mesh.edges.filter(e => e.every(i => side(mesh.verts[i][0])));
@@ -760,6 +821,13 @@ function symmetrizeEdit(mesh, fromPositive = true, tolerance = 1e-4) {
   if (mesh.loose) mesh.loose = [...mesh.loose, ...mesh.loose.map(j => map[j])];
   cleanup(mesh);
   return count;
+}
+
+/** Which side Symmetrize keeps by default: the one with more points off the middle (+X on a tie). */
+export function symmetrizeSide(mesh, tolerance = 1e-4) {
+  let plus = 0, minus = 0;
+  for (const p of mesh.verts) { if (p[0] > tolerance) plus++; else if (p[0] < -tolerance) minus++; }
+  return plus >= minus;
 }
 
 /** Mirror a mesh across X (a copy, welded on the middle); used by the mirror modifier. */
@@ -812,4 +880,7 @@ export const extrudePoints = atomic('Extrude point', extrudePointsEdit);
 export const addPoint = atomic('Add point', addPointEdit);
 export const bridge = atomic('Bridge', bridgeEdit);
 export const orientWireFaces = atomic('Face the viewer', orientWireFacesEdit);
+/** The same winding on a mesh copy being dragged (no validation: the move's own result is
+ * checked when it's confirmed), so quads grown from traced lines face you while they grow. */
+export const faceViewerDuringMove = orientWireFacesEdit;
 export const duplicatePoints = atomic('Duplicate points', duplicatePointsEdit);

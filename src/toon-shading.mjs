@@ -1,4 +1,4 @@
-/** Toon (cel) shading shared by the stage and Blender lite's preview.
+/** Toon (cel) shading shared by the stage and 3D Nowdz's preview.
  *
  * A toon-shaded mesh has one light that stays fixed relative to the viewer, so
  * as a figure turns its shadows move across it. Each visible triangle is

@@ -4587,18 +4587,29 @@ function disconnectSegment() {
   editor.disconnectSegment();
   status({messageKey: "app.segmentDisconnected", messageParams: {}});
 }
-/** Blender lite (docs/BLENDER-LITE.md): the 3D modeler. New models are imported as a
+/** 3D Nowdz (docs/BLENDER-LITE.md): the 3D modeler. New models are imported as a
  * figure; a figure made in it reopens with its model and updates in place. */
 function modelSourceOf(figure) { return figure?._styk?.modelSource ?? null; }
 function canEditModel() { return !builderMode?.active && Boolean(modelSourceOf(editor.figure)) && !isLocked(editor.selectedUid); }
 let modelerOpen = false, modelerApi = null;
-/** The Model tab: Blender lite on the selected 3D model, or a new model. Pressing it again keeps it open. */
+/** Unfinished 3D Nowdz models, kept when the Model tab is left without Add / Update so
+ * no work is lost: 'new' for a new model (also kept in localStorage, best effort, so it
+ * survives restarting the app), a figure type id for edits of an existing model. */
+const modelDrafts = new Map(), MODEL_DRAFT_KEY = "stykNowdz.modelDraft";
+try { const saved = JSON.parse(localStorage.getItem(MODEL_DRAFT_KEY) || "null"); if (saved?.model) modelDrafts.set("new", saved); } catch { /* none kept */ }
+function keepModelDraft(key, draft) {
+  if (draft) modelDrafts.set(key, draft); else modelDrafts.delete(key);
+  if (key !== "new") return;
+  try { if (draft) localStorage.setItem(MODEL_DRAFT_KEY, JSON.stringify(draft)); else localStorage.removeItem(MODEL_DRAFT_KEY); }
+  catch { /* too large for storage: kept for this session only */ }
+}
+/** The Model tab: 3D Nowdz on the selected 3D model, or a new model. Pressing it again keeps it open. */
 function openModelWorkspace() {
   if (modelerOpen) return;
   if (builderMode?.active) { toast(interfaceText("modeler.finishBuildFirst"), "modeler.finishBuildFirst", {}); return; }
   openBlenderLite(canEditModel());
 }
-// While Blender lite is open, Animate, Draw and Build close it first (asking when there are changes), then switch.
+// While 3D Nowdz is open, Animate, Draw and Build close it (an unfinished model is kept for next time), then switch.
 document.addEventListener("click", (e) => {
   const button = modelerOpen && e.target.closest?.(".workspace-switch [data-workspace-mode]");
   if (!button || !modelerApi) return;
@@ -4614,13 +4625,18 @@ async function openBlenderLite(editing = false) {
   try { modules = await Promise.all([import("./modeler/modeler-ui.mjs"), import("./modeler/export-figure.mjs")]); }
   catch (error) { modelerOpen = false; fail(error); return; }
   const [{openModeler}, {modelToFigure, modelDocument}] = modules;
-  const typeId = editing ? editor.figure.figure_type_id : null;
+  const typeId = editing ? editor.figure.figure_type_id : null, draftKey = editing ? typeId : "new", draft = modelDrafts.get(draftKey) ?? null;
   state.modeling = true; document.body.dataset.modeling = "";
   // Docked under the band, so the workspace tabs stay in reach.
   const band = document.querySelector(".shell-top"), top = band && !band.hidden ? Math.round(band.getBoundingClientRect().bottom) : 0;
   modelerApi = openModeler({
-    model: editing ? modelSourceOf(editor.figure) : null, editing, top,
-    onClose: () => { modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling; syncShell(); requestRender(); },
+    model: editing ? modelSourceOf(editor.figure) : null, editing, top, draft,
+    onClose: (unfinished) => {
+      modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling;
+      keepModelDraft(draftKey, unfinished);
+      if (unfinished) notify(interfaceText("modeler.draftKept"), "modeler.draftKept", {});
+      syncShell(); requestRender();
+    },
     onDone: (model) => {
       if (editing) {
         const previous = editor.report.figure_types.find((f) => f.figure_type_id === typeId);
@@ -4636,6 +4652,7 @@ async function openBlenderLite(editing = false) {
       requestRender();
     },
   });
+  if (draft) notify(interfaceText("modeler.draftResumed"), "modeler.draftResumed", {});
   syncShell(); requestRender();
 }
 /** Make 3D converts the selected figure's definition into a 3D rig (docs/PSEUDO-3D-PLAN.md). */

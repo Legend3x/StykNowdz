@@ -102,7 +102,7 @@ export default Object.freeze({
   "chrome.help": "Help",
   "chrome.build": "Build",
   "chrome.model": "Model",
-  "chrome.modelA3DCharacter": "Model a 3D character (Blender lite)",
+  "chrome.modelA3DCharacter": "Model a 3D character (3D Nowdz)",
   "chrome.save": "Save",
   "chrome.cancel": "Cancel",
   "chrome.testRig": "Test rig",

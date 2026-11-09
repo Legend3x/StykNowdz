@@ -1,9 +1,9 @@
-# Blender lite
+# 3D Nowdz
 
 A 3D modeler inside StykNowdz for making characters and props, which then pose
 and animate like any other 3D figure. Open it from the **Model** tab beside
 Animate, Draw and Build (it edits the selected model, or starts a new one),
-**File › New 3D model**, the command palette ("Blender lite"), or right-click a
+**File › New 3D model**, the command palette ("3D Nowdz"), or right-click a
 figure made in it and choose **Edit 3D model**. Opened from the tab it sits
 under the band, so Animate, Draw or Build take you back (asking first when
 there are changes); the animation's history, Save, Export and menus wait until
@@ -17,10 +17,10 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
 
 | Area | What's there |
 | --- | --- |
-| Top bar | Object / Edit / Bones modes; Points / Edges / Faces in Edit; Move, Rotate, Scale (keys only on narrow windows); Undo, Redo; Front, Side, Top; perspective or flat view; Frame; File (Import OBJ, Export OBJ); the keyboard button (the controls card); Close; **Add to animation** (or **Update figure**) |
+| Top bar | Object / Edit / Bones modes; Points / Edges / Faces in Edit; Move, Rotate, Scale (keys only on narrow windows); Undo, Redo; Front, Side, Top; perspective or flat view; Frame; File (Import OBJ, Export OBJ, Start over); the keyboard button (the controls card); Close (or any other workspace tab: the unfinished model is kept as a draft, see below); **Add to animation** (or **Update figure**) |
 | Left | Parts list (click, Shift-click, double-click to rename, ● to hide), Add (Base character and primitives), Duplicate, Delete; the color palette (click to paint, right-click to change a color, + to add one) |
 | Right | Properties for the mode: part position, rotation, size, Mirror left and right, Smooth 0–3, Moves with (a rigid bone or automatic); Edit tools; Skeleton tools and the selected bone; View toggles; reference images |
-| Controls card | Shown over the viewport when Blender lite opens: the main keys in four groups (Look around, Select, Shape, Bones). "Don't show this when Blender lite opens" remembers the choice on this computer (`localStorage` key `stykNowdz.modeler.hideControls`); the keyboard button in the bar opens it again. Esc, Got it or a click outside closes it |
+| Controls card | Shown over the viewport when 3D Nowdz opens: the main keys in four groups (Look around, Select, Shape, Bones). "Don't show this when 3D Nowdz opens" remembers the choice on this computer (`localStorage` key `stykNowdz.modeler.hideControls`); the keyboard button in the bar opens it again. Esc, Got it or a click outside closes it |
 | Viewport | Right-drag or Alt-drag to orbit, Shift+right-drag to pan, scroll to zoom; click to select; drag what's under the pointer to move it (see Dragging), drag empty space (or Shift-drag) for a box; the status line says what the current tool expects |
 
 ### Modes
@@ -60,7 +60,7 @@ The anime look from Blender tutorials, built in:
   Shadow colours are worked out from the colours shown
   (`src/toon-shading.mjs`), so recolouring a figure recolours its shadows.
   Parts with **Takes shadows** off, and all outlines, stay flat.
-- **Toon preview** (View) shows Blender lite's viewport the same way.
+- **Toon preview** (View) shows 3D Nowdz's viewport the same way.
 
 Stored on the figure as `_styk.spatialMesh.toon = {light, threshold,
 strength, flat}` (`flat` lists part groups drawn without shadows); a model
@@ -148,6 +148,27 @@ pointer. X, Y or Z locks to an axis (again to unlock), Ctrl snaps (0.05 units,
 15°, tenths), click or Enter finishes, right-click or Esc cancels. Extrude moves
 the new faces along their normal; when that points at you, drag up to push it out.
 
+### Drafts and starting over
+
+Leaving 3D Nowdz without **Add to animation** (Close or
+another workspace tab) never asks and never loses work: the model and camera
+are kept as a draft, one for a new model and one per figure being edited, and
+saved in `localStorage` (`stykNowdz.modelDraft`) so they survive a restart.
+Opening the Model tab again resumes the draft. **File > Start over** asks once
+and clears parts, bones and references as one undoable step. Add to animation
+or Update figure clears the draft.
+
+### Mirror mode and Symmetrize
+
+- **Mirror mode (X)** sits at the top of the Edit panel (and as Mirror left and
+  right in Object mode). It mirrors across the world middle (X = 0), which is
+  where new parts are now added, so tracing on one side shows the other side
+  live. Turning it on says which side holds the points, or warns when every
+  point is on the middle; Keep the middle joined (clipping) sits right under it.
+- **Symmetrize** (Edit panel) copies one side of the world middle onto the
+  other, even for a part placed off the middle: it uses the selection's side,
+  or the side holding more of the part, and says which side it kept.
+
 ### Modifiers
 
 - **Mirror left and right** builds the −X half from the +X half (across the
@@ -218,7 +239,12 @@ Three rules keep every model valid, whatever the tool or file it came from.
 
 Rules that follow from this: Flip faces flips whole connected pieces (flipping
 part of a closed surface would break H4), and edge extrusion works on open
-border edges only (H5). tests/modeler-integrity.test.mjs covers each rule,
+border edges only (H5). Where Blender would leave a bow-tie, the tools keep
+the mesh valid instead of refusing: Delete and Duplicate give each fan of
+faces its own copy of a shared corner (`splitBowTies`; nothing moves), and
+region Extrude moves corners inside the region with it and copies border
+corners once per fan, as Blender does, so no corner is left unused. Loop cut
+on a traced line splits the line. tests/modeler-integrity.test.mjs covers each rule,
 purity, rollback and a run of random edits validated after every step.
 
 ## Adding to an animation

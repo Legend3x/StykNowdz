@@ -1,4 +1,4 @@
-/** Wavefront OBJ in and out for Blender lite, so models travel to and from
+/** Wavefront OBJ in and out for 3D Nowdz, so models travel to and from
  * Blender and other tools. Groups (`o`/`g`) become parts; materials (`usemtl`)
  * become palette colors when a companion MTL's `Kd` is given. */
 import {evaluatePart} from './model.mjs';
@@ -7,7 +7,7 @@ import {validateMesh, TopologyError} from './topology.mjs';
 
 /** The model's evaluated parts (mirror and smooth applied) as OBJ text, plus an MTL for colors. */
 export function exportObj(model, {name = 'model'} = {}) {
-  const lines = [`# StykNowdz Blender lite`, `mtllib ${name}.mtl`], mtl = [];
+  const lines = [`# StykNowdz 3D Nowdz`, `mtllib ${name}.mtl`], mtl = [];
   model.palette.forEach((c, i) => mtl.push(`newmtl color${i}`, `Kd ${c.map(v => (v / 255).toFixed(4)).join(' ')}`, ''));
   let offset = 1;
   for (const part of model.parts.filter(p => p.visible !== false)) {

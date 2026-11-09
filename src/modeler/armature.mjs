@@ -1,4 +1,4 @@
-/** Blender lite skeleton: bones in model space (Y up) and automatic skin
+/** 3D Nowdz skeleton: bones in model space (Y up) and automatic skin
  * weights. A bone is {id, name, head, tail, parent} where parent is another
  * bone's id or 0. Side bones end in ".L"/".R" as in Blender: the character
  * faces the front view, so its left (".L") is on +X. */

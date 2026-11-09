@@ -1,4 +1,4 @@
-/** Blender lite model document: parts (mesh objects), a skeleton, a color
+/** 3D Nowdz model document: parts (mesh objects), a skeleton, a color
  * palette and reference images. Plain JSON, stored on exported figures as
  * `_styk.modelSource` so a 3D figure can be reopened and edited. */
 import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale} from './mesh.mjs';

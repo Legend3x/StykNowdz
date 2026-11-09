@@ -1,4 +1,4 @@
-/** Blender lite → StykNowdz figure. The result is an ordinary 3D figure of
+/** 3D Nowdz → StykNowdz figure. The result is an ordinary 3D figure of
  * the existing engine (docs/SPATIAL-MESHES.md): a hidden Figure rotation
  * joint, two hidden reference joints for the mesh's facing, one 3D bone per
  * skeleton bone (each with its own turn/tilt controls, so every joint poses

@@ -1,7 +1,7 @@
 # StykNowdz ideas from reference videos
 
-Notes taken from Blender tutorial clips, to plan what Blender lite needs.
-Each idea lists what the video shows, what Blender lite has today, and what
+Notes taken from Blender tutorial clips, to plan what 3D Nowdz needs.
+Each idea lists what the video shows, what 3D Nowdz has today, and what
 building it means. Nothing here is built yet unless marked **Done**.
 
 ## Videos watched (2026-11-07)
@@ -14,7 +14,7 @@ building it means. Nothing here is built yet unless marked **Done**.
 
 ## The anime / cel look
 
-| Seen in the video | Blender lite today | To build |
+| Seen in the video | 3D Nowdz today | To build |
 | --- | --- | --- |
 | Flat "Emission" colors, no lighting | **Yes**: 3D models already draw flat | Nothing |
 | Black outlines (inverted hull: Solidify, flipped normals, black backface-culled material) | **Done (1.4.0)** | Per-part Outline (on/off, thickness, color), added as an inverted hull when the model goes to the animation. The stage already hides back faces, so no renderer change |
@@ -24,7 +24,7 @@ building it means. Nothing here is built yet unless marked **Done**.
 
 ## Modeling workflow
 
-| Seen in the video | Blender lite today | To build |
+| Seen in the video | 3D Nowdz today | To build |
 | --- | --- | --- |
 | Front / side reference sheet behind the model, faded | **Yes**: per-view references with opacity | Maybe "show in front", and one sheet cut into front / side views |
 | Start from one point and extrude points and edges along the drawing's outline, then fill faces between them | **Done (1.5.0)**: Single point, E, Ctrl+click, F, Bridge | Grid fill (fill a ring with a grid of quads) could come next |
@@ -41,7 +41,7 @@ The eyes are **not pictures**: they are flat pieces of mesh in front of the
 face, each face given a different flat color.
 
 - Iris: a Circle mesh, inset into rings: dark outer ring, red middle, a lighter
-  crescent at the bottom, black pupil, white highlight dot. Blender lite can
+  crescent at the bottom, black pupil, white highlight dot. 3D Nowdz can
   already color each face; the **Circle** shape was added in 1.4.0.
 - Eye white: a flat shape following the drawing.
 - Brows and lashes: thin curved strips (a plane, subdivided, bent along the
@@ -60,7 +60,7 @@ face, each face given a different flat color.
 
 Checked against 1.5.0. Steps in the video, in order:
 
-| Step in the video | Blender lite today | Gap |
+| Step in the video | 3D Nowdz today | Gap |
 | --- | --- | --- |
 | Front / side references; cube, M › At Center down to one point | **Yes**: references, Add › Single point, M merges at the centre | Nothing |
 | Mirror with Clipping + Merge; extrude the chin, outline the face with few points | **Yes**: mirror + "Keep the middle joined", E, Ctrl+click | Nothing |
@@ -84,7 +84,7 @@ join it to another point, fill the gap with F, loop cut, nudge points to the
 references. Nose bridge, mouth, lips, chin, cheeks, forehead, then the top of
 the head traced as lines and filled.
 
-| Step in the video | Blender lite today | Gap |
+| Step in the video | 3D Nowdz today | Gap |
 | --- | --- | --- |
 | Nose: join points, fill a face, loop cut, extrude down | **Yes** | Nothing |
 | **Edge slide** (G G) and **loop cut and slide**: "slide this edge closer to the middle", "slide the cut to the side", used about 6 times | **No**: Ctrl+R always cuts at the halfway point; G moves points freely, off the surface | Slide along the edges after a loop cut (mouse picks the spot) and G G edge slide |
@@ -96,7 +96,7 @@ the head traced as lines and filled.
 | Merge these points at the centre to close the forehead; merge points to make the head less dense | **Yes**: M | Nothing |
 | Trace the top of the head as lines, extrude an edge along them, join and fill | **Yes**: E on points / edges, F | Alt+click loop select on those lines (see part 1) |
 
-The whole video can be followed in Blender lite today. Edge slide / loop cut slide
+The whole video can be followed in 3D Nowdz today. Edge slide / loop cut slide
 is the one move used often enough that its absence would be felt; the rest are
 part 1's gaps (wire and border loop select, S right after E, falloff types).
 
@@ -108,7 +108,7 @@ Weights, then pose. Eyeballs: origin to geometry, cursor to selected, snap the e
 bone there, Ctrl+P › Bone. Pose by moving small handles (brows, lids, lip corners,
 cheeks, jaw).
 
-| Step in the video | Blender lite today | Gap |
+| Step in the video | 3D Nowdz today | Gap |
 | --- | --- | --- |
 | Ready-made human rig to start from | **Body only**: Humanoid skeleton (hips, spine, neck, head, arms, legs) | **No face bones**: a face template (jaw, lips, lip corners, cheeks, brows, lids, eyes) placed on the head |
 | Edit bones with symmetry on | **Yes**: Symmetrize, .L / .R names | Live symmetry while dragging a bone would match |

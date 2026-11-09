@@ -1,4 +1,4 @@
-/** Blender lite matrix math (docs/BLENDER-LITE.md, "Data integrity").
+/** 3D Nowdz matrix math (docs/BLENDER-LITE.md, "Data integrity").
  *
  * Every vertex transformation in the modeler goes through these functions.
  * They are pure: each returns a new, frozen value and never reads or writes

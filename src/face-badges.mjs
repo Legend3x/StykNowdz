@@ -1,6 +1,6 @@
 import {rigControlIsFace,rigFaceShown,setRigFaceShown} from './rig-control-details.mjs';
 
-/** Face badges: a figure whose rig has face controls (a Blender lite face rig)
+/** Face badges: a figure whose rig has face controls (a 3D Nowdz face rig)
  * shows a small face icon at its head. Its face joints stay hidden, so the head
  * isn't crowded, until the badge is clicked; clicking again hides them. Like the
  * Show / hide joints setting, this is presentation only: it never changes the

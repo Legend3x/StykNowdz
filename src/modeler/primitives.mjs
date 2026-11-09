@@ -1,4 +1,4 @@
-/** Blender lite primitives, all centred on the origin, Y up, faces wound
+/** 3D Nowdz primitives, all centred on the origin, Y up, faces wound
  * counter-clockwise from outside. Sizes are in model units (1 unit = 100 px
  * when added to an animation). */
 import {recalculateNormals} from './mesh.mjs';

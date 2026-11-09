@@ -1,4 +1,4 @@
-/* Blender lite (src/modeler/modeler-ui.mjs, docs/BLENDER-LITE.md): a full-window
+/* 3D Nowdz (src/modeler/modeler-ui.mjs, docs/BLENDER-LITE.md): a full-window
  * 3D modeler over the app. A bar of modes and tools on top, parts and colors on
  * the left, properties on the right, the viewport in the middle and a status
  * line with the current hint at the bottom. */
@@ -251,7 +251,9 @@
     background: var(--surface-raised);
     box-shadow: var(--elevation-2);
   }
-  .modeler-popover.modeler-confirm { bottom: var(--space-8); top: auto; max-width: 320px; padding: var(--space-3); }
+  .modeler-controls-card.modeler-confirm { inline-size: min(400px, 100%); gap: var(--space-2); }
+  .modeler-confirm-text { margin: 0; color: var(--text-1); font: var(--type-ui); line-height: 1.45; }
+  .modeler-confirm-row { justify-content: flex-end; }
   .modeler-menu-item {
     min-block-size: var(--control-md);
     padding: 0 var(--space-2-5);
@@ -265,7 +267,7 @@
   }
   .modeler-menu-item:hover { background: var(--surface-hover); }
 
-  /* The controls card: shown over the viewport when Blender lite opens (until
+  /* The controls card: shown over the viewport when 3D Nowdz opens (until
    * "Don't show this again"), and from the keyboard button in the bar. */
   .modeler-controls {
     position: absolute;
@@ -299,13 +301,13 @@
   .modeler-controls-foot .modeler-check { flex: 1; margin: var(--space-2) 0 0; color: var(--text-2); font: var(--type-small); }
   .modeler-controls-foot .modeler-button { margin-top: var(--space-2); }
 
-  /* While Blender lite is open under the band, only the workspace tabs and the window controls stay live:
+  /* While 3D Nowdz is open under the band, only the workspace tabs and the window controls stay live:
      the animation's history, Save, Export, projects and menus wait until it closes. */
   body[data-modeling] .shell-top :is(.shell-mark, .app-menubar, .band-home, .project-tabs, .band-history, .band-save, .band-export) {
     pointer-events: none;
     opacity: 0.42;
   }
 
-  /* The band's Model tab (Blender lite) in violet, beside Animate, Draw and Build. */
+  /* The band's Model tab (3D Nowdz) in violet, beside Animate, Draw and Build. */
   .workspace-switch .ui-segmented-item[data-action="model-workspace"] { --_mode: var(--tint-time); --_mode-soft: var(--tint-time-soft); }
 }

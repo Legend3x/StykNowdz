@@ -1,4 +1,4 @@
-// Blender lite data integrity (docs/BLENDER-LITE.md, "Data integrity"): pure
+// 3D Nowdz data integrity (docs/BLENDER-LITE.md, "Data integrity"): pure
 // matrix transforms, atomic validated edits, and validateMesh's half-edge rules.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -89,9 +89,9 @@ test('an edit that would break the mesh is undone and reported', () => {
     const c = cube(), before = JSON.stringify(c), [a, b] = c.faces[0].v;
     assert.throws(() => M.extrudeEdges(c, [[a, b]]), error => error instanceof TopologyError && error.result.errors.some(e => e.rule === 'H5'));
     assert.equal(JSON.stringify(c), before, 'mesh restored exactly');
-    // Deleting opposite quads of a grid leaves a bow-tie at the centre (H6).
+    // A bow-tie in the data itself is still refused (H6)…
     const g = grid(), gridBefore = JSON.stringify(g);
-    assert.throws(() => M.deleteFaces(g, new Set([1, 3])), error => error.result.errors.some(e => e.rule === 'H6'));
+    assert.throws(() => M.fillVerts(g, new Set([0, 1, 4, 3])), TopologyError);
     assert.equal(JSON.stringify(g), gridBefore);
     // Filling across a face that already exists duplicates it (H8 / H4).
     const f = cube(), fBefore = JSON.stringify(f);
@@ -99,6 +99,36 @@ test('an edit that would break the mesh is undone and reported', () => {
     assert.equal(JSON.stringify(f), fBefore);
     assert.ok(printed.length >= 3 && printed.every(text => /Topology check of/.test(text)), 'each refusal printed its report');
   } finally { console.error = log; }
+});
+
+test('edits Blender allows go through: region extrude, checker deletes, cutting a traced line', () => {
+  // Extruding a 2×2 patch: the inner corner moves with it, nothing is left unused.
+  let g = grid(); let moved = M.extrudeFaces(g, new Set([0, 1, 2, 3]));
+  assert.ok(validateMesh(g, quiet).ok); assert.equal(g.verts.length, 9 + 8); assert.ok(moved.has(4), 'inner corner moves');
+  // Extruding every face of a closed box just moves it.
+  const box = cube(); M.extrudeFaces(box, new Set(box.faces.keys())); assert.ok(validateMesh(box, quiet).ok); assert.equal(box.verts.length, 8);
+  // Faces that touch only at a corner extrude as two pieces with their own walls.
+  g = grid(); moved = M.extrudeFaces(g, new Set([0, 2]));
+  assert.ok(validateMesh(g, quiet).ok); assert.equal(moved.size, 8, 'the shared corner is copied once per piece');
+  // Deleting opposite quads leaves the other two touching at the centre; each keeps its own corner.
+  g = grid(); M.deleteFaces(g, new Set([1, 3]));
+  assert.ok(validateMesh(g, quiet).ok); assert.equal(g.faces.length, 2); assert.equal(g.verts.length, 8);
+  assert.equal(g.verts.filter(p => M.length(p) < 1e-9).length, 2, 'the centre is split into two corners in the same place');
+  g = grid(); M.deleteVerts(g, new Set([1, 7])); assert.ok(validateMesh(g, quiet).ok);
+  g = grid(); const copy = M.duplicateFaces(g, new Set([0, 2])); assert.ok(validateMesh(g, quiet).ok); assert.equal(copy.size, 8);
+  // Loop cut on a traced line cuts the line into pieces.
+  const line = {verts: [[0, 0, 0], [1, 0, 0]], faces: [], edges: [[0, 1]]};
+  M.loopCut(line, [0, 1], .5, 3); assert.ok(validateMesh(line, quiet).ok); assert.equal(line.edges.length, 4);
+});
+
+test('symmetrize works in world space for a part placed off the middle', () => {
+  const part = {position: [.4, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1]};
+  const mesh = M.transformMesh(cube(), X.translation([.3, 0, 0]));
+  M.symmetrize(mesh, 'auto', M.objectMatrix(part));
+  assert.ok(validateMesh(mesh, quiet).ok);
+  const world = mesh.verts.map(p => p[0] + .4), min = Math.min(...world), max = Math.max(...world);
+  near(min, -max, 1e-6);
+  assert.equal(M.symmetrizeSide({verts: [[1, 0, 0], [2, 0, 0], [-1, 0, 0]], faces: []}), true);
 });
 
 test('random edit sequences never leave an invalid mesh behind', () => {

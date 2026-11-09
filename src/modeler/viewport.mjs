@@ -1,4 +1,4 @@
-/** Blender lite viewport: orbit camera, projection and drawing on a 2D
+/** 3D Nowdz viewport: orbit camera, projection and drawing on a 2D
  * canvas. Faces are lit from the camera and painted back to front; overlays
  * (grid, cage, bones, gizmos) draw on top. No app state lives here. */
 import {sub, dot, cross, normalize, add, scale, length} from './mesh.mjs';

@@ -6,6 +6,24 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ## [Unreleased]
 
+### Added
+
+- 3D Nowdz: Mirror mode is now a checkbox at the top of the Edit panel, so you can trace one side of a face and see the other side follow.
+- 3D Nowdz: File > Start over clears the model in one step, and Undo brings it back.
+
+### Changed
+
+- Blender Lite is now called 3D Nowdz.
+- Leaving 3D Nowdz for another tab keeps your unfinished model, and it comes back the next time you open the Model tab, even after a restart.
+- Extrude, Delete and Duplicate now work on selections Blender allows, such as faces that touch only at a corner or a whole block of faces.
+
+### Fixed
+
+- Fixed being unable to leave the Model tab without closing the app.
+- Fixed Symmetrize mirroring around the part instead of the middle of the model.
+- Fixed the walls of an extruded eye ring disappearing while you dragged them.
+- Fixed Loop cut on a traced line, which now cuts the line into pieces.
+
 ## [1.6.2]
 
 Credits for StykAnimate

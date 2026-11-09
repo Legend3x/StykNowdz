@@ -109,7 +109,7 @@
 @import url("./features/audio.css");
 @import url("./features/view-options.css");
 @import url("./features/settings.css");
-@import url("./features/modeler.css");  /* Blender lite, the 3D modeler (docs/BLENDER-LITE.md) */
+@import url("./features/modeler.css");  /* 3D Nowdz, the 3D modeler (docs/BLENDER-LITE.md) */
 @import url("./features/home.css");  /* Home and the tutorials' strip, mark and pointer (docs/HOME.md, docs/TUTORIALS.md) */
 @import url("./features/support-desktop.css");  /* the Feedback shell over the lazy support-bridge.css */
 @import url("./features/touch.css");  /* the touch interface's components (docs/TOUCH.md) */

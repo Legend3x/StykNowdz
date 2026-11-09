@@ -272,12 +272,12 @@ testing.
 - Textures are out of scope at first (palette colors only), and so are glTF
   animations.
 
-## Step 3: Blender lite, a simple 3D builder (planned)
+## Step 3: 3D Nowdz, a simple 3D builder (planned)
 
 Requested as a fallback in case pseudo-3D isn't enough. The app already
 renders depth-tested 3D meshes bound to 3D bones (`_styk.spatialMesh`,
 docs/SPATIAL-MESHES.md) on GPU and in software, with saving, undo and
-playback, but meshes can only be authored outside the app. Blender lite adds
+playback, but meshes can only be authored outside the app. 3D Nowdz adds
 in-app authoring on top of that, with no new renderer.
 
 Milestones:

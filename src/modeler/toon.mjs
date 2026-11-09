@@ -1,4 +1,4 @@
-// Cel-shading helpers for Blender lite: the outline "inverted hull" and the
+// Cel-shading helpers for 3D Nowdz: the outline "inverted hull" and the
 // toon settings a model carries. Pure: nothing here changes its inputs.
 //
 // The inverted hull is the classic anime outline trick (Blender's Solidify

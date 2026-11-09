@@ -1,4 +1,4 @@
-/** Blender lite workspace (docs/BLENDER-LITE.md): a full-window 3D modeler
+/** 3D Nowdz workspace (docs/BLENDER-LITE.md): a full-window 3D modeler
  * over the app. Object mode arranges parts, Edit mode shapes their polygons,
  * Bones mode builds the skeleton the figure is posed with. Everything works
  * on a plain model document (model.mjs); `onDone(model)` hands it back. */
@@ -40,7 +40,11 @@ const rgbOf = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
  * adds the model to the animation and `onClose()` when they leave. Returns
  * {close, element, state} (state for tests).
  */
-export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, onDone, onClose} = {}) {
+/** `draft`: an unfinished model left open last time ({model, camera}), carried on from.
+ * onClose(draft) gets the unfinished model when it was closed without Add / Update
+ * (null when nothing was changed or it was added), so leaving never loses work. */
+export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose} = {}) {
+  if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
   const S = {mode: 'object', selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
     camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
@@ -68,6 +72,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const undo = () => { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); };
   const redo = () => { if (!S.redo.length) return; S.undo.push(snapshot()); restore(S.redo.pop()); };
   const touch = (partId = null) => { if (partId) S.cache.delete(partId); else S.cache.clear(); refresh(); };
+  let finished = false;
 
   const part = id => model.parts.find(p => p.id === id);
   const activePart = () => part(S.active);
@@ -129,6 +134,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('span', {class: 'modeler-spacer'}),
       quiet(t("modeler.file"), e => popover(e.currentTarget, [
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); importObjFile(); }}, t("modeler.importObj")),
+        editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t("modeler.startOver")),
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportObjFile(); }}, t("modeler.exportObj"))])),
       iconButton('keyboard', t("modeler.controls"), () => showControls()),
       button(t("modeler.close"), requestClose),
@@ -215,7 +221,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           vector(t("modeler.position"), p.position, (k, v) => commit(() => { p.position[k] = v; S.cache.delete(p.id); })),
           vector(t("modeler.rotation"), p.rotation.map(deg), (k, v) => commit(() => { p.rotation[k] = rad(v); S.cache.delete(p.id); }), {step: 1}),
           vector(t("modeler.size"), p.scale, (k, v) => commit(() => { p.scale[k] = v || .001; S.cache.delete(p.id); })),
-          el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => commit(() => { p.mirror = e.target.checked; S.cache.delete(p.id); })}), t("modeler.mirrorX")]),
+          el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => setMirror(p, e.target.checked)}), t("modeler.mirrorX")]),
           p.mirror ? el('label', {class: 'modeler-check', title: t("modeler.clippingHint")}, [el('input', {type: 'checkbox', checked: p.clip !== false, onchange: e => commit(() => { if (e.target.checked) delete p.clip; else p.clip = false; })}), t("modeler.clipping")]) : null,
           el('p', {class: 'modeler-hint', text: t("modeler.mirrorHint")}),
           el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.smooth")}), el('input', {type: 'range', min: '0', max: String(SMOOTH_MAX), step: '1', value: String(p.smooth),
@@ -233,6 +239,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       const mesh = p.mesh, faces = M.facesFromVerts(mesh, S.verts);
       blocks.push(section(t("modeler.editing", {name: p.name}), [
         el('p', {class: 'modeler-hint', text: t("modeler.selectionCount", {verts: S.verts.size, faces: faces.size})}),
+        // Mirror mode (Blender's Mirror modifier) where it's needed: while editing.
+        el('label', {class: 'modeler-check modeler-mirror-toggle', title: t("modeler.mirrorHint")}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => setMirror(p, e.target.checked)}), t("modeler.mirrorX")]),
+        p.mirror ? el('label', {class: 'modeler-check', title: t("modeler.clippingHint")}, [el('input', {type: 'checkbox', checked: p.clip !== false, onchange: e => commit(() => { if (e.target.checked) delete p.clip; else p.clip = false; })}), t("modeler.clipping")]) : null,
         actions([[t("modeler.extrude"), extrude, 'E'], [t("modeler.inset"), startInset, 'I'], [t("modeler.loopCut"), startLoopCut, 'Ctrl+R'],
           [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge"), merge, 'M'], [t("modeler.fill"), fill, 'F'],
           [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.duplicateSelected"), duplicateSelected, 'Shift+D'], [t("modeler.separate"), separate, 'P'],
@@ -246,7 +255,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           [t("modeler.grow"), () => { S.verts = M.growSelection(mesh, S.verts); refresh(); }, 'Ctrl++'],
           [t("modeler.flipNormals"), () => commit(() => { M.flipFaces(mesh, faces); S.cache.delete(p.id); })],
           [t("modeler.fixNormals"), () => commit(() => { M.recalculateNormals(mesh); S.cache.delete(p.id); }), 'Shift+N'],
-          [t("modeler.symmetrize"), () => commit(() => { M.symmetrize(mesh, true); S.verts.clear(); S.cache.delete(p.id); }), t("modeler.symmetrizeHint")],
+          [t("modeler.symmetrize"), () => symmetrizePart(p), t("modeler.symmetrizeHint")],
           [t("modeler.mergeByDistance"), () => commit(() => { const n = M.mergeByDistance(mesh, .001); S.verts.clear(); S.cache.delete(p.id); toast(t("modeler.mergedCount", {count: n})); })]]),
         el('p', {class: 'modeler-hint', text: t("modeler.editHint")})]));
     } else if (S.mode === 'bones') {
@@ -429,7 +438,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       const transform = M.objectTransform(p), ghost = p.mesh.verts.map(v => { const w = transform(v); return frame.project([-w[0], w[1], w[2]]); });
       ctx.globalAlpha = .55; ctx.strokeStyle = VIEW_COLORS.cage; ctx.lineWidth = 1.2; ctx.setLineDash([4, 3]);
       for (const [a, b] of wires) { if (!ghost[a].ok || !ghost[b].ok) continue; ctx.beginPath(); ctx.moveTo(ghost[a].x, ghost[a].y); ctx.lineTo(ghost[b].x, ghost[b].y); ctx.stroke(); }
-      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.setLineDash([]); ctx.fillStyle = VIEW_COLORS.cage;
+      for (const i of p.mesh.loose ?? []) { const q = ghost[i]; if (q?.ok) ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }
+      ctx.globalAlpha = 1;
     }
     for (const [a, b] of wires) {
       if (!pts[a]?.ok || !pts[b]?.ok) continue;
@@ -726,6 +737,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       } else mesh = M.transformMesh(target.startMesh, local(1), target.verts);
       // Mirror clipping: the middle stays joined to the mirrored half.
       if (target.part.mirror && target.part.clip !== false) mesh = M.clipToMirror(target.startMesh, mesh, target.objectMatrix, moved);
+      if (m.grown) M.faceViewerDuringMove(mesh, m.grown, localFacing(target.part));
       target.part.mesh = mesh;
       S.cache.delete(target.part.id);
     } else if (target.kind === 'bones') {
@@ -817,7 +829,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       // in Blender); a traced point would sit on top of the old one, so that is undone instead.
       S.modal.before = before; S.modal.keep = !traced;
       // Quads grown from traced lines face the viewer once they have their shape.
-      if (grown?.size) S.modal.after = () => M.orientWireFaces(p.mesh, grown, localFacing(p));
+      if (grown?.size) { S.modal.grown = grown; S.modal.after = () => M.orientWireFaces(p.mesh, grown, localFacing(p)); }
+      // Faces pulled straight toward you don't change on screen: say how to grow a ring instead.
+      if (world && Math.abs(M.dot(world, frame.back)) > .97) toast(t("modeler.extrudeTowardYou"));
     }
   }
   /** Toward the viewer, in a part's own space (flipped for mirrored parts, whose faces evaluate reversed). */
@@ -977,7 +991,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
 
   // ---------- parts ----------
-  const spawnPoint = () => { const ahead = S.camera.target.slice(); return [Math.round(ahead[0] * 20) / 20, Math.max(0, Math.round(ahead[1] * 20) / 20), Math.round(ahead[2] * 20) / 20]; };
+  // New parts go on the middle (X = 0), where the mirror is, at the height and depth being looked at.
+  const spawnPoint = () => { const ahead = S.camera.target.slice(); return [0, Math.max(0, Math.round(ahead[1] * 20) / 20), Math.round(ahead[2] * 20) / 20]; };
   function addPrimitive(kind) {
     commit(() => {
       const names = {cube: t("modeler.cube"), plane: t("modeler.plane"), circle: t("modeler.circle"), point: t("modeler.singlePoint"), sphere: t("modeler.sphere"), cylinder: t("modeler.cylinder"), cone: t("modeler.cone"), capsule: t("modeler.capsule"), torus: t("modeler.torus")};
@@ -1066,6 +1081,30 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const box = M.bounds(points), centre = M.scale(M.add(box.min, box.max), .5), offset = M.sub(centre, bone.head);
     commit(() => { bone.head = centre; bone.tail = M.add(bone.tail, offset); S.cache.clear(); });
   }
+  /** Where a part's points lie across the middle (world X = 0): counts on each side. */
+  function sidesOf(p, verts = null) {
+    const transform = M.objectTransform(p); let plus = 0, minus = 0;
+    for (const i of verts ?? p.mesh.verts.keys()) { const x = transform(p.mesh.verts[i])[0]; if (x > 1e-4) plus++; else if (x < -1e-4) minus++; }
+    return {plus, minus};
+  }
+  /** Mirror mode on or off. Turning it on with points on both sides of the middle says
+   * so: the mirror would double them (Symmetrize, or deleting one half, fixes that). */
+  function setMirror(p, on) {
+    commit(() => { p.mirror = on; S.cache.delete(p.id); });
+    if (!on) return;
+    const {plus, minus} = sidesOf(p);
+    if (plus && minus) toast(t("modeler.mirrorBothSides"));
+    else if (!plus && !minus && p.mesh.verts.length) toast(t("modeler.mirrorAllMiddle"));
+  }
+  /** Symmetrize: copy one side over the other about the middle the mirror uses, keeping
+   * the side the selection is on (or the side with more of the part). */
+  function symmetrizePart(p) {
+    const chosen = S.verts.size ? sidesOf(p, S.verts) : sidesOf(p);
+    if (!chosen.plus && !chosen.minus) { toast(t("modeler.symmetrizeNothing")); return; }
+    const keepPositive = chosen.plus >= chosen.minus;
+    commit(() => { M.symmetrize(p.mesh, keepPositive, M.objectMatrix(p)); S.verts.clear(); S.cache.delete(p.id); });
+    toast(t(keepPositive ? "modeler.symmetrizedFromPositive" : "modeler.symmetrizedFromNegative"));
+  }
   function addSingleBone() {
     commit(() => { const at = spawnPoint(); const b = addBone(model, {name: 'Bone', head: at, tail: M.add(at, [0, .3, 0])}); S.bones = new Set([b.id]); S.boneEnd = null; S.cache.clear(); });
   }
@@ -1080,7 +1119,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
 
   // ---------- view ----------
-  function setView(name) { [S.camera.yaw, S.camera.pitch] = VIEWS[name]; if (name !== 'perspective') S.camera.ortho = true; refresh(); }
+  function setView(name) { if (!VIEWS[name]) return; [S.camera.yaw, S.camera.pitch] = VIEWS[name]; if (name !== 'perspective') S.camera.ortho = true; refresh(); }
   function frameSelected() {
     let points = [];
     if (S.mode === 'edit' && S.verts.size) { const p = activePart(), tr = M.objectTransform(p); points = [...S.verts].map(v => tr(p.mesh.verts[v])); }
@@ -1144,20 +1183,37 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     pop = el('div', {class: 'modeler-popover', role: 'menu'}, children);
     pop.style.left = `${box.left - hostBox.left}px`; pop.style.top = `${box.bottom - hostBox.top + 4}px`;
     root.append(pop);
+    // Keep it inside the window: open upward or leftward when it would run off an edge.
+    const r = pop.getBoundingClientRect();
+    if (r.right > hostBox.right - 8) pop.style.left = `${Math.max(8, hostBox.right - 8 - r.width - hostBox.left)}px`;
+    if (r.bottom > hostBox.bottom - 8) pop.style.top = `${Math.max(8, box.top - hostBox.top - 4 - r.height)}px`;
   }
   function closePopover() { pop?.remove(); pop = null; }
+  /** A question in the middle of the viewport (Enter answers yes, Esc no), so it can't
+   * end up off screen or under a message along the bottom of the window. */
+  let confirmBox = null;
   function askConfirm(message, yes, {yesLabel = t("modeler.replace"), noLabel = t("modeler.keep")} = {}) {
-    popover(status, [el('p', {text: message}), el('div', {class: 'modeler-row'}, [button(yesLabel, () => { closePopover(); yes(); }), button(noLabel, closePopover)])]);
-    pop.classList.add('modeler-confirm');
+    closePopover(); closeConfirm();
+    const ok = el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: () => { closeConfirm(); yes(); }}, yesLabel);
+    const no = el('button', {type: 'button', class: 'modeler-button', onclick: closeConfirm}, noLabel);
+    confirmBox = el('div', {class: 'modeler-controls modeler-confirm-layer', onpointerdown: e => { if (e.target === confirmBox) closeConfirm(); }},
+      [el('div', {class: 'modeler-controls-card modeler-confirm', role: 'alertdialog', 'aria-label': message}, [el('p', {class: 'modeler-confirm-text', text: message}), el('div', {class: 'modeler-row modeler-confirm-row'}, [no, ok])])]);
+    stage.append(confirmBox);
+    ok.focus();
   }
-  /** Leaving with changes asks first: closing does not keep the model anywhere. */
+  function closeConfirm() { if (!confirmBox) return; confirmBox.remove(); confirmBox = null; canvas.focus(); }
+  /** Leaving never asks: an unfinished model is kept (onClose) and the Model tab carries on from it. */
   function requestClose(after) {
-    const leave = () => { close(); if (typeof after === 'function') after(); };
-    if (!S.undo.length) { leave(); return; }
-    askConfirm(editing ? t("modeler.discardEdits") : t("modeler.discardModel"), leave, {yesLabel: t("modeler.discard"), noLabel: t("modeler.keepModeling")});
+    if (S.modal) cancelModal();
+    close(); if (typeof after === 'function') after();
+  }
+  /** Throw the unfinished model away and start again (File › Start over). */
+  function startOver() {
+    askConfirm(t("modeler.startOverAsk"), () => { setMode('object'); commit(() => { model.parts = []; model.bones = []; model.references = []; S.parts = new Set(); S.verts = new Set(); S.bones = new Set(); S.active = null; syncRefs(); }); },
+      {yesLabel: t("modeler.startOver"), noLabel: t("modeler.keepModeling")});
   }
   // ---------- controls card ----------
-  // Shown over the viewport when Blender lite opens, until "Don't show this again";
+  // Shown over the viewport when 3D Nowdz opens, until "Don't show this again";
   // the keyboard button in the bar brings it back.
   const CONTROLS_KEY = 'stykNowdz.modeler.hideControls';
   const controlsHidden = () => { try { return localStorage.getItem(CONTROLS_KEY) === '1'; } catch { return false; } };
@@ -1295,6 +1351,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (typing(e)) { if (e.key === 'Escape') e.target.blur(); e.stopPropagation(); return; }
     // The controls card takes the keyboard while it is open: Esc closes it, Tab and Enter work its buttons.
     if (controls) { if (e.key === 'Escape') { e.preventDefault(); closeControls(); } e.stopPropagation(); return; }
+    if (confirmBox) {
+      if (e.key === 'Escape') { e.preventDefault(); closeConfirm(); }
+      else if (e.key === 'Enter') { e.preventDefault(); (confirmBox.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON' ? document.activeElement : confirmBox.querySelector('.modeler-primary'))?.click(); }
+      e.stopPropagation(); return;
+    }
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key, ctrl = e.ctrlKey || e.metaKey;
     let handled = true;
     if (S.modal && TRANSFORMS.includes(S.modal.kind) && ['x', 'y', 'z'].includes(key) && !ctrl) setAxis(key.toUpperCase());
@@ -1345,14 +1406,19 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   window.addEventListener('resize', draw, {signal});
 
   // ---------- lifecycle ----------
-  function close() { listeners.abort(); cancelAnimationFrame(frameRequest); clearTimeout(flashTimer); root.remove(); onClose?.(); }
+  function close() {
+    listeners.abort(); cancelAnimationFrame(frameRequest); clearTimeout(flashTimer); root.remove();
+    const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model)) && (model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0);
+    onClose?.(changed ? {model: structuredClone(model), camera: structuredClone(S.camera)} : null);
+  }
   function done() {
     if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t("modeler.addAPartFirst")); return; }
-    try { onDone?.(structuredClone(model)); close(); }
+    try { onDone?.(structuredClone(model)); finished = true; close(); }
     catch (error) { toast(error.modelerMessage ? error.message : (error.message || t("modeler.couldNotAdd"))); }
   }
   syncRefs();
   if (!model.parts.length) S.camera = defaultCamera();
+  if (draft?.camera) S.camera = {...S.camera, ...draft.camera};
   refresh();
   canvas.focus();
   if (!controlsHidden()) showControls();
