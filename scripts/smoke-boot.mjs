@@ -46,7 +46,7 @@ try {
     updates: (await window.stykDesktop.getUpdateState()).status,
     title: document.title,
   }));
-  expect('The window opens on the editor', /StykAnimate/.test(facts.title), facts.title);
+  expect('The window opens on the editor', /StykNowdz/.test(facts.title), facts.title);
   expect('The desktop bridge is present and Node is not exposed to the page', facts.desktop && !facts.nodeExposed);
   expect('The bridge reports this platform', facts.platform === process.platform, facts.platform);
   expect('The renderer started', ['WebGPU', 'Canvas 2D fallback'].includes(facts.renderer), facts.renderer);

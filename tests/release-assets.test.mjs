@@ -20,9 +20,11 @@ test('release verification rejects wrong versions, corrupt installers and incomp
     await assert.rejects(verifyReleaseAssets(directory, '0.5.0', 'win32'));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
-test('public update feed contains no private repository or credentials', async () => {
+test('StykNowdz builds have no update feed: automatic updates are off and nothing private is published', async () => {
   const config = JSON.parse(await readFile('package.json', 'utf8'));
-  assert.deepEqual(config.build.publish, [{ provider: 'github', owner: 'filippocalippo', repo: 'styk-animate-releases', private: false, releaseType: 'draft' }]);
+  // StykNowdz releases are published by the Build Windows app workflow, not by
+  // electron-builder, so the packaged app carries no update feed at all.
+  assert.ok(config.build.publish === undefined || config.build.publish === null || (Array.isArray(config.build.publish) && !config.build.publish.length), JSON.stringify(config.build.publish));
   const notes = JSON.parse(await readFile('desktop/release-info.json', 'utf8'));
   assert.equal(notes.version, config.version);
   const { DONATE_URL } = await import('../src/support-ui.mjs');
