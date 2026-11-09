@@ -1,14 +1,22 @@
 # Build the StykNowdz Windows app (Setup installer and Portable exe) on GitHub.
-# - Pushing a version tag (v1.6.2) builds it and publishes a GitHub Release with
-#   both exe files and that version's notes from CHANGELOG.md (release-notes.md).
-# - Running it from the Actions tab (Build Windows app → Run workflow) only
-#   builds: download "StykNowdz-windows" from the run's Artifacts.
+# - Actions tab → Build Windows app → Run workflow: builds it and, with
+#   "Publish a GitHub Release" ticked (the default), publishes release
+#   v<package.json version> with both exe files and that version's notes from
+#   CHANGELOG.md (release-notes.md). Untick it to only build: download
+#   "StykNowdz-windows" from the run's Artifacts.
+# - Pushing a version tag (v1.6.2) does the same build and release.
+# Publishing again for the same version replaces its exe files and notes.
 # The exe files are not code-signed, so Windows SmartScreen warns on first run.
 # (desktop-release.yml is StykAnimate's own signed release workflow; StykNowdz
 # doesn't have its signing keys and doesn't use it.)
 name: Build Windows app
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub Release for this version
+        type: boolean
+        default: true
   push:
     tags: ['v*']
 permissions:
@@ -70,14 +78,16 @@ jobs:
           retention-days: 30
           if-no-files-found: error
       - name: Publish the GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=${GITHUB_REF_NAME#v}
-          title="StykNowdz ${version}"
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" release/${version}/*.exe --clobber
+          version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
+          tag="v${version}" title="StykNowdz ${version}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" release/${version}/*.exe --clobber
+            gh release edit "${tag}" --title "${title}" --notes-file release-notes.md
           else
-            gh release create "${GITHUB_REF_NAME}" release/${version}/*.exe --title "${title}" --notes-file release-notes.md --latest
+            gh release create "${tag}" release/${version}/*.exe --target "${GITHUB_SHA}" --title "${title}" --notes-file release-notes.md --latest
           fi
+          echo "Published ${title}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"
