@@ -1,7 +1,7 @@
 /** 3D Nowdz viewport: orbit camera, projection and drawing on a 2D
  * canvas. Faces are lit from the camera and painted back to front; overlays
  * (grid, cage, bones, gizmos) draw on top. No app state lives here. */
-import {sub, dot, cross, normalize, add, scale, length} from './mesh.mjs';
+import {sub, dot, cross, normalize, add, scale, length, isOpenMesh} from './mesh.mjs';
 import {about, rotationAxis, transformPoint} from './matrix.mjs';
 import {toonLight, toonThreshold, shadowColor} from '../toon-shading.mjs';
 
@@ -155,6 +155,8 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     const {mesh} = item, projected = mesh.verts.map(frame.project);
     // Toon shadows use smooth vertex normals, as the stage does.
     const smooth = toonDir ? vertexNormalsOf(mesh) : null;
+    // Both sides of an open mesh show, as in Blender (a closed mesh hides its far side anyway).
+    const twoSided = item.twoSided ?? openOf(mesh);
     mesh.faces.forEach((face, fi) => {
       const pts = face.v.map(i => projected[i]);
       if (pts.some(p => !p.ok)) return;
@@ -163,7 +165,7 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
       for (let i = 0; i < face.v.length; i++) { const a = mesh.verts[face.v[i]], b = mesh.verts[face.v[(i + 1) % face.v.length]]; n = add(n, cross(a, b)); }
       n = normalize(n);
       const facing = dot(n, frame.toEye(p0));
-      if (!xray && facing <= 0) return;
+      if (!xray && facing <= 0 && !twoSided) return;
       const z = pts.reduce((s, p) => s + p.z, 0) / pts.length;
       polys.push({pts, z, n, facing, face, fi, item, side: smooth ? face.v.map(i => dot(smooth[i], toonDir) - cut) : null});
     });
@@ -190,6 +192,18 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     ctx.globalAlpha = 1;
   }
   return polys;
+}
+
+// Open or closed is worked out again only when the mesh's faces change (edits
+// mostly swap in a new face list or change its size; moving points keeps both).
+const openMeshes = new WeakMap();
+export function openOf(mesh) {
+  let corners = 0; for (const f of mesh.faces) corners += f.v.length;
+  const hit = openMeshes.get(mesh.faces);
+  if (hit && hit.corners === corners && hit.verts === mesh.verts.length && hit.count === mesh.faces.length) return hit.open;
+  const open = isOpenMesh(mesh);
+  openMeshes.set(mesh.faces, {corners, verts: mesh.verts.length, count: mesh.faces.length, open});
+  return open;
 }
 
 /** Blue (0) → green → red (1), as in weight painting. */

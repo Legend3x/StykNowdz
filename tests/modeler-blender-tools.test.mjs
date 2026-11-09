@@ -91,6 +91,15 @@ test('knife cuts along the clicked points across faces', () => {
   assert.throws(() => M.knife(grid(1), [{v: 0}], project), /two points/);
 });
 
+test('open meshes are drawn and edited from both sides, as in Blender', () => {
+  assert.equal(M.isOpenMesh(cube()), false);
+  assert.equal(M.isOpenMesh(uvSphere(.5, 8, 6)), false);
+  // A traced eye ring extruded into a band is open: its far half must not vanish.
+  const n = 8, ring = {verts: Array.from({length: n}, (_, i) => [Math.cos(i / n * 2 * Math.PI), Math.sin(i / n * 2 * Math.PI) * .4, 0]), faces: [], edges: Array.from({length: n}, (_, i) => [i, (i + 1) % n])};
+  M.extrudeEdges(ring, M.edgesFromVerts(ring, new Set(ring.verts.keys())));
+  assert.equal(M.isOpenMesh(ring), true);
+});
+
 test('random runs of the Blender tools never leave a broken mesh', () => {
   quiet3(() => {
     for (let seedN = 1; seedN <= 8; seedN++) {

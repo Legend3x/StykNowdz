@@ -8,7 +8,7 @@ import {PRIMITIVES, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
 import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, autoWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
-import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS} from './viewport.mjs';
+import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import * as X from './matrix.mjs';
 import {TopologyError, assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings, OUTLINE_DEFAULTS, OUTLINE_MAX} from './toon.mjs';
@@ -359,7 +359,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       items.push({mesh, palette: model.palette, partId: p.id, weights, flat: p.shadows === false});
       // The outline shell (not pickable), in the toon preview.
       const hull = S.toonPreview && !weights ? hullOf(p) : null;
-      if (hull) items.push({mesh: hull, palette: model.palette, partId: p.id, hull: true, flat: true});
+      if (hull) items.push({mesh: hull, palette: model.palette, partId: p.id, hull: true, flat: true, twoSided: false});
     }
     const look = toonSettings(model);
     const toon = S.toonPreview && !showWeights ? {shadows: look.shadows, turn: look.turn, height: look.height, size: look.size, strength: look.strength} : null;
@@ -399,7 +399,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const p = activePart(); if (!p) return null;
     const transform = M.objectTransform(p), world = p.mesh.verts.map(transform), pts = world.map(frame.project);
     const visible = new Array(world.length).fill(S.xray);
+    // An open mesh (a traced band, half a face) shows and edits from both sides, as in Blender.
+    const twoSided = openOf(p.mesh);
     const front = p.mesh.faces.map(f => {
+      if (twoSided) return true;
       let n = [0, 0, 0];
       for (let i = 0; i < f.v.length; i++) n = M.add(n, M.cross(world[f.v[i]], world[f.v[(i + 1) % f.v.length]]));
       const det = M.objectMirrors(p) ? -1 : 1;

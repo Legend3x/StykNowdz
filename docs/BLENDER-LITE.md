@@ -149,6 +149,16 @@ pointer. X, Y or Z locks to an axis (again to unlock), Ctrl snaps (0.05 units,
 15°, tenths), click or Enter finishes, right-click or Esc cancels. Extrude moves
 the new faces along their normal; when that points at you, drag up to push it out.
 
+### Both sides of open meshes
+
+Blender draws both sides of every face. The viewport here sorts faces back to
+front instead of using a depth buffer, so a closed mesh still skips its far
+side (it's hidden anyway), but an open one (a traced band, half a face, a
+plane) is drawn and edited from both sides (`isOpenMesh`, `openOf` in
+viewport.mjs, cached per face list). Before, a band folded over itself, such
+as an eye ring extruded and moved sideways, lost the half that faced away,
+along with its edges and points. Toon outline shells stay one-sided.
+
 ### Blender's modeling tools
 
 Ported from Blender's own source (GPL-2.0-or-later, compatible with this

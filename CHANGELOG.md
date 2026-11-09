@@ -22,6 +22,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 - Fixed being unable to leave the Model tab without closing the app.
 - Fixed traced points looking greyed out and not editable after coming back to the Model tab.
+- Fixed half of an extruded eye ring or other open surface disappearing in 3D Nowdz: both sides now show and can be edited, as in Blender.
 - Fixed Close and Add to animation being hidden off the edge of the 3D Nowdz bar on smaller windows.
 - Fixed Symmetrize mirroring around the part instead of the middle of the model.
 - Fixed the walls of an extruded eye ring disappearing while you dragged them.

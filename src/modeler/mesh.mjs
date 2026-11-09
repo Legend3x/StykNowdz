@@ -117,6 +117,16 @@ export function centroid(mesh, verts) {
 }
 
 /** Edge key → indices of the faces using it. */
+/** Whether the mesh has open edges (a sheet, a band or a hole). Blender draws both
+ * sides of every face; closed meshes can skip the far side, open ones can't. */
+export function isOpenMesh(mesh) {
+  // Runs every frame: number keys, no strings.
+  const n = mesh.verts.length + 1, half = new Set();
+  for (const f of mesh.faces) for (let i = 0; i < f.v.length; i++) half.add(f.v[i] * n + f.v[(i + 1) % f.v.length]);
+  for (const f of mesh.faces) for (let i = 0; i < f.v.length; i++) if (!half.has(f.v[(i + 1) % f.v.length] * n + f.v[i])) return true;
+  return false;
+}
+
 export function edgeFaces(mesh) {
   const map = new Map();
   mesh.faces.forEach((f, fi) => f.v.forEach((a, i) => {
