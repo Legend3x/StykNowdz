@@ -9,7 +9,7 @@ const appRoot = fileURLToPath(new URL('..', import.meta.url)), output = path.joi
 await mkdir(output, {recursive: true}); const server = await backend.startBackend({appRoot}); let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true}); const page = await browser.newPage({viewport: {width: 1440, height: 1000}}), errors = [];
-  page.on('pageerror', error => errors.push(error.message)); await page.goto(server.origin); await page.waitForFunction(() => styk?.ready);
+  page.on('pageerror', error => errors.push(error.message)); await page.goto(server.origin); await page.waitForFunction(() => globalThis.styk?.ready);
   await page.evaluate(async () => {
     const {emptyDocument, createObject, createFrame} = await import('/src/demo.mjs'), report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];
     report.canvas_width = 400; report.canvas_height = 280;

@@ -18,7 +18,7 @@ try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage({viewport: {width: 1400, height: 900}});
   page.on('pageerror', error => errors.push(error.stack || error.message));
-  await page.goto(backend.origin); await page.waitForFunction(() => styk?.ready);
+  await page.goto(backend.origin); await page.waitForFunction(() => globalThis.styk?.ready);
   await page.evaluate(async () => {
     const {PlaybackCache} = await import('/src/playback.mjs'), original = PlaybackCache.prototype.prepareRange;
     PlaybackCache.prototype.prepareRange = function(...args) { globalThis.reviewPlayback = this; return original.apply(this, args); };

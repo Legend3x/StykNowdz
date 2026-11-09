@@ -6,7 +6,7 @@ const browser = await chromium.launch({channel: 'chrome', headless: true});
 try {
   const page = await browser.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47831'); await page.waitForFunction(() => styk?.ready);
+  await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47831'); await page.waitForFunction(() => globalThis.styk?.ready);
   const result = await page.evaluate(async () => {
     const {createRenderer} = await import('/src/renderer.mjs'), {buildGeometry} = await import('/src/pivot/geometry.mjs');
     const {defaultFigure, createObject, createFrame} = await import('/src/demo.mjs');

@@ -63,7 +63,7 @@ try {
     }, blobs);
   }
   const values = () => page.evaluate(() => Object.fromEntries(styk.editor.evaluatedFrame.objects.map(object => [object.unique_id, {x: object.root_x, y: object.root_y, angles: object.angles}])));
-  await page.goto(backend.origin); await page.waitForFunction(() => styk?.ready);
+  await page.goto(backend.origin); await page.waitForFunction(() => globalThis.styk?.ready);
   await openProject(sourcePath); await page.waitForFunction(() => styk.editor.report.keyframes.length === 3 && styk.editor.report.keyframes[0].objects[0].root_x === 120);
   check('Actual app starts a WebGPU scene and the layer exposure sheet', await page.evaluate(() => styk.state.renderer.stats.backend === 'WebGPU' && Boolean(styk.editor.report._styk?.layerSheet) && styk.timeline.tracks.some(track => track.kind === 'scene')));
   await page.locator('#timeline .sheet-zoom').focus(); await page.keyboard.press('Home'); await settle();

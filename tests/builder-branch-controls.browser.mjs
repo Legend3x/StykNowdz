@@ -11,7 +11,7 @@ const checks = [], errors = [], branchIds = [10, 20, 30, 40, 50, 60, 80];
 const near = (a, b) => assert.ok(Math.abs(a - b) < .0002, `${a} != ${b}`);
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true}); page = await browser.newPage({viewport: {width: 1480, height: 1120}});
-  page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message)); await page.goto(server.origin); await page.waitForFunction(() => styk?.ready);
+  page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message)); await page.goto(server.origin); await page.waitForFunction(() => globalThis.styk?.ready);
   await page.evaluate(async () => {
     const {emptyDocument, createFrame, createObject} = await import('/src/demo.mjs'), {createImageFigure} = await import('/src/media-authoring.mjs');
     const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0], kinds = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'];

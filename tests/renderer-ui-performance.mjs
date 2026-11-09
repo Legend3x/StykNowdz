@@ -19,7 +19,7 @@ try {
   // timing; closing the welcome dialog can schedule the consent dialog later.
   await page.evaluate(()=>stykDesktop.setTelemetryConsent({analytics:false,diagnostics:false}));
   await page.reload();
-  await page.waitForFunction(()=>styk?.ready);
+  await page.waitForFunction(()=>globalThis.styk?.ready);
   await page.evaluate(()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();});
   const target = await page.evaluate(async fps => {
     const { defaultFigure, createObject, createFrame, emptyDocument } = await import('/src/demo.mjs');

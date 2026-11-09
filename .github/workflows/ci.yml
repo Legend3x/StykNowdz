@@ -94,7 +94,7 @@ jobs:
         run: |
           xvfb-run -a npm run test:boot:packaged
           version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
-          STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/StykAnimate-$version-linux-x86_64.AppImage" xvfb-run -a npm run test:boot:packaged
+          STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/StykNowdz-$version-linux-x86_64.AppImage" xvfb-run -a npm run test:boot:packaged
       - name: Export video with the bundled encoder
         run: xvfb-run -a npm run test:export:packaged
       - name: Verify Linux updates and save before restart

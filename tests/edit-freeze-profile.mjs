@@ -66,7 +66,7 @@ async function phase(name, action, settle = 180) {
   console.log(JSON.stringify({phase:name,wallMs:summary.wallMs,raf:summary.raf,longTasks:summary.longTasks,slowCalls:summary.calls.filter(c=>c.ms>=20).map(c=>({name:c.name,ms:c.ms})),top:summary.cpu.self.slice(0,5)}));
 }
 try {
-  await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47831'); await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47831'); await page.waitForFunction(()=>globalThis.styk?.ready);
   await page.evaluate(()=>styk.editor.markSaved()); await page.locator('#file-input').setInputFiles(source);
   await page.waitForFunction(name=>styk.editor.name===name&&!styk.state.importing,name,{timeout:180000});
   await page.waitForTimeout(1000);

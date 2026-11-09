@@ -7,7 +7,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true}),page=await
 page.on('pageerror',e=>errors.push(e.message));
 if(process.env.STYK_BASELINE)await page.route('**/src/renderer.mjs',route=>route.fulfill({contentType:'text/javascript',body:execFileSync('git',['show',`${process.env.STYK_BASELINE_REF||'HEAD'}:src/renderer.mjs`],{encoding:'utf8'})}));
 try{
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>styk?.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>globalThis.styk?.ready);
   const result=await page.evaluate(async()=>{
     const {createRenderer}=await import('/src/renderer.mjs'),{createDrawingFigure,drawingPixelMatrix}=await import('/src/drawing-model.mjs');
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs');

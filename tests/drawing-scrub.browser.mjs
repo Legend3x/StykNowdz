@@ -31,7 +31,7 @@ async function visible(name,color){
  check(name+' '+JSON.stringify(found),color?found[color]>500&&found[color==='red'?'blue':'red']<10:found.red<10&&found.blue<10);
 }
 try{
- await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
+ await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>globalThis.styk?.ready);
  await page.evaluate(async()=>{
   styk.settingsUI.commit({autosaveSeconds:0,onionCount:0});
   const {Editor}=await import('/src/editor.mjs'),{emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{movieclipFigure}=await import('/src/movieclips.mjs');
