@@ -30,7 +30,6 @@ const { TelemetryService } = require('./telemetry.cjs');
 const { UpdateService, updateAvailabilityDetails } = require('./updates.cjs');
 const serviceConfig = require('./service-config.json');
 const releaseInfo = require('./release-info.json');
-const getReleaseHistory = require('./release-history.cjs').createReleaseHistory();
 let telemetryBuild = {};
 try { telemetryBuild = require('./telemetry-build.json'); } catch { /* Unpackaged/older source has unknown build metadata. */ }
 const { RELEASES_URL, DONATE_URL } = require('./release-links.cjs');
@@ -95,7 +94,7 @@ let pendingFiles = process.argv.slice(app.isPackaged ? 1 : 2).filter((arg) => /\
 // Vulkan WebGPU opt-in to reach the GPU; see gpu-switches.cjs.
 applyGpuSwitches(app.commandLine);
 
-app.setName('StykAnimate');
+app.setName('StykNowdz');
 const profileDirectory = process.env.STYK_USER_DATA_DIR || (!app.isPackaged ? path.join(APP_ROOT, '.desktop-data') : null);
 if (profileDirectory) {
   mkdirSync(profileDirectory, { recursive: true });
@@ -267,7 +266,8 @@ function registerIpc() {
   handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
   handle('styk:update-releases', event => { trusted(event); return shell.openExternal(RELEASES_URL); });
   handle('styk:donate', event => { trusted(event); return shell.openExternal(DONATE_URL); });
-  handle('styk:release-history', event => { trusted(event); return getReleaseHistory(); });
+  // StykNowdz's own release history, generated from CHANGELOG.md (not StykAnimate's website).
+  handle('styk:release-history', event => { trusted(event); return require('./release-history.json').releases; });
   handle('styk:release-info', (event, startup = false) => {
     trusted(event);
     if (startup && startupShown) return null;
@@ -325,7 +325,7 @@ function registerIpc() {
   handle('styk:telemetry-delete', withTelemetry(() => telemetry.deleteData()));
   handle('styk:telemetry-feedback', withTelemetry(value => telemetry.feedback(value)));
   handle('styk:telemetry-export', withTelemetry(async () => {
-    const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveOptionalTelemetryReport'), defaultPath: 'StykAnimate-telemetry.json', filters: [{ name: t('desktop.main.jsonReport'), extensions: ['json'] }] });
+    const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveOptionalTelemetryReport'), defaultPath: 'StykNowdz-telemetry.json', filters: [{ name: t('desktop.main.jsonReport'), extensions: ['json'] }] });
     if (result.canceled || !result.filePath) return { saved: false };
     await fs.writeFile(result.filePath, JSON.stringify(telemetry.preview(), null, 2), 'utf8'); return { saved: true };
   }));
@@ -344,7 +344,7 @@ function registerIpc() {
       await contentTracing.startRecording({ included_categories: ['v8.execute', 'disabled-by-default-v8.cpu_profiler', 'devtools.timeline'], recording_mode: 'record-until-full', trace_buffer_size_in_kb: 16384 });
       await new Promise(resolve => setTimeout(resolve, !app.isPackaged && process.env.STYK_TRACE_TEST === '1' ? 2000 : 30000));
       temporary = await contentTracing.stopRecording();
-      const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveLocalPerformanceTraceReviewBeforeSharing'), defaultPath: 'StykAnimate-performance-trace.json', filters: [{ name: t('desktop.main.chromePerfettoTrace'), extensions: ['json'] }] });
+      const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveLocalPerformanceTraceReviewBeforeSharing'), defaultPath: 'StykNowdz-performance-trace.json', filters: [{ name: t('desktop.main.chromePerfettoTrace'), extensions: ['json'] }] });
       if (result.canceled || !result.filePath) return { saved: false };
       await fs.copyFile(temporary, result.filePath); return { saved: true };
     } finally { traceRunning = false; if (temporary) await fs.unlink(temporary).catch(() => {}); }
@@ -737,7 +737,7 @@ function registerIpc() {
     documentState = { name, dirty, revision: String(state?.revision || '').slice(0, 160), unsaved,
       unsavedName: String(state?.unsavedName || name).slice(0, 180) };
     // The title names the project in front; its dot is that project's own.
-    window.setTitle(`${(state?.activeDirty ?? dirty) ? '• ' : ''}${name} — StykAnimate`);
+    window.setTitle(`${(state?.activeDirty ?? dirty) ? '• ' : ''}${name} — StykNowdz`);
     window.setDocumentEdited(dirty);
   });
 }
@@ -758,7 +758,7 @@ async function createWindow() {
   window = new BrowserWindow({
     width: 1560, height: 1000, minWidth: 1000, minHeight: 680,
     backgroundColor: '#0a0b0f', show: false,
-    title: 'StykAnimate',
+    title: 'StykNowdz',
     icon: path.join(__dirname, 'assets', 'stykanimate.png'),
     frame: process.platform === 'darwin',
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 16 } } : {}),
@@ -879,7 +879,7 @@ async function start() {
       telemetry.record({ epoch: telemetry.epoch, data: { gauges: { process_cpu_percent: metrics.reduce((sum, item) => sum + (item.cpu?.percentCPUUsage || 0), 0) } } });
     }
   }, 60000); memoryTimer.unref();
-  library = new LibraryStore(process.env.STYK_LIBRARY_DIR || path.join(app.getPath('documents'), 'StykAnimate', 'library'));
+  library = new LibraryStore(process.env.STYK_LIBRARY_DIR || path.join(app.getPath('documents'), 'StykNowdz', 'library'));
   // A temporarily unavailable Documents volume should not prevent animation work.
   void library.init().catch(error => console.warn('Library initialization:', error.message));
   backend = await startDesktopHost({

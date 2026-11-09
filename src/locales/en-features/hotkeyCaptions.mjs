@@ -103,10 +103,10 @@ export default {
   "colorPicker.paletteFull": "“{name}” is full",
   "colorPicker.swatchHint": "{color} · Drag to reorder · Right-click to remove",
   "updateUi.installedVersion": "Installed version {version}",
-  "updateUi.downloadingVersion": "Downloading StykAnimate {version}",
+  "updateUi.downloadingVersion": "Downloading StykNowdz {version}",
   "updateUi.downloadingProgress": "{percent}% · You can keep working.",
   "updateUi.downloadingProgressWithSize": "{percent}% · {transferred} of {total} MB · You can keep working.",
-  "updateUi.versionReady": "StykAnimate {version} is ready",
+  "updateUi.versionReady": "StykNowdz {version} is ready",
   "assetLibrary.figureNumber": "Figure {id}",
   "exportSheet.soundCount": {
     "one": "{count} sound",

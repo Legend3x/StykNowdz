@@ -6,7 +6,8 @@ import {errorText, presentError} from './error-presentation.mjs';
 import {t as interfaceText} from './localization.mjs';
 
 import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGizmo,spatialControlMode} from './spatial-controls.mjs';
-import {rigDetailsShown} from './rig-control-details.mjs';
+import {rigDetailsShown,rigFaceShownUids} from './rig-control-details.mjs';
+import {drawFaceBadges,pickFaceBadge,toggleFaceControls} from './face-badges.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
@@ -1514,6 +1515,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     editor.selectedJoint,
     spatialControlMode(editor),
     rigDetailsShown(editor),
+    [...rigFaceShownUids(editor)].join(','),
     settings.showUnselectedHandles,
     settings.handleSize,
     settings.autoSizeHandles,
@@ -1535,6 +1537,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
       locked.add(object.unique_id);
   const handles = getPivotHandles(geometry, {
     showDetailed: rigDetailsShown(editor),
+    faceShownUids: rigFaceShownUids(editor),
     spatialMode: builderMode?.active || !['select','pose'].includes(state.tool) ? 'pose' : spatialControlMode(editor),
     descriptorCache: selectStatic ? selectionHandleDescriptors : handleDescriptors,
     selectStatic,
@@ -1759,6 +1762,7 @@ function overlayRender(geometry) {
   if (state.handles) drawConnectorGuides(ctx,geometry,editor,screenPoint);
   if (state.handles && builderMode?.active) drawRigGuides(ctx,geometry,editor,screenPoint);
   if(state.handles&&!builderMode?.active)drawSpatialGizmo(ctx,editor,screenPoint);
+  if(state.handles&&!builderMode?.active)drawFaceBadges(ctx,editor,screenPoint,{hidden:effectiveHidden()});
   if(builderMode?.active) {
     const g=editor.geometry.objects.get(editor.selectedSlot);
     if(editor.selectedPolygonIndex>=0)drawFillHighlight(ctx,g?.polys.find(p=>p.index===editor.selectedPolygonIndex)?.points,screenPoint);
@@ -2566,6 +2570,9 @@ overlay.addEventListener(
       }
     }
     if(e.button===0&&state.handles&&!builderMode?.active&&['select','pose'].includes(state.tool)){
+      // The face badge on a head opens or closes that figure's face controls.
+      const badge=pickFaceBadge(editor,screenPoint(p),screenPoint,{hidden:effectiveHidden()});
+      if(badge){releaseCanvasPointer();toggleFaceControls(editor,badge.uid);handleCache=null;requestRender();return;}
       const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
       if(spatial){if(!editor.beginDrag('Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
     }
@@ -4004,7 +4011,7 @@ async function performNativeSave({saveAs}) {
               documentToken,
               saveAs,
               defaultPath: `${name || "Untitled"}.styk`,
-              filters: [{ name: "StykAnimate project", extensions: ["styk"] }],
+              filters: [{ name: "StykNowdz project", extensions: ["styk"] }],
             });
         if (desktop) return exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal);
         if (sink.streamed) {
@@ -4507,6 +4514,11 @@ overlay.addEventListener(
       messageTuple(["mirror-vertical", "flip-vertical", interfaceText("app.flipVertically"), "Shift V"], {2: {key: "app.flipVertically", params: {}}}),
       joinMenuItem(),
       ...(joint ? [messageTuple(["disconnect-segment", "cut", interfaceText("app.disconnectSegment"), "", !canDisconnectSegment()], {2: {key: "app.disconnectSegment", params: {}}})] : []),
+      ...(selection().size === 1 && !editor.figure?._styk?.movieclip ? [isFigure3D()
+        ? messageTuple(["make-free-3d-joint", "depth", interfaceText("app.makeFree3DJoint"), "", !canMakeFree3DJoint()], {2: {key: "app.makeFree3DJoint", params: {}}})
+        : messageTuple(["make-3d", "depth", interfaceText("app.make3D"), "", !canMakeFigure3D()], {2: {key: "app.make3D", params: {}}})] : []),
+      ...(selection().size === 1 && modelSourceOf(editor.figure) ? [messageTuple(["model-edit", "depth", interfaceText("modeler.editModel"), "", !canEditModel()], {2: {key: "modeler.editModel", params: {}}})] : []),
+      ...(selection().size >= 1 && !isFigure3D() && isInJoinedGroup() ? [messageTuple(["make-group-3d", "depth", interfaceText("app.makeGroup3D"), "", !canMakeGroup3D()], {2: {key: "app.makeGroup3D", params: {}}})] : []),
       messageTuple(["camera-follow", "camera", interfaceText("app.followWithCamera"), "", Boolean(builderMode?.active)], {2: {key: "app.followWithCamera", params: {}}}),
       ...(joint ? [messageTuple(["segment-values", "sliders", interfaceText("app.exactValues"), "I"], {2: {key: "app.exactValues", params: {}}})] : []),
       messageTuple(["selection-more", "more", interfaceText("app.moreFigureActions")], {2: {key: "app.moreFigureActions", params: {}}}),
@@ -4574,6 +4586,100 @@ function disconnectSegment() {
   pause(); finishCurrentEdit();
   editor.disconnectSegment();
   status({messageKey: "app.segmentDisconnected", messageParams: {}});
+}
+/** Blender lite (docs/BLENDER-LITE.md): the 3D modeler. New models are imported as a
+ * figure; a figure made in it reopens with its model and updates in place. */
+function modelSourceOf(figure) { return figure?._styk?.modelSource ?? null; }
+function canEditModel() { return !builderMode?.active && Boolean(modelSourceOf(editor.figure)) && !isLocked(editor.selectedUid); }
+let modelerOpen = false, modelerApi = null;
+/** The Model tab: Blender lite on the selected 3D model, or a new model. Pressing it again keeps it open. */
+function openModelWorkspace() {
+  if (modelerOpen) return;
+  if (builderMode?.active) { toast(interfaceText("modeler.finishBuildFirst"), "modeler.finishBuildFirst", {}); return; }
+  openBlenderLite(canEditModel());
+}
+// While Blender lite is open, Animate, Draw and Build close it first (asking when there are changes), then switch.
+document.addEventListener("click", (e) => {
+  const button = modelerOpen && e.target.closest?.(".workspace-switch [data-workspace-mode]");
+  if (!button || !modelerApi) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  modelerApi.requestClose(() => button.click());
+}, true);
+async function openBlenderLite(editing = false) {
+  if (modelerOpen || builderMode?.active) return;
+  if (editing && !canEditModel()) { toast(interfaceText("modeler.notAModel"), "modeler.notAModel", {}); return; }
+  pause(); finishCurrentEdit();
+  modelerOpen = true;
+  let modules;
+  try { modules = await Promise.all([import("./modeler/modeler-ui.mjs"), import("./modeler/export-figure.mjs")]); }
+  catch (error) { modelerOpen = false; fail(error); return; }
+  const [{openModeler}, {modelToFigure, modelDocument}] = modules;
+  const typeId = editing ? editor.figure.figure_type_id : null;
+  state.modeling = true; document.body.dataset.modeling = "";
+  // Docked under the band, so the workspace tabs stay in reach.
+  const band = document.querySelector(".shell-top"), top = band && !band.hidden ? Math.round(band.getBoundingClientRect().bottom) : 0;
+  modelerApi = openModeler({
+    model: editing ? modelSourceOf(editor.figure) : null, editing, top,
+    onClose: () => { modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling; syncShell(); requestRender(); },
+    onDone: (model) => {
+      if (editing) {
+        const previous = editor.report.figure_types.find((f) => f.figure_type_id === typeId);
+        const {figure} = modelToFigure(model, {figureTypeId: typeId, previous});
+        editor.replaceFigureDefinition(typeId, figure, {label: "Edit 3D model"});
+        notify(interfaceText("modeler.modelUpdated", {name: figure.name}), "modeler.modelUpdated", {name: figure.name});
+      } else {
+        const {document: incoming, stats} = modelDocument(model);
+        editor.importFigure(incoming);
+        const params = {name: incoming.figure_types[0].name, bones: stats.bones, triangles: stats.triangles};
+        notify(interfaceText("modeler.modelAdded", params), "modeler.modelAdded", params);
+      }
+      requestRender();
+    },
+  });
+  syncShell(); requestRender();
+}
+/** Make 3D converts the selected figure's definition into a 3D rig (docs/PSEUDO-3D-PLAN.md). */
+function isFigure3D() { return Boolean(editor.figure?.segments.some(s => s._stykRig?.spatial)); }
+function canMakeFigure3D() {
+  return !builderMode?.active && Boolean(editor.object) && !isHidden(editor.selectedUid) && !isLocked(editor.selectedUid) && editor.canMakeFigure3D();
+}
+function canMakeFree3DJoint() {
+  return !builderMode?.active && Boolean(editor.object) && !isHidden(editor.selectedUid) && !isLocked(editor.selectedUid) && editor.canMakeFree3DJoint();
+}
+function isInJoinedGroup() {
+  const frame = editor.frame, object = editor.object;
+  return Boolean(object && (object.join || frame?.objects.some(o => o.join?.target_unique_id === object.unique_id)));
+}
+function canMakeGroup3D() {
+  return !builderMode?.active && Boolean(editor.object) && !isHidden(editor.selectedUid) && editor.canMakeGroup3D();
+}
+/** Asks for an optional side-view frame (a turnaround), then makes the whole joined group 3D. */
+async function makeGroup3D() {
+  if (builderMode?.active || isHidden(editor.selectedUid)) return;
+  const count = editor.report.keyframes.length;
+  const text = await promptText({overlays, t: kitT, title: interfaceText("app.makeGroup3DTitle"), titleKey: "app.makeGroup3DTitle",
+    label: interfaceText("app.sideViewFrameOptional"), labelKey: "app.sideViewFrameOptional",
+    placeholder: interfaceText("app.sideViewFramePlaceholder"), placeholderKey: "app.sideViewFramePlaceholder",
+    validate: value => { const v = value.trim(); return !v || (/^\d+$/.test(v) && +v >= 1 && +v <= count) ? null : interfaceText("errors.spatialConvert.enterAFrameNumberFrom1ToCount", {count}); }});
+  if (text === null) return;
+  pause(); finishCurrentEdit();
+  const side = text.trim() ? Number(text.trim()) - 1 : null;
+  let result;
+  try { result = editor.makeGroup3D({sideFrame: side}); } catch (error) { fail(error); return; }
+  status(side === null ? {messageKey: "app.groupMade3D", messageParams: {count: result.pieces}}
+    : {messageKey: "app.groupMade3DFromSideView", messageParams: {count: result.pieces, matched: result.matched}});
+}
+function makeFigure3D() {
+  if (builderMode?.active || isHidden(editor.selectedUid)) return;
+  pause(); finishCurrentEdit();
+  const result = editor.makeFigure3D();
+  status({messageKey: result.ikRemoved ? "app.figureMade3DIkOff" : "app.figureMade3D", messageParams: {}});
+}
+function makeFree3DJoint() {
+  if (builderMode?.active || isHidden(editor.selectedUid)) return;
+  pause(); finishCurrentEdit();
+  editor.makeFree3DJoint();
+  status({messageKey: "app.jointMadeFree3D", messageParams: {}});
 }
 function toggleFigureJoin() {
   if (state.figureJoin) {setTool('select'); return;}
@@ -4758,6 +4864,12 @@ const actions = {
   "attach-figure": toggleFigureJoin,
   "detach-figure": () => {if (selectedFigureJoinAction()?.kind === 'unjoin') toggleFigureJoin();},
   "disconnect-segment": disconnectSegment,
+  "make-3d": makeFigure3D,
+  "model-new": () => openBlenderLite(false),
+  "model-workspace": openModelWorkspace,
+  "model-edit": () => openBlenderLite(true),
+  "make-group-3d": makeGroup3D,
+  "make-free-3d-joint": makeFree3DJoint,
   "combine-figures": () => {
     const roots = editor.resolveTranslationSelection().rootUids;
     if (roots.length !== 1)

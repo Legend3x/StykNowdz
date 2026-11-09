@@ -117,7 +117,7 @@ const TEXT = Object.freeze({
   'shortcuts.edit': 'Edit shortcuts…',
   'shortcuts.empty': 'No shortcuts match “{query}”.',
   'shortcuts.or': 'or',
-  'about.title': 'About StykAnimate',
+  'about.title': 'About StykNowdz',
   'about.version': 'Version {version}',
   'about.web': 'Web version',
   'about.tagline': 'Stick figure animation, made simple.',

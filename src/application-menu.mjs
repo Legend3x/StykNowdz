@@ -27,6 +27,8 @@ export function applicationMenuItems(name, editor, desktop) {
         messageTuple(['import-sprite', 'image', interfaceText("applicationMenu.importSpriteImage")], {2: {key: "applicationMenu.importSpriteImage", params: {}}}),
         messageTuple(['import-background', 'image', interfaceText("applicationMenu.importBackground")], {2: {key: "applicationMenu.importBackground", params: {}}}),
       ]},
+      messageTuple(['model-new', 'depth', interfaceText("modeler.newModel")], {2: {key: "modeler.newModel", params: {}}}),
+      messageTuple(['model-edit', 'depth', interfaceText("modeler.editModel"), '', !editor.figure?._styk?.modelSource], {2: {key: "modeler.editModel", params: {}}}),
       messageTuple(['export-stkz', 'person', interfaceText("applicationMenu.saveFigure"), '', noFigure], {2: {key: "applicationMenu.saveFigure", params: {}}}),
       messageTuple(['export', 'export', interfaceText("common.export")], {2: {key: "common.export", params: {}}}),
     ],

@@ -693,11 +693,16 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         renders[i] = prior;
         return prior;
       }
-      const rigPose = rig?.evaluate(i, {start,angle,length,bend}, joints);
+      const nativeBend = bend, rigPose = rig?.evaluate(i, {start,angle,length,bend}, joints);
       if (rigPose) ({start,angle,length,bend} = rigPose);
       let points,end;
       if(rigPose?.handle&&(seg._stykRig?.spatial||seg._stykRig?.weighted)){
         end={x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)};points=[start,end];
+        // Make 3D curved bones keep their native arc between the projected ends.
+        if(seg._stykRig.spatial?.curve&&Math.abs(nativeBend)>1e-7){
+          const chord=Math.hypot(end.x-start.x,end.y-start.y);
+          if(chord>1e-9){bend=nativeBend;points=arc(start,Math.atan2(end.y-start.y,end.x-start.x)-bend/2,chord/(Math.sin(bend/2)/(bend/2)),bend);points[points.length-1]=end;}
+        }
       }else if(Math.abs(bend)<1e-7&&Number.isFinite(start.x)&&Number.isFinite(start.y)&&Number.isFinite(angle)&&Number.isFinite(length)){
         // The native endpoint is rounded once. A straight segment needs no
         // intermediate unrounded point or curve-validation array.

@@ -1,14 +1,134 @@
-# StykAnimate changelog
+# StykNowdz changelog
 
-What's new in each version of StykAnimate.
+What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its earlier history is in docs/STYKANIMATE-CHANGELOG.md.
 
 <!-- Maintainers: follow the writing guide in docs/RELEASING.md before adding entries. -->
 
 ## [Unreleased]
 
+## [1.6.2]
+
+Credits for StykAnimate
+
 ### Added
 
-- StykAnimate is now open source: its code is on GitHub under the GPL-3.0 license.
+- The welcome screen now says that StykNowdz is a fork of StykAnimate by Alexio, credits his work, asks you to support him, and lists what StykNowdz adds.
+
+### Fixed
+
+- Fixed the missing space in "What's new in StykNowdz" on the welcome screen.
+
+## [1.6.1]
+
+Reference images that stay put
+
+### Added
+
+- Flip for reference images, for a side drawing that faces the other way.
+
+### Fixed
+
+- Fixed reference images in Blender lite vanishing when you orbited or switched views, which also made loading the side image look like it replaced the front one. Both now stand in the scene as in Blender: the front image behind the model and the side image off to its left, each facing you in its own view.
+
+## [1.6.0]
+
+Face rigs, edge slide and a cleaner Blender lite
+
+### Added
+
+- Face bones in Blender lite: one click adds a jaw, lips, lip corners, brows, eyelids and eyes to the head. Each pulls only the skin around it, the jaw and lower lip never drag the upper lip, eyeballs can follow their Eye bone, and Move to selection snaps a bone onto an eyeball.
+- On the stage, a figure's face joints hide behind a small face badge on its head, so the head isn't crowded. Click the badge (or Face controls in the rig panel) to show them, and again to hide them.
+- Loop cuts with several cuts at once (scroll while pointing), and a single cut slides along the edges before you place it.
+- Edge slide (G, then G again) moves points along their edges so they stay on the surface.
+- Soft select falloffs: Smooth, Sphere, Root, Inverse square, Sharp, Linear and Constant.
+- A controls card shows the main keys when Blender lite opens. Tick "Don't show this when Blender lite opens" to stop it; the keyboard button in the bar brings it back.
+
+### Changed
+
+- Blender lite now looks like the rest of StykNowdz: floating panels, pill buttons, segmented modes and the app's icons.
+- Alt+click selects a traced line or the whole open border of a shape, such as the outer edge of an eye ring.
+- While moving, rotating or scaling, G, R and S switch to the other one, and cancelling an extrude's move keeps the extruded faces, so E, right-click, S works as in Blender.
+
+## [1.5.0]
+
+Trace a face point by point
+
+### Added
+
+- Model the way anime-face tutorials do, from a single point: Add › Single point, then E pulls out the next point (or Ctrl+click puts it where you click), F joins two points with a line or fills a traced ring into a face, and Bridge (Ctrl+E) fills the strip between two traced lines with faces. Traced lines show in Edit and Object mode (mirrored parts show the other half dashed), new faces face you, and lines that are not filled yet stay out of the animation.
+- Selecting, deleting, merging, duplicating, joining, mirroring, undo and the mesh integrity checks all understand traced points and lines.
+
+## [1.4.0]
+
+Toon look (cel shading) and anime modeling tools
+
+### Added
+
+- Toon look for Blender lite models: ink outlines on any part (thickness and colour), hard-edged toon shadows from a light you can move, and a Toon preview that shows the model as the stage will. Shadows follow the figure as it turns, recolouring a figure recolours its shadows, and parts such as eyes can stay flat.
+- Soft select (O) in Edit mode: nearby points follow what you move, less the farther they are; scroll while moving to change the circle.
+- Shear (Ctrl+Alt+Shift+S) to slant points, as in Blender.
+- Mirror clipping: on mirrored parts the middle stays joined and nothing crosses it.
+- A Circle shape: one flat disc facing the front, ready to inset into anime eye rings.
+
+## [1.3.1]
+
+Smooth 3D turning, and StykNowdz everywhere
+
+### Changed
+
+- The app now says StykNowdz everywhere you see its name: the window title, menus, messages, file types in Windows, and the library folder (Documents\StykNowdz). Links about the original StykAnimate project still name it.
+
+### Fixed
+
+- Turning a 3D figure with the rotation ball on Figure rotation no longer makes it jump between poses: rolling it now turns the whole figure, so its turn and tilt stay put.
+
+## [1.3.0]
+
+Model tab, drag-to-pose bones, and smoother 3D models
+
+### Added
+
+- A Model tab beside Animate, Draw and Build opens Blender lite (it edits the selected 3D model, or starts a new one). Animate, Draw or Build takes you back.
+- Drag bones like nodes in Blender lite: drag a joint to bend its bone (the bones below follow), hold Ctrl and drag to stretch it, or drag a bone's middle to move it. Drag a part or a point to move it too; G, R and S still work.
+
+### Fixed
+
+- Posing a Blender lite model on the stage no longer tears it: bending the hips now carries the whole upper body, and the legs stay where they are.
+- Sleeves, forearms, legs, shoes and heads keep their shape when you bend a joint instead of flattening where they meet.
+- Make 3D now works on figures with IK, like the starting stickman: it switches IK off for that figure (Undo brings it back).
+
+## [1.2.0]
+
+Blender lite: model your own 3D characters
+
+### Added
+
+- Blender lite, a 3D modeler inside StykNowdz: choose File › New 3D model, start from a base character or a simple shape, and add the result to your animation as a 3D figure you can pose.
+- Shape parts with extrude, inset, loop cut, subdivide, merge, fill, symmetrize and more, with mirror and smooth that update as you work.
+- Build a skeleton from a humanoid template or bone by bone; each part follows its bones automatically, and you can see what a bone moves.
+- Paint parts and faces from a color palette, trace over front and side reference drawings, and bring models in and out as OBJ files.
+- Right-click a figure made in Blender lite and choose Edit 3D model to change it; its poses stay in every frame.
+- Every modeling change is checked: one that would break the model's surface (a loose point, an edge shared by three faces, a bow-tie) is undone with an explanation, so models always stay clean.
+
+## [1.1.0]
+
+Make 3D: turn your stick figures in depth
+
+### Added
+
+- Make 3D: right-click any stick figure and choose Make 3D to turn it in depth with Rotate figure and Turn / tilt. It looks the same until you turn it, curved parts included.
+- Make whole group 3D: turn a figure built from many joined pieces, like a Pivot character, as one solid figure. Give it a side-view frame from a turnaround to take depth from the drawing.
+- Make free 3D joint: right-click a part of a 3D figure to pose it in depth on its own.
+
+## [1.0.0]
+
+The first StykNowdz release: new segment shapes and curves
+
+### Added
+
+- Build a part as a Triangle that tapers to a point (flip it or turn it into a right triangle), an Ellipse (or half ellipse), a Polygon with 3 to 256 sides, or a Trapezoid with its own Start and End thickness and an optional rounded start or end, to shape muscles or fake depth.
+- Bend a round line, square line or trapezoid into an arc with the new Curve setting.
+- Stick Nodes projects keep their triangles, ellipses, polygons, trapezoids and curves when you import them.
 - Everyday Props · Pivot 3D: 30 editable everyday objects with working hinges and wheels for your animations.
 - Vehicles · Pivot 3D asset pack with twelve editable vehicles, spinning wheels, steering and opening parts.
 - Named poses for articulated figures, with detailed controls that can be shown when needed.
@@ -17,321 +137,14 @@ What's new in each version of StykAnimate.
 - A new Home page to start an animation in landscape, vertical or square, reopen your projects and organize them with pins and folders.
 - Five short interactive tutorials that guide you step by step through the canvas, posing, the timeline and the panels.
 - Right-click a joint and choose Disconnect segment to turn that part of a figure into a figure of its own.
-- Build a part as a Triangle that tapers to a point (flip it or turn it into a right triangle), an Ellipse (or half ellipse), a Polygon with 3 to 256 sides, or a Trapezoid with its own Start and End thickness and an optional rounded start or end, to shape muscles or fake depth.
-- Bend a round line, square line or trapezoid into an arc with the new Curve setting.
 
 ### Changed
 
+- StykNowdz is a free, open-source edition of StykAnimate 1.2.5 under the GPL-3.0 license.
+- Automatic updates are off. New versions are posted on the StykNowdz GitHub page.
 - Ctrl-dragging a node that uses IK stretches it like any other node.
-- A calmer top bar: the menus are in the StykAnimate menu, and your open projects take their place.
+- A calmer top bar: the menus are in the app menu, and your open projects take their place.
 
 ### Fixed
 
 - Fixed an error when deleting your last color palette.
-
-## [1.2.5]
-
-Layer folders, camera follow and smoother editing
-
-### Added
-
-- Layer folders with quick creation and a searchable filter to organize your timeline.
-- Playback ranges to loop a chosen section of your animation.
-- Automatic updates for the Linux AppImage, with a prompt to save your work before restarting.
-- Move a layer up or down from its menu in the timeline.
-- Auto key in the Advanced timeline: turn it on (K) and every change you make adds a keyframe at the playhead.
-- Camera follow: right-click figures and choose Follow with camera to keep them in frame, with smooth catch-up, look ahead, a dead zone and auto zoom. Projects that use it need this version or newer.
-
-### Changed
-
-- Shorter layer menus with related commands grouped into submenus.
-- Easier timeline navigation: zooming stays on the playhead, the view follows it, and there is room below the last layer.
-- Layer focus stays active until you turn it off, with support for multiple layers and Focus and lock to protect other artwork while you work.
-- Zooming the canvas with the mouse wheel is smooth and easier to control. Compatibility mode zooms in quick steps by default, and Settings › Canvas › Smooth zooming lets you choose.
-- Complete interface translations for all 26 supported non-English languages, with right-to-left layouts and clearer text in narrow windows.
-- Onion skin is enabled when the app starts.
-- While joining figures, movable nodes are shown in red and static nodes in white.
-- A simpler Motion tab for camera moves, with a gallery that explains each preset and plain sliders for the settings that matter most.
-- Dragging layers in the timeline shows where they will land, moves several layers or a whole folder at once, and drops them into or out of folders.
-- Camera motions share one compact timeline row, color-coded by type, that only grows where motions overlap. Hover a motion to see its name and frames.
-- Redesigned onion skin markers on the timeline: drag them straight to the frame you want, without catching the playhead. You can hide them in onion skin settings.
-
-### Fixed
-
-- Repeated Save commands no longer start overlapping writes, and newer edits keep the project open when closing.
-- Successful saves no longer show a failure if an old recovery copy cannot be removed.
-- Imported Pivot originals stay available after other imports, and saving stops if an original cannot be retrieved.
-- Recovery copies are scheduled more reliably during frequent editing.
-- Fixed multiple layer selections and searches being lost during editing.
-- Fixed figures and text staying blurry when zooming far into the canvas.
-- Fixed long freezes when zooming or panning animations that use effects or onion skins.
-- Fixed blur, glow, and shadow effects shifting or failing at certain positions.
-- Fixed drawings disappearing with VFX enabled or changing layer position after the first stroke.
-- Fixed onion skins disappearing behind lower layers or skipping nearby drawings in animations with many layers.
-- Fixed repeated captions in controls and panels when changing the interface language.
-- Fixed Settings running off the edge of very narrow windows.
-- Browser downloads now keep your work recoverable until a file save is confirmed.
-- Browser recovery keeps each tab's unsaved project separately and pauses playback when the tab is hidden.
-- Double-clicking a static node now selects its branch, just like other nodes.
-- Clicking a frame in the Simple timeline keeps your current selection instead of selecting every figure.
-- Copying, pasting or duplicating a figure now keeps its effects.
-- Bending a connector now follows your pointer smoothly, and also works with Move joint in Build.
-- Adding parts to a figure in an imported Stick Nodes project no longer stops the saved project from opening.
-
-### Performance
-
-- Smoother scrolling through long layer lists in the timeline.
-- Quicker repeated saves for small projects and smaller exported movieclips.
-- Smoother zooming and panning, fewer pauses, and more responsive joints and selection when editing complex animations in Compatibility mode.
-- Much smoother playback of busy animations and scenes with effects, with fewer pauses, especially on laptops without a dedicated graphics card and in Compatibility mode.
-- Complex STK figures open faster, including figures with long chains of joints.
-- Faster color adjustments on large drawings, especially when painted areas are far apart.
-- Faster keyframe edits and figure posing in long animations with many layers.
-- Large personal libraries open faster, with more responsive selection.
-- Quicker preparation for playback and exports.
-- APNG and PNG sequence exports use less memory.
-
-## [1.2.0]
-
-A new workspace, particle effects, Linux and the browser
-
-### Added
-
-- StykAnimate for Linux, with an AppImage you can download and run.
-- Animate in your browser, with project saving, recovery, your own library and offline use after the first visit.
-- Community library: browse free figures and movieclips shared by other animators and insert them straight into your scene.
-- Particle effects: add explosions, auras, beams, smoke and steam, design your own particles, and save reusable presets.
-- Custom layouts: dock, group or float panels wherever you like, and switch between layouts from View → Layout.
-- Command palette: press Ctrl+P or F1 to find any command, setting, layer, figure or frame.
-- Keyboard navigation: F6 moves between editor areas, Ctrl+\ switches to Focus mode, and Ctrl+1 to Ctrl+4 toggle the main panels.
-- Color palettes in every color picker: keep your project's colors, reuse recent ones, and create named palettes for any project.
-- Richer drawing brushes, with tapered strokes, textured tips, steadier lines and adjustable tablet pressure.
-- Moving parts for 3D props, like a pistol's slide or trigger; projects using them need this version or newer.
-- Reshape a whole arc of motion by right-dragging a point on its motion path.
-- Hold Alt and drag a figure to duplicate it, or hold Shift while dragging its origin to move its pinned joints too.
-- Press A while dragging a joint or figure to add frames without letting go.
-- Right-drag to bend lines in Build and Animate.
-- Choose whether pasted figures keep their original layering or appear in front in Canvas settings.
-- Pinch with two fingers to zoom and pan the canvas on a touch screen.
-
-### Changed
-
-- A fresh look, with the StykAnimate typeface, brighter colors and matching panels, menus and dialogs.
-- More room for your animation, with floating canvas tools and panels that adapt to smaller windows.
-- The top bar keeps workspaces, Undo, Redo, Save and Export together and shows whether your project is saved.
-- Redesigned timelines, with stretchable frame cards in Simple mode and clearer pose bars in Advanced mode.
-- Redesigned motion paths, with multiple trails, speed colors and pose previews as you point along them.
-- Easier 3D posing, with on-screen joint dragging, depth adjustment and IK for arms and legs.
-- Drag along a line segment to pose it without having to grab its node precisely.
-- A clearer Export window with live preview, trimming, size options and presets for popular video platforms.
-- Simpler Properties and VFX panels, with common actions close to the selection and individual effect switches.
-- A clearer Build workspace, with simpler part properties and a compact toolbar for splitting, duplicating, flipping and deleting parts.
-- A cleaner Library panel with search, filters and larger previews.
-- Easier-to-find settings and commands, with searchable Settings, grouped menus and shortcut hints.
-- The app chooses a comfortable interface size for your screen, with manual adjustment in Settings.
-- Short hints guide joining figures, placing images, drawing shapes and using the Tweener.
-- A clearer What's new screen that matches the website.
-- New projects start with Blue, a simple stick figure with hand and foot IK for easy posing.
-- The small playback FPS counter is back, and the low-FPS warning has been removed.
-
-### Fixed
-
-- Fixed empty windows on Linux Wayland desktops.
-- Fixed browser update notices being delayed after an export.
-- Fixed selecting figures on the canvas while using the Tweener.
-- Fixed patchy onion skins where parts of a figure overlap.
-- Fixed Feedback sometimes opening on the wrong report type.
-- Fixed the timeline and effect list jumping while selecting several frames.
-- Selecting artwork no longer accidentally moves its figure.
-- Fixed leaving Draw sometimes losing your previous layer and selection.
-- Fixed errors appearing behind dialogs, and added confirmation before closing an active export.
-- Fixed typing in a menu switching tools, and the Properties ⋯ menu not opening.
-- Fixed What's new and the privacy prompt overlapping at startup.
-- Fixed Enter not confirming a new project name.
-- Fixed StykAnimate staying open in the background after an unexpected close.
-- Fixed adding figures being refused in some Pivot animations.
-
-### Performance
-
-- Fewer pauses when first adding particle effects or opening their previews.
-- Faster property adjustments in long animations and smoother editing in scenes with many images.
-- 3D figures pose, scrub and play more smoothly, use less memory and save to smaller files.
-- Older Pivot animations open faster, and large ones scrub and zoom more smoothly.
-- Smoother playback and editing in busy scenes, especially on laptops and in Compatibility mode.
-
-## [1.1.0]
-
-Drawing layers and smoother editing
-
-### Added
-
-- Drawing layers: draw and animate by hand on their own layers, right alongside your figures.
-
-### Changed
-
-- Better drawing tablet support: pen taps no longer nudge joints, holding the pen still no longer opens the right-click menu, and you can zoom or rotate the view with the pen.
-- Scaling and rotating several figures at once now works like in Pivot, around the figure you drag.
-- Frame counts now match between the Simple timeline, the Advanced timeline and Export.
-- More compact onion skin settings and a clearer audio timeline.
-- Adding and editing effects in the VFX panel is easier.
-- Property labels you can drag to change a value are now marked. Hold Shift or Alt for finer steps.
-
-### Fixed
-
-- If the app stops unexpectedly, it now offers to recover your work instead of leaving a black window.
-- Fixed right-click bending on the canvas.
-- Fixed joined figures coming apart when breaking apart or baking a movieclip.
-- Fixed movieclip Scale, Angle, Opacity and Z-index fields in Properties having no effect.
-
-### Performance
-
-- Large animations open, play and edit faster and use less memory, especially freshly imported Pivot files.
-- Posing detailed figures is smoother.
-- Cancelling an import or export no longer delays the next one.
-
-## [1.0.6]
-
-Private feedback and playback quality options
-
-### Added
-
-- Send bug reports and feedback privately from the app or the website, with attachments and replies from the developer.
-- Playback quality options in Animation settings, from Normal down to Draft, plus an Automatic mode.
-- A setting to fit the view when playback starts, turned on by default.
-- Press Ctrl+Shift+V to paste figures in their original position.
-
-### Fixed
-
-- Fixed importing Build changes as a new figure losing edits or changing the original figures.
-- Fixed the selected effect being deselected when moving between frames with the keyboard.
-- Fixed black bands and cut-off edges on scene effects in playback and exports.
-- Imported sprites now keep their original colors and transparency.
-- Transparent areas of the scene now show a checkerboard while editing.
-
-### Performance
-
-- Fewer pauses and less memory use in large and detailed animations.
-
-## [1.0.5]
-
-Effects with their own timing, and editing refinements
-
-### Added
-
-- Effects now have their own clips on the timeline, with timing, keyframes and fades separate from your poses.
-- Copy and paste the look of parts in Build.
-
-### Changed
-
-- Duplicate and Flip in Build now respect whether you selected a single part or a whole branch. New S and B shortcuts split a part and switch branch mode.
-- A Canvas setting to zoom with the scroll wheel alone, or with Ctrl + scroll as before.
-- Comma and period now go to the previous and next frame, and Shift+comma and Shift+period jump between keyframes. Your custom shortcuts are kept.
-- A new Extend keyframe shortcut, Shift+A by default.
-- Effects now apply across connected figures.
-- Pick colors from the canvas with the color picker's Eyedropper button. Clicking outside the picker now closes it.
-
-### Fixed
-
-- Fixed dragging empty timeline cells creating blank frames.
-- Dragging keyframes onto other keyframes now replaces them.
-- New lines in Build now take the color and thickness of the part they grow from.
-- Fixed Pivot projects with damaged or missing images failing to import.
-- Fixed figures with very long hidden parts looking blurry.
-- Fixed empty edges showing around background images when the camera moves.
-
-## [1.0.1]
-
-A cleaner workspace
-
-### Changed
-
-- The figure color palette moved to a compact section at the bottom of Properties.
-- Parallax settings only show for selected layers.
-- A simpler welcome screen, with recent release notes in the same window.
-
-## [1.0.0]
-
-New animation tools, refined editing and smoother playback
-
-### Added
-
-- Audio: add sound to the timeline, with waveforms, trimming, splitting, volume and fades.
-- Tweener tool with Breakdown, Blend to Neighbor, Push and Relax.
-- Camera shake, handheld motion, wobble, impacts and zoom pulses.
-- Editable motion paths.
-- Connectors that link two points, with sliding joints and Smart Stretch.
-- Join and unjoin figures with J, just like in Pivot. Showing handles moved to Shift+J.
-- A redesigned Figure builder: what you select is what you edit, with new tools to go with it.
-- A color palette for the selected figure that lets you replace colors in bulk.
-- An eyedropper with a magnified preview to pick colors from the canvas.
-- Canvas grid and guides.
-- Layer parallax.
-- Animated strength and wavy distortion for effects.
-- Alt-drag to rotate and scale every selected figure together.
-- An interface size slider in the desktop app, from 75% to 200%.
-- Refined timelines, with a quick mode switch, layer search and colors, easing controls and new onion skin controls.
-
-### Changed
-
-- A refined Properties panel and simpler canvas controls.
-- Zoom now goes from 0.1% to 10,000%.
-- Redesigned movieclip properties. Pasting onto an existing movieclip now creates an independent copy.
-- A better asset library, with animated previews, right-click actions and drag-and-drop into folders.
-- Figure outlines are now set up in the VFX panel, and rounded outlines look smoother.
-
-### Fixed
-
-- Fixed freezes lasting several seconds when editing, copying, pasting or dragging in busy scenes.
-- Fixed Flip ignoring the selected parts and branches.
-- Fixed Simple timeline thumbnails.
-- Fixed Add Frame in the Advanced timeline adding the key on the wrong frame.
-- Figures keep their colors when copied between projects or Pivot versions.
-- Double-clicking a StykAnimate, Pivot or Stick Nodes file now opens it in the app.
-- The app now recovers when the graphics driver resets, and exports keep going.
-
-### Performance
-
-- Faster playback, scrubbing and editing, especially in busy scenes and on older computers.
-- Faster camera playback, high-resolution exports, and saving and opening projects.
-- Large exports and big images use much less memory.
-- Creating movieclips is faster.
-- Lower resource use when the app is idle.
-
-## [0.5.6]
-
-Effects, dark mode and smoother animation
-
-### Added
-
-- Visual effects for joints, figures, movieclips and the camera, with 16 effects, gradients and presets.
-- Dark mode, which follows your system setting by default.
-- Add a movieclip to several upcoming keyframes at once.
-
-### Changed
-
-- Selected joints and branches are highlighted in a lighter red.
-- The view fits the scene when playback starts, and you can still zoom and pan while playing.
-- The camera frame stays visible as a subtle dotted outline.
-- The app and new projects start with one frame starring Jonh Styk.
-- Simpler export options, with automatic video quality and a progress counter.
-
-### Fixed
-
-- Fixed playback slowing down badly after running low on memory.
-- Fixed the canvas going blank after a graphics reset or when replaying after edits.
-- Fixed arranging figures from the toolbar for single-part figures and selected branches.
-- Advanced timeline: dragging now selects keys, clicking keeps your selection, and deleting keys no longer shifts later frames.
-- More reliable Pivot imports.
-- Various other bug fixes.
-
-### Performance
-
-- Smoother playback and editing, and faster high-resolution exports.
-
-## [0.5.5]
-
-Welcome to the first beta of StykAnimate!
-
-### Added
-
-- Have fun! Share bug reports and ideas on Discord, or from Help → Send feedback in the app.

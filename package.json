@@ -1,7 +1,7 @@
 {
   "name": "stykanimate-webapp",
   "productName": "StykAnimate",
-  "version": "1.2.5",
+  "version": "1.6.2",
   "description": "A WebGPU desktop workspace for Pivot animation and stick figures.",
   "license": "GPL-3.0-or-later",
   "homepage": "https://stykanimate.com",
@@ -207,19 +207,19 @@
       {
         "ext": "stykmov",
         "mimeType": "application/vnd.stykanimate.movieclip",
-        "name": "StykAnimate movieclip",
+        "name": "StykNowdz movieclip",
         "role": "Editor"
       },
       {
         "ext": "stkz",
         "mimeType": "application/vnd.stykanimate.figure",
-        "name": "StykAnimate figure",
+        "name": "StykNowdz figure",
         "role": "Editor"
       },
       {
         "ext": "styk",
         "mimeType": "application/vnd.stykanimate.project",
-        "name": "StykAnimate project",
+        "name": "StykNowdz project",
         "role": "Editor"
       }
     ],

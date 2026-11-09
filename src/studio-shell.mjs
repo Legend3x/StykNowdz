@@ -134,7 +134,10 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     setAttr(workspace, 'data-mode', drawingActive ? 'draw' : current);
     // The band's switch shows the current workspace; Build's Done (#builder-done) also names a workspace but is no toggle.
     // While Home shows (state.home, src/home/home.mjs), Home is the pressed item and no workspace is.
-    document.querySelectorAll('.workspace-switch [data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current && !state.home)));
+    // While Blender lite is open (state.modeling) its Model tab is the pressed one.
+    document.querySelectorAll('.workspace-switch [data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current && !state.home && !state.modeling)));
+    const model = document.querySelector('.workspace-switch [data-action="model-workspace"]');
+    if (model) setAttr(model, 'aria-pressed', String(Boolean(state.modeling) && !state.home));
     // The rail: this workspace's tools, their names and the active one (src/shell/rail.mjs).
     syncRail(document.querySelector('.studio-rail'), {mode: drawingActive ? 'draw' : current, tool: state.tool});
     localizedText(document.getElementById('tool-context'), drawingActive ? 'studioShell.drawTool' : nameKeys[state.tool] || 'studioShell.select', drawingActive ? {tool: {messageKey: ({brush:'drawingView.brush',eraser:'drawingView.eraser',fill:'drawingView.fill',shape:'drawingView.shapes',select:'drawingView.selectPixels',transform:'drawingView.transform',pan:'studioShell.panCanvas'})[drawing.tool] || 'drawingController.drawing'}} : {});

@@ -10,7 +10,7 @@ import {spatialBone,spatialPoint} from './rig-spatial.mjs';
 import {ikChain} from './ik.mjs';
 import {icon} from './icons.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
-import {rigControlIsDetail,rigDetailsShown,setRigDetailsShown} from './rig-control-details.mjs';
+import {rigControlIsDetail,rigDetailsShown,setRigDetailsShown,rigControlIsFace,rigFaceShown,setRigFaceShown} from './rig-control-details.mjs';
 import {propertyToggle} from './property-toggle.mjs';
 import {renderInspector} from './inspector-kit.mjs';
 import {createSpatialGizmo,drawRotationGizmo,startRotationGizmo,rotateGizmo} from './spatial-gizmo.mjs';
@@ -71,8 +71,9 @@ export function spatialSections(editor,{hotkeyLabel}={}){
  // locks, coat panels. Each gets a shortcut; a tie is named by its upper bone.
  const trunkNames=new Set(['Pelvis','Lower torso','Waist','Chest','Neck','Head']),definition=geometryPlans(editor.geometry.objects.get(editor.selectedSlot))?.definition;
  const limbBones=new Set(targets.flatMap(({s})=>ikChain(editor.figure,s.segment_id,editor.object._stykIK[s.segment_id].chainLength,definition)));
- const parts=bones.filter(({s,i})=>{const parent=bones.find(b=>b.s.segment_id===s._stykRig.spatial.parent);return parent&&trunkNames.has(parent.s.name)&&!trunkNames.has(s.name)&&!limbBones.has(i)&&!rigControlIsDetail(s);});
- const detailToggle=bones.some(({s})=>rigControlIsDetail(s))?propertyToggle('spatial-details',interfaceText('spatialControls.detailedControls'),rigDetailsShown(editor),'sliders',{labelKey:'spatialControls.detailedControls'}):'';
+ const parts=bones.filter(({s,i})=>{const parent=bones.find(b=>b.s.segment_id===s._stykRig.spatial.parent);return parent&&trunkNames.has(parent.s.name)&&!trunkNames.has(s.name)&&!limbBones.has(i)&&!rigControlIsDetail(s)&&!rigControlIsFace(s);});
+ const detailToggle=(bones.some(({s})=>rigControlIsDetail(s))?propertyToggle('spatial-details',interfaceText('spatialControls.detailedControls'),rigDetailsShown(editor),'sliders',{labelKey:'spatialControls.detailedControls'}):'')
+  +(bones.some(({s})=>rigControlIsFace(s))?propertyToggle('spatial-face',interfaceText('spatialControls.faceControls'),rigFaceShown(editor,editor.selectedUid),'sliders',{labelKey:'spatialControls.faceControls',title:interfaceText('spatialControls.faceControlsHint'),titleKey:'spatialControls.faceControlsHint'}):'');
  const rig=html=>({kind:'markup',html:`<div class="spatial-rig">${html}</div>`});
  const articulation={kind:'select',id:'spatial-joint',label:interfaceText("spatialControls.articulation"), labelKey: "spatialControls.articulation",span:2,value:pose?selected:-1,
   options:[{value:-1,label:interfaceText("spatialControls.moveWholeCharacter"), labelKey: "spatialControls.moveWholeCharacter"},...bones.map(({s,i})=>({value:i,label:s.name||interfaceText('builderSurfaceUi.jointNumber',{id:s.segment_id}),...(s.name?{}:{labelKey:'builderSurfaceUi.jointNumber',labelParams:{id:s.segment_id}})}))]};
@@ -107,7 +108,7 @@ export function spatialGizmoDrag(editor,point,project){
  const gizmo=spatialGizmo(editor,project);if(!gizmo)return null;
  // A visible neighboring pivot wins over an overlapping rotation sphere.
  const g=editor.geometry.objects.get(editor.selectedSlot);
- if(Math.hypot(point.x-gizmo.center.x,point.y-gizmo.center.y)>12&&g.segments.some((s,i)=>{if(i===editor.selectedJoint||!s.spatialFrame||s.static||rigControlIsDetail(s.seg)&&!rigDetailsShown(editor))return false;const p=project(s.start);return Math.hypot(p.x-point.x,p.y-point.y)<7;}))return null;
+ if(Math.hypot(point.x-gizmo.center.x,point.y-gizmo.center.y)>12&&g.segments.some((s,i)=>{if(i===editor.selectedJoint||!s.spatialFrame||s.static||rigControlIsDetail(s.seg)&&!rigDetailsShown(editor)||rigControlIsFace(s.seg)&&!rigFaceShown(editor,editor.selectedUid))return false;const p=project(s.start);return Math.hypot(p.x-point.x,p.y-point.y)<7;}))return null;
  return startRotationGizmo(gizmo,point);
 }
 export function updateSpatialGizmo(editor,drag,point,precision=false){
@@ -141,6 +142,7 @@ export function installSpatialControls({editor,root,refresh,guard}){
   else if(t.matches('input[type=number][data-spatial-axis]')){applyPose(editor,{[t.dataset.spatialAxis]:t.valueAsNumber/DEG});refresh();}
   else if(t.matches('[data-spatial-choice]')){editor.setPoseChoice(t.dataset.spatialChoice,Number(t.value));refresh();}
   else if(t.id==='spatial-details'){finish(true);setRigDetailsShown(editor,t.checked);refresh();}
+  else if(t.id==='spatial-face'){finish(true);setRigFaceShown(editor,editor.selectedUid,t.checked);refresh();}
   else if(t.id==='spatial-ik'){withLimb(()=>editor.setNodeIK(t.checked?{enabled:true,pinned:false}:{enabled:false}));refresh();}
   else if(t.id==='spatial-pin'){withLimb(()=>editor.setNodeIK({pinned:t.checked}));refresh();}
   else if(t.id==='spatial-stretch'){withLimb(()=>editor.setNodeIK({allowStretch:t.checked}));refresh();}

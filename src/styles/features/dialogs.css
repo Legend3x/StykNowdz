@@ -101,6 +101,26 @@
   .release-splash .splash-history:disabled { opacity: 0.6; cursor: wait; }
   .release-splash .splash-status { margin: 0; font: var(--type-small); color: var(--text-3); }
 
+  /* The fork notice: credit for StykAnimate and what StykNowdz adds. */
+  .release-splash .splash-fork {
+    flex-shrink: 0; margin: var(--space-4) var(--_x) 0; padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg); background: var(--surface-well);
+    color: var(--text-2); font: var(--type-small); line-height: 1.5;
+  }
+  .release-splash .splash-fork summary {
+    display: flex; align-items: center; gap: var(--space-2); cursor: pointer;
+    color: var(--text-1); font: var(--type-small-strong); list-style-position: inside;
+  }
+  .release-splash .splash-fork-badge {
+    padding: 1px var(--space-2); border-radius: var(--radius-pill);
+    background: var(--tint-time-soft); color: var(--tint-time-ink); font: var(--type-small-strong);
+  }
+  .release-splash .splash-fork p { margin: var(--space-2) 0 0; }
+  .release-splash .splash-fork-adds-title { color: var(--text-1); font: var(--type-small-strong); }
+  .release-splash .splash-fork ul { margin: var(--space-1) 0 0; padding-inline-start: var(--space-5); }
+  .release-splash .splash-fork li + li { margin-block-start: 2px; }
+  .release-splash .splash-fork-note { color: var(--text-3); }
+  .release-splash .splash-fork a { color: var(--accent-text); }
   .release-splash .splash-notes {
     flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
     padding: var(--_y) var(--_x) var(--space-8);

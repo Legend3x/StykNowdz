@@ -14,7 +14,7 @@ export function sameSpatial(a,b){
   if(a===b)return true;if(!a||!b)return false;
   if(a.bindings||b.bindings)return Boolean(Array.isArray(a.bindings)&&Array.isArray(b.bindings)&&a.bindings.length===b.bindings.length&&sameVector(a.point,b.point)&&a.bindings.every((v,i)=>v?.joint===b.bindings[i]?.joint&&v?.weight===b.bindings[i]?.weight)&&
     (a.viewPoints===b.viewPoints||Array.isArray(a.viewPoints)&&Array.isArray(b.viewPoints)&&a.viewPoints.length===b.viewPoints.length&&a.viewPoints.every((p,i)=>sameVector(p,b.viewPoints[i]))));
-  return a.parent===b.parent&&a.turn===b.turn&&a.pitch===b.pitch&&sameVector(a.origin,b.origin)&&sameVector(a.tip,b.tip)&&sameMotion(a.motion,b.motion);
+  return a.parent===b.parent&&a.turn===b.turn&&a.pitch===b.pitch&&a.curve===b.curve&&sameVector(a.origin,b.origin)&&sameVector(a.tip,b.tip)&&sameMotion(a.motion,b.motion);
 }
 export function validateSpatial(s,reference,dependencies,segments,ids){
   const vector=v=>Array.isArray(v)&&v.length===3&&[0,1,2].every(i=>Number.isFinite(v[i])&&Math.abs(v[i])<=1e6);
@@ -27,7 +27,7 @@ export function validateSpatial(s,reference,dependencies,segments,ids){
     for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint))throw messageError(new Error(''), "errors.rigSpatial.skinWeightsMustUseDistinctJointsAndPositive", {});ref(b.joint,'Skin binding',true);if(!b.joint)throw messageError(new Error(''), "errors.rigSpatial.bindSkinToAnArticulatedJoint", {});seen.add(b.joint);sum+=b.weight;}
     if(Math.abs(sum-1)>1e-6)throw messageError(new Error(''), "errors.rigSpatial.skinWeightsMustAddUpToOne", {});
   }else{
-    if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip','motion'].includes(k))||!vector(s.origin)||!vector(s.tip))throw messageError(new Error(''), "errors.rigSpatial.anArticulatedJointNeedsARestOriginAnd", {});
+    if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip','motion','curve'].includes(k))||!vector(s.origin)||!vector(s.tip)||s.curve!==undefined&&(s.curve!==true||s.motion!==undefined))throw messageError(new Error(''), "errors.rigSpatial.anArticulatedJointNeedsARestOriginAnd", {});
     if(s.motion!==undefined){
       const m=s.motion,limit=m?.type==='hinge'?2*Math.PI:1e6;
       if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).some(k=>!['type','min','max','axis','driver'].includes(k))||!['slide','hinge'].includes(m.type)||![m.min,m.max].every(v=>Number.isFinite(v)&&Math.abs(v)<=limit)||m.min>m.max||
@@ -123,7 +123,18 @@ function viewCorrectedPoint(s,f){
   return [p[0]+(f.origin[0]+x*v.cos-z*v.sin-p[0])*k,
     p[1]+(f.origin[1]+y-p[1])*k,p[2]+(f.origin[2]+x*v.sin+z*v.cos-p[2])*k];
 }
+/** Curved bones (Make 3D, `curve: true`) aim along the chord of their native
+ * arc: a bend of b turns the chord b/2 from the segment angle and shortens it
+ * by sinc(b/2). The rest tip is the chord end at the definition's bend, so
+ * only the bend's change from rest moves the bone. */
+export const chordScale=b=>Math.abs(b)<1e-7?1:Math.sin(b/2)/(b/2);
+export function spatialChordOffset(s,bend,restBend){return s?.curve?(Number(bend||0)-Number(restBend||0))/2:0;}
 export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,restAngle,referenceRest,mirror=false,camera,shape}){
+  const native=input;
+  // The definition length of a curved bone is its arc length, so the chord is length × sinc(b/2).
+  // The chord's screen angle is angle + b/2; the rest tip already holds the
+  // definition's rb/2 in figure space, which a reflection reverses.
+  if(s.curve&&!s.bindings){const b=Number(input.bend||0),rb=Number(segment.bend_rad||0);input={...input,angle:input.angle+b/2-(mirror?-1:1)*rb/2,length:input.length*chordScale(b)};}
   const cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,project=p=>camera?projectSpatial([root.x+(p[0]*cs-p[1]*sign*sn)*scale,root.y+(p[0]*sn+p[1]*sign*cs)*scale,p[2]*scale],camera):({x:root.x+(p[0]*cs-p[1]*sign*sn)*scale,y:root.y+(p[0]*sn+p[1]*sign*cs)*scale});
   let point,start=input.start,spatial;
   if(s.bindings)point=skinPoint(s,get);
@@ -155,10 +166,10 @@ export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,rest
     if(shape&&(shape.width!==1||shape.taper!==0)){spatial.shape=shape;spatial.restLength=Math.max(EPS,length);}
     point=spatialPoint(spatial,s.tip);start=project(origin);
   }
-  const handle=project(point),dx=handle.x-start.x,dy=handle.y-start.y,angle=Math.hypot(dx,dy)<EPS?input.angle:Math.atan2(dy,dx);
+  const handle=project(point),dx=handle.x-start.x,dy=handle.y-start.y,angle=Math.hypot(dx,dy)<EPS?native.angle:Math.atan2(dy,dx);
   // Depth guides use the same figure rotation/scale as the surface reference X.
   const depthOffset={x:point[2]*scale*cs,y:point[2]*scale*sn};handle.depthOffset=depthOffset;
-  return{start,handle,angle,authoredAngle:input.angle,restAngle:segment.angle_rad??0,length:Math.hypot(dx,dy),bend:0,width:1,rotation:angle-input.angle,ratio:1,impulseAngle:angle,depthOffset,spatial,space:{rotation:angle-input.angle,locked:Boolean(s.bindings),spatial:true}};
+  return{start,handle,angle,authoredAngle:native.angle,restAngle:segment.angle_rad??0,length:Math.hypot(dx,dy),bend:0,width:1,rotation:angle-native.angle,ratio:1,impulseAngle:angle,depthOffset,spatial,space:{rotation:angle-native.angle,locked:Boolean(s.bindings),spatial:true}};
 }
 
 const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));

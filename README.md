@@ -1,3 +1,16 @@
+> **StykNowdz is an unofficial fork of [StykAnimate](https://stykanimate.com), the free, open-source stick figure animator created by Alexio.**
+> The animator itself, its timelines, figures, effects, exports and design are Alexio's work, and the credit for them is his.
+> If you enjoy StykNowdz, please support Alexio and the original project ([Ko-fi](https://ko-fi.com/Q5Q41WY7QC), [StykAnimate](https://github.com/filippocalippo/StykAnimate-App)).
+> StykNowdz is not made or endorsed by Alexio, so please report its problems here rather than to StykAnimate.
+>
+> **What StykNowdz adds**
+> - More Stick Nodes shapes: triangles, trapezoids, ellipses, polygons and curved parts, kept when you import Stick Nodes projects.
+> - Make 3D: turn any stick figure in depth, even a Pivot character made of many joined pieces.
+> - Blender lite, in the Model tab: model, colour and rig your own 3D characters, then pose them in your animation.
+> - Anime looks and tools: cel shading with ink outlines and toon shadows, face tracing, loop cuts and edge slide, and face rigs.
+>
+> The rest of this page is StykAnimate's own description.
+
 <p align="center">
   <img src="assets/brand/svg/stykanimate-horizontal-primary.svg" alt="StykAnimate" width="420">
 </p>

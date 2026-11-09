@@ -1,0 +1,311 @@
+/* Blender lite (src/modeler/modeler-ui.mjs, docs/BLENDER-LITE.md): a full-window
+ * 3D modeler over the app. A bar of modes and tools on top, parts and colors on
+ * the left, properties on the right, the viewport in the middle and a status
+ * line with the current hint at the bottom. */
+@layer features {
+  /* The same window as the rest of StykNowdz: white islands floating on the
+   * cool field, pill buttons and segmented tracks, sunken fields and section
+   * titles over hairlines. */
+  .modeler {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-floating);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    background: var(--surface-field);
+    color: var(--text-1);
+    font: var(--type-ui);
+  }
+  .modeler-bar {
+    container: modeler-bar / inline-size;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    align-items: center;
+    gap: var(--space-1);
+    min-block-size: calc(var(--control-md) + var(--space-2) * 2);
+    padding: var(--space-2);
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    box-shadow: var(--elevation-island);
+  }
+  .modeler-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 var(--space-2) 0 var(--space-1);
+    font: var(--type-section);
+    font-size: var(--text-14);
+    white-space: nowrap;
+  }
+  .modeler-title-badge {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 26px;
+    block-size: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--tint-time-soft);
+    color: var(--tint-time-ink);
+  }
+  .modeler-title-badge > svg { inline-size: var(--icon-md); block-size: var(--icon-md); }
+  .modeler-gap { flex: none; inline-size: 1px; block-size: 20px; margin: 0 var(--space-1-5); background: var(--line-1); }
+  /* Narrow windows: the move, rotate and scale buttons keep only their keys. */
+  @container modeler-bar (max-width: 1240px) {
+    .modeler-bar .modeler-transform { padding: 0 var(--space-1-5); font-size: 0; gap: 0; }
+    .modeler-bar .modeler-transform > .modeler-key { font-size: var(--text-11); }
+  }
+  .modeler-bar > * { flex: none; }
+  .modeler-spacer { flex: 1; min-inline-size: var(--space-2); }
+  .modeler-main {
+    display: grid;
+    grid-template-columns: 228px 1fr 276px;
+    gap: var(--space-2);
+    min-height: 0;
+  }
+  .modeler-side {
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--space-1) var(--space-3) var(--space-3);
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    box-shadow: var(--elevation-island);
+    scrollbar-width: thin;
+  }
+  .modeler-side h3, .modeler-section > h3 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 var(--space-2);
+    color: var(--text-1);
+    font: var(--type-section);
+    letter-spacing: -0.005em;
+  }
+  .modeler-side h3::before, .modeler-section > h3::before {
+    content: "";
+    flex: none;
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: var(--radius-pill);
+    background: var(--tint-time);
+  }
+  .modeler-stage {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: var(--radius-xl);
+    background: var(--surface-stage);
+    box-shadow: var(--elevation-island);
+  }
+  .modeler-canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; cursor: crosshair; }
+  .modeler-canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
+  .modeler-status {
+    min-block-size: 20px;
+    padding: 0 var(--space-2);
+    color: var(--text-2);
+    font: var(--type-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .modeler-status.modeler-status-flash { color: var(--accent-text-strong); }
+  .modeler-status.modeler-status-flash::before { content: "● "; color: var(--accent); }
+
+  /* Buttons: the soft pill of .ui-button; the primary is the accent pill. */
+  .modeler-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1-5);
+    min-inline-size: var(--control-sm);
+    block-size: var(--control-sm);
+    padding: 0 var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-pill);
+    background: var(--control-soft);
+    color: var(--text-1);
+    font: var(--type-small-strong);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--dur-fast, .12s) var(--ease-out, ease-out);
+  }
+  .modeler-button:hover { background: var(--control-soft-hover); }
+  .modeler-button:active { background: var(--control-soft-pressed); }
+  .modeler-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset, 2px); }
+  .modeler-button > svg { flex: none; inline-size: var(--icon-md); block-size: var(--icon-md); }
+  .modeler-button.modeler-icon-only { padding: 0; inline-size: var(--control-sm); background: transparent; color: var(--text-2); }
+  .modeler-button.modeler-icon-only:hover { background: var(--surface-hover); color: var(--text-1); }
+  .modeler-button[aria-pressed="true"] { background: var(--surface-selected); color: var(--accent-text-strong); }
+  .modeler-button.modeler-primary { background: var(--accent); color: var(--text-on-accent); }
+  .modeler-button.modeler-primary:hover { filter: brightness(1.05); }
+  .modeler-button.modeler-quiet { padding: 0 var(--space-2); background: transparent; color: var(--text-2); }
+  .modeler-button.modeler-quiet:hover { background: var(--surface-hover); color: var(--text-1); }
+  .modeler-key {
+    display: inline-grid;
+    place-items: center;
+    min-inline-size: 18px;
+    block-size: 18px;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-2xs);
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--line-1);
+    color: var(--text-2);
+    font: var(--text-11) / 1 var(--font-mono);
+  }
+  /* Segmented: the well track with a white thumb, as in the band and the inspector. */
+  .modeler-segmented {
+    display: inline-flex;
+    align-items: stretch;
+    gap: var(--space-0-5);
+    block-size: var(--control-md);
+    padding: var(--space-0-5);
+    border-radius: var(--radius-pill);
+    background: var(--surface-well);
+  }
+  .modeler-segmented .modeler-button { block-size: auto; padding: 0 var(--space-3); background: transparent; color: var(--text-2); }
+  .modeler-segmented .modeler-button:hover { color: var(--text-1); background: transparent; }
+  .modeler-segmented .modeler-button[aria-pressed="true"] {
+    background: var(--control-thumb);
+    color: var(--text-1);
+    box-shadow: inset 0 0 0 1px var(--line-control), var(--elevation-1);
+  }
+  .modeler-list { display: grid; gap: 1px; }
+  .modeler-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-block-size: var(--control-sm);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .modeler-item:hover { background: var(--surface-hover); }
+  .modeler-item[aria-selected="true"] { background: var(--surface-selected); color: var(--accent-text-strong); }
+  .modeler-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modeler-eye { padding: 0; border: 0; background: none; color: var(--text-3); cursor: pointer; }
+  .modeler-eye:hover { color: var(--text-1); }
+  .modeler-tag { color: var(--text-3); font: var(--type-small); }
+  .modeler-rename { flex: 1; min-width: 0; font: inherit; }
+  .modeler-row, .modeler-actions { display: flex; flex-wrap: wrap; gap: var(--space-1-5); margin-top: var(--space-2); }
+  .modeler-hint { margin: var(--space-2) 0; color: var(--text-3); font: var(--type-small); font-weight: 400; line-height: 1.45; }
+  .modeler-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-1-5); }
+  .modeler-swatch-wrap { position: relative; }
+  .modeler-swatch {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    box-shadow: inset 0 0 0 1px var(--line-1);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .modeler-swatch:hover { box-shadow: inset 0 0 0 1px var(--line-3, var(--line-control)); }
+  .modeler-swatch-fill { position: absolute; inset: 3px; border-radius: var(--radius-xs); }
+  .modeler-color-input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+  /* Outline colour picker: a compact row; the chosen colour is ringed. */
+  .modeler-swatch-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--space-1); margin: var(--space-1) 0; }
+  .modeler-swatch-row .modeler-swatch[aria-pressed="true"] { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  .modeler-section { padding-bottom: var(--space-2); }
+  .modeler-section + .modeler-section { box-shadow: inset 0 1px 0 var(--line-1); padding-top: var(--space-1); }
+  /* Fields: sunken boxes with grey labels, like the inspector's. */
+  .modeler-field { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--space-2); color: var(--text-3); font: var(--type-small); }
+  .modeler-field :where(input:not([type="checkbox"], [type="range"]), select), .modeler-rename {
+    min-width: 0;
+    block-size: var(--control-sm);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+    color: var(--text-1);
+    font: var(--type-ui);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+  }
+  .modeler-field :where(input:not([type="checkbox"], [type="range"]), select):hover { box-shadow: inset 0 0 0 1px var(--line-3, var(--line-control)); }
+  .modeler-field input:focus, .modeler-field select:focus, .modeler-rename:focus { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line, var(--accent)), 0 0 0 3px var(--focus-halo, transparent); }
+  .modeler-field input[type="range"] { accent-color: var(--accent); }
+  .modeler-field.modeler-wide { grid-template-columns: 84px 1fr; margin: var(--space-1-5) 0; }
+  .modeler-vector { display: grid; grid-template-columns: 64px repeat(3, 1fr); gap: var(--space-1); align-items: center; margin: var(--space-1-5) 0; color: var(--text-3); font: var(--type-small); }
+  .modeler-vector .modeler-field input { width: 100%; }
+  .modeler-label { color: var(--text-3); font: var(--type-small); }
+  .modeler-check { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-1-5) 0; cursor: pointer; }
+  .modeler-check input { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; }
+  .modeler-ref { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); margin: var(--space-2) 0; }
+  .modeler-ref .modeler-field input { width: 64px; }
+  .modeler-popover {
+    position: absolute;
+    z-index: 3;
+    display: grid;
+    gap: 1px;
+    min-width: 180px;
+    padding: var(--space-1-5);
+    border-radius: var(--radius-xl);
+    background: var(--surface-raised);
+    box-shadow: var(--elevation-2);
+  }
+  .modeler-popover.modeler-confirm { bottom: var(--space-8); top: auto; max-width: 320px; padding: var(--space-3); }
+  .modeler-menu-item {
+    min-block-size: var(--control-md);
+    padding: 0 var(--space-2-5);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-1);
+    font: var(--type-ui);
+    text-align: left;
+    cursor: pointer;
+  }
+  .modeler-menu-item:hover { background: var(--surface-hover); }
+
+  /* The controls card: shown over the viewport when Blender lite opens (until
+   * "Don't show this again"), and from the keyboard button in the bar. */
+  .modeler-controls {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    padding: var(--space-4);
+    background: color-mix(in srgb, var(--surface-stage) 55%, transparent);
+  }
+  .modeler-controls-card {
+    display: grid;
+    gap: var(--space-3);
+    inline-size: min(760px, 100%);
+    max-block-size: 100%;
+    overflow: auto;
+    padding: var(--space-5, 20px);
+    border-radius: var(--radius-2xl);
+    background: var(--surface-raised);
+    box-shadow: var(--elevation-3);
+  }
+  .modeler-controls-head { display: flex; align-items: center; gap: var(--space-2-5); }
+  .modeler-controls-head h2 { flex: 1; margin: 0; font: var(--type-heading); }
+  .modeler-controls-lede { margin: 0; color: var(--text-2); font: var(--type-small); font-weight: 400; line-height: 1.5; }
+  .modeler-controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4) var(--space-5); }
+  .modeler-controls-group h3 { margin: 0 0 var(--space-1-5); color: var(--text-2); font: var(--type-small-strong); }
+  .modeler-controls-group dl { display: grid; grid-template-columns: minmax(96px, max-content) 1fr; gap: var(--space-1-5) var(--space-3); margin: 0; align-items: baseline; }
+  .modeler-controls-group dt { display: flex; gap: 2px; flex-wrap: wrap; }
+  .modeler-controls-group dd { margin: 0; color: var(--text-2); font: var(--type-small); font-weight: 400; }
+  .modeler-controls-foot { display: flex; align-items: center; gap: var(--space-2); padding-top: var(--space-1); box-shadow: inset 0 1px 0 var(--line-1); }
+  .modeler-controls-foot .modeler-check { flex: 1; margin: var(--space-2) 0 0; color: var(--text-2); font: var(--type-small); }
+  .modeler-controls-foot .modeler-button { margin-top: var(--space-2); }
+
+  /* While Blender lite is open under the band, only the workspace tabs and the window controls stay live:
+     the animation's history, Save, Export, projects and menus wait until it closes. */
+  body[data-modeling] .shell-top :is(.shell-mark, .app-menubar, .band-home, .project-tabs, .band-history, .band-save, .band-export) {
+    pointer-events: none;
+    opacity: 0.42;
+  }
+
+  /* The band's Model tab (Blender lite) in violet, beside Animate, Draw and Build. */
+  .workspace-switch .ui-segmented-item[data-action="model-workspace"] { --_mode: var(--tint-time); --_mode-soft: var(--tint-time-soft); }
+}

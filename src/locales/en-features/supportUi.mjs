@@ -1,12 +1,22 @@
 export default Object.freeze({
-  "supportUi.stykanimate": "StykAnimate",
+  "supportUi.stykanimate": "StykNowdz",
   "supportUi.closeWelcomeScreen": "Close welcome screen",
   "supportUi.whatSNewIn": "What’s new in",
-  "supportUi.stykanimate2": "StykAnimate.",
+  "supportUi.stykanimate2": "StykNowdz.",
   "supportUi.releaseVersion": "Release version",
   "supportUi.recentReleases": "Recent releases",
   "supportUi.releaseNotes": "Release notes",
-  "supportUi.supportOnKoFi": "Support on Ko-fi",
+  "supportUi.supportOnKoFi": "Support Alexio on Ko-fi",
+  "supportUi.forkBadge": "Fork",
+  "supportUi.forkSummary": "StykNowdz is a fork of StykAnimate by Alexio",
+  "supportUi.forkCredit": "StykNowdz is built on StykAnimate, the free, open-source stick figure animator created by Alexio. The animator itself, its timelines, figures, effects, exports and design are all his work, and the credit for them is his. If you enjoy this app, please support Alexio and the original StykAnimate.",
+  "supportUi.forkAddsTitle": "What StykNowdz adds",
+  "supportUi.forkAddsShapes": "More Stick Nodes shapes: triangles, trapezoids, ellipses, polygons and curved parts, kept when you import Stick Nodes projects.",
+  "supportUi.forkAddsMake3d": "Make 3D: turn any stick figure in depth, even a Pivot character made of many joined pieces.",
+  "supportUi.forkAddsModel": "Blender lite, in the Model tab: model, colour and rig your own 3D characters, then pose them in your animation.",
+  "supportUi.forkAddsAnime": "Anime looks and tools: cel shading with ink outlines and toon shadows, face tracing, loop cuts and edge slide, and face rigs.",
+  "supportUi.forkNotEndorsed": "StykNowdz is an unofficial fork, not made or endorsed by Alexio, so please report its problems to StykNowdz rather than to StykAnimate.",
+  "supportUi.forkOriginalSite": "Visit StykAnimate",
   "supportUi.startAnimating": "Start animating",
   "supportUi.versionInstalled": "Version {version} installed",
   "supportUi.installed": "Installed",
@@ -15,5 +25,5 @@ export default Object.freeze({
   "supportUi.installed2": " · Installed",
   "supportUi.couldnTLoadReleasesTryAgain": "Couldn’t load releases. Try again.",
   "supportUi.couldnTOpenKoFiTryAgain": "Couldn’t open Ko-fi. Try again.",
-  "supportUi.stykanimateVersion": "StykAnimate {version}"
+  "supportUi.stykanimateVersion": "StykNowdz {version}"
 });

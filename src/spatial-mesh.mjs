@@ -7,10 +7,11 @@ import {messageError} from './localized-error.mjs';
  * Evaluation follows rig-spatial skinning operation for operation, so a mesh
  * converted from native skin joints reproduces their projected positions. */
 import {spatialBone,spatialViewInterpolation} from './rig-spatial.mjs';
+import {shadowColor} from './toon-shading.mjs';
 
 const EPS=1e-9,NEAR=.05;
 export const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
-const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups']);
+const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon']);
 export const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
 
 export function validateSpatialMesh(figure){
@@ -72,6 +73,15 @@ export function validateSpatialMesh(figure){
       end=g.start+g.count;
     }
   }
+  // Toon (cel) shading: a view-space light, the lit/shadow cut-off, the shadow
+  // strength, and parts (group indices) drawn without shadows, such as outlines.
+  if(m.toon!==undefined){
+    const t=m.toon,ok=t&&typeof t==='object'&&!Array.isArray(t)&&Object.keys(t).every(k=>['light','threshold','strength','flat'].includes(k))&&
+      Array.isArray(t.light)&&t.light.length===3&&t.light.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1e3)&&Math.hypot(...t.light)>1e-9&&
+      typeof t.threshold==='number'&&Number.isFinite(t.threshold)&&Math.abs(t.threshold)<=1.5&&typeof t.strength==='number'&&t.strength>=0&&t.strength<=1&&
+      (t.flat===undefined||(Array.isArray(t.flat)&&t.flat.length<=MESH_LIMITS.groups&&t.flat.every(i=>Number.isInteger(i)&&i>=0&&i<(m.groups?.length??0))));
+    if(!ok)fail("errors.spatialMesh.invalid3dMeshToon", {});
+  }
 }
 
 /** Remap bone and reference joint IDs, e.g. when figures are combined. The
@@ -102,9 +112,16 @@ export function spatialMeshPlan(figure,ids){
   if(mesh.viewVertices)mesh.viewVertices.forEach((v,i)=>{viewSlot[v]=i;});
   const plan={mesh,vertices,triangles,positions:new Float64Array(mesh.positions),slots,weights,counts,bones:Int32Array.from(bones),
     indices:Uint32Array.from(mesh.indices),materials:Uint16Array.from(mesh.materials),palette:mesh.colors,basis:mesh.basis,base:Number(mesh.z??0),
-    views:mesh.views??0,viewSlot,viewPoints:mesh.viewPoints?new Float64Array(mesh.viewPoints):null};
+    views:mesh.views??0,viewSlot,viewPoints:mesh.viewPoints?new Float64Array(mesh.viewPoints):null,toon:toonPlan(mesh,triangles)};
   plans.set(mesh,{ids,plan});
   return plan;
+}
+
+function toonPlan(mesh,triangles){
+  const t=mesh.toon;if(!t)return null;
+  const len=Math.hypot(...t.light),flat=new Uint8Array(triangles);
+  for(const g of t.flat??[]){const group=mesh.groups[g];flat.fill(1,group.start,group.start+group.count);}
+  return {light:t.light.map(v=>v/len),threshold:t.threshold,strength:t.strength,flat};
 }
 
 // Per-pose bone values: q(4) t(3) origin(3) axis(3) stretch, choiceScale,
@@ -192,7 +209,8 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
   key[g+5]=camera?camera.k:NaN;key[g+6]=camera?camera.root.x:NaN;key[g+7]=camera?camera.root.y:NaN;key[g+8]=camera?camera.scale:NaN;
   for(const [j,p] of [o,bx,by].entries()){key[g+9+j*2]=p?p.x:NaN;key[g+10+j*2]=p?p.y:NaN;}
   key[g+15]=o?1:0;key[g+16]=bx?1:0;key[g+17]=by?1:0;
-  const colors=plan.palette.map(colorOf);
+  const colors=plan.palette.map(colorOf),toon=plan.toon,shadowAt=colors.length;
+  if(toon)for(let i=0;i<shadowAt;i++)colors.push(shadowColor(colors[i],toon.strength));
   if(previous?.plan===plan&&sameKey(previous.key,key)){
     const same=previous.colors.length===colors.length&&colors.every((c,i)=>c[0]===previous.colors[i][0]&&c[1]===previous.colors[i][1]&&c[2]===previous.colors[i][2]);
     return same?previous:{...previous,colors};
@@ -200,7 +218,7 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
   const n=plan.vertices,cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,base=plan.base;
   const nearZ=camera?(1-NEAR)/camera.k:Infinity,P=plan.positions,counts=plan.counts,slots=plan.slots,viewSlot=plan.viewSlot,views=plan.viewPoints,stride=plan.views*3;
   let positions=new Float32Array(n*2),depth=new Float32Array(n),extra=0;
-  const raw=camera?new Float64Array(n*3):null,point=new Float64Array(3);
+  const raw=camera?new Float64Array(n*3):null,point=new Float64Array(3),view=toon?new Float64Array(n*3):null;
   const dx=bx&&o?bx.x-o.x:0,dy=bx&&o?bx.y-o.y:0,den=dx*dx+dy*dy,flat=o&&den>=1e-16;
   // Bounds and the depth range cover the vertices of visible faces only, as
   // native surfaces do; the range sets depth-buffer quantization.
@@ -218,6 +236,7 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
       framePoint(F,b,px,py,pz,point,0);
     }else blendedVertex(plan,F,v,px,py,pz,point);
     const X=root.x+(point[0]*cs-point[1]*sign*sn)*scale,Y=root.y+(point[0]*sn+point[1]*sign*cs)*scale;
+    if(view){view[v*3]=point[0]*cs-point[1]*sign*sn;view[v*3+1]=point[0]*sn+point[1]*sign*cs;view[v*3+2]=point[2];}
     let sx,sy,d;
     if(camera){
       const rz=point[2]*scale,q=Math.max(NEAR,1-camera.k*rz);
@@ -228,15 +247,62 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
     if((v&8191)===8191)yield {phase:'geometry',stage:'mesh vertices',slot,completed:v+1,total:n};
   }
   const parity=o&&bx&&by?Math.sign(dx*(by.y-o.y)-dy*(by.x-o.x)):0,I=plan.indices,M=plan.materials;
+  // Toon shading: a triangle facing away from the light takes its colour's shadow
+  // twin. Its outward normal is the view-space cross product signed like the
+  // on-screen winding test, so it agrees with which faces are visible.
+  // Smooth vertex normals (area-weighted face normals) give a clean shadow edge
+  // across small faces instead of a zig-zag of single faces.
+  let normals=null;
+  if(toon&&parity){
+    normals=new Float64Array(n*3);
+    for(let t=0;t<plan.triangles;t++){
+      const a=I[t*3]*3,b=I[t*3+1]*3,c=I[t*3+2]*3,ux=view[b]-view[a],uy=view[b+1]-view[a+1],uz=view[b+2]-view[a+2],vx=view[c]-view[a],vy=view[c+1]-view[a+1],vz=view[c+2]-view[a+2];
+      const nx=(uy*vz-uz*vy)*parity,ny=(uz*vx-ux*vz)*parity,nz=(ux*vy-uy*vx)*parity;
+      for(const v of [a,b,c]){normals[v]+=nx;normals[v+1]+=ny;normals[v+2]+=nz;}
+    }
+  }
+  const material=!normals?t=>M[t]:t=>{
+    if(toon.flat[t])return M[t];
+    const a=I[t*3]*3,b=I[t*3+1]*3,c=I[t*3+2]*3,L=toon.light;
+    let nx=0,ny=0,nz=0;
+    for(const v of [a,b,c]){const l=Math.hypot(normals[v],normals[v+1],normals[v+2])||1;nx+=normals[v]/l;ny+=normals[v+1]/l;nz+=normals[v+2]/l;}
+    const len=Math.hypot(nx,ny,nz);
+    return len>0&&(nx*L[0]+ny*L[1]+nz*L[2])/len<toon.threshold?M[t]+shadowAt:M[t];
+  };
   let triangles=new Uint32Array(plan.triangles*3),materials=new Uint16Array(plan.triangles),z=new Float32Array(plan.triangles),count=0;
   const grow=()=>{const size=Math.max(16,count*2);let t=new Uint32Array(size*3);t.set(triangles);triangles=t;t=new Uint16Array(size);t.set(materials);materials=t;t=new Float32Array(size);t.set(z);z=t;};
+  const push=(a,b,c,m)=>{if(count===materials.length)grow();triangles[count*3]=a;triangles[count*3+1]=b;triangles[count*3+2]=c;materials[count]=m;z[count]=(depth[a]+depth[b]+depth[c])/3;count++;};
+  // A clean shadow edge: each vertex's distance past the lit/shadow cut-off, and
+  // triangles that straddle it are cut along the exact line (cut points are
+  // shared by neighbouring triangles, so nothing cracks).
+  let side=null;const cuts=new Map();
+  if(normals){
+    side=new Float64Array(n);const L=toon.light;
+    for(let v=0;v<n;v++){const x=normals[v*3],y=normals[v*3+1],w=normals[v*3+2],l=Math.hypot(x,y,w);side[v]=l>0?(x*L[0]+y*L[1]+w*L[2])/l-toon.threshold:1;}
+  }
+  const cut=(p,q)=>{
+    const lo=Math.min(p,q),hi=Math.max(p,q),key=lo*n+hi,known=cuts.get(key);if(known!==undefined)return known;
+    const s=side[lo]/(side[lo]-side[hi]),at=n+extra;
+    if(at>=depth.length){const size=Math.max(64,depth.length*2);const P2=new Float32Array(size*2);P2.set(positions);positions=P2;const D2=new Float32Array(size);D2.set(depth);depth=D2;}
+    positions[at*2]=positions[lo*2]+(positions[hi*2]-positions[lo*2])*s;positions[at*2+1]=positions[lo*2+1]+(positions[hi*2+1]-positions[lo*2+1])*s;
+    depth[at]=depth[lo]+(depth[hi]-depth[lo])*s;extra++;cuts.set(key,at);return at;
+  };
+  const shaded=(t,a,b,c)=>{
+    const m=M[t];
+    if(!side||toon.flat[t]){push(a,b,c,m);return;}
+    const la=side[a]>=0,lb=side[b]>=0,lc=side[c]>=0;
+    if(la===lb&&lb===lc){push(a,b,c,la?m:m+shadowAt);return;}
+    // Rotate so p is the vertex alone on its side, keeping the winding.
+    const [p,q,r,lit]=la!==lb&&la!==lc?[a,b,c,la]:lb!==la&&lb!==lc?[b,c,a,lb]:[c,a,b,lc];
+    const pq=cut(p,q),rp=cut(r,p),own=lit?m:m+shadowAt,other=lit?m+shadowAt:m;
+    push(p,pq,rp,own);push(pq,q,r,other);push(pq,r,rp,other);
+  };
   for(let t=0;parity&&t<plan.triangles;t++){
     const a=I[t*3],b=I[t*3+1],c=I[t*3+2];
     if(!camera||(raw[a*3+2]<=nearZ&&raw[b*3+2]<=nearZ&&raw[c*3+2]<=nearZ)){
       const ax=positions[a*2],ay=positions[a*2+1],ux=positions[b*2]-ax,uy=positions[b*2+1]-ay,vx=positions[c*2]-ax,vy=positions[c*2+1]-ay;
       if((ux*vy-uy*vx)*parity<=Math.max(ux*ux+uy*uy,vx*vx+vy*vy)*2e-7)continue;
-      if(count===materials.length)grow();
-      triangles[count*3]=a;triangles[count*3+1]=b;triangles[count*3+2]=c;materials[count]=M[t];z[count]=(depth[a]+depth[b]+depth[c])/3;count++;
+      shaded(t,a,b,c);
       used[a]=1;used[b]=1;used[c]=1;
     }else{
       // Clip against the near plane before projection, as native surfaces do.
@@ -259,7 +325,8 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
         if(fx<x0)x0=fx;if(fx>x1)x1=fx;if(fy<y0)y0=fy;if(fy>y1)y1=fy;if(fd<zMin)zMin=fd;if(fd>zMax)zMax=fd;
         return at;
       }),value=projected.reduce((s,p)=>s+p[2],0)/projected.length;
-      for(let i=1;i+1<ids.length;i++){if(count===materials.length)grow();triangles[count*3]=ids[0];triangles[count*3+1]=ids[i];triangles[count*3+2]=ids[i+1];materials[count]=M[t];z[count]=value;count++;}
+      const shade=material(t);
+      for(let i=1;i+1<ids.length;i++){if(count===materials.length)grow();triangles[count*3]=ids[0];triangles[count*3+1]=ids[i];triangles[count*3+2]=ids[i+1];materials[count]=shade;z[count]=value;count++;}
     }
     if((t&16383)===16383)yield {phase:'geometry',stage:'mesh faces',slot,completed:t+1,total:plan.triangles};
   }

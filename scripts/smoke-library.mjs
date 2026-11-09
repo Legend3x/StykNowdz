@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const root=process.cwd(), packaged=process.argv.includes('--packaged'), run=path.join(root,'artifacts',`library-${packaged?'packaged-':''}${Date.now()}`);
 await mkdir(run,{recursive:true});
-const library=path.join(run,'Documents','StykAnimate','library'), errors=[], checks=[];
+const library=path.join(run,'Documents','StykNowdz','library'), errors=[], checks=[];
 async function launch() {
   const profile=path.join(run,`profile-${Date.now()}`); await mkdir(profile,{recursive:true});
   // Isolated automated profiles keep optional collection off and skip onboarding.

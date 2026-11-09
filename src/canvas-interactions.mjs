@@ -2,7 +2,7 @@
  * See artifacts/native-static/{joined-handle-routing,handle-size}.md.
  * Joined origins do not exist as handles: the parent's endpoint owns the joint.
  */
-import {rigControlIsDetail} from './rig-control-details.mjs';
+import {rigControlIsDetail,rigControlIsFace} from './rig-control-details.mjs';
 export const PIVOT_HANDLE_COLORS = Object.freeze({
   segment: '#ff0000', origin: '#ff8800', unselected: '#0000ff', unselectedOrigin: '#0080ff',
   joined: '#ffffff', unselectedJoined: '#d3d3d3', static: '#808080', selectedStatic: '#b04040',
@@ -115,7 +115,7 @@ export function pivotHandleColor({ selected = false, nodeSelected = false, origi
 export function getPivotHandles(geometry, {
   frame, selectedUid = null, selectedUids, selectedJoint = -1, selectedHandleIds, selectedBranch = false, builder = false, hiddenUids, lockedUids,
   showUnselected = true, showStatic = false, attaching = false, allowStaticManipulation = false,
-  selectStatic = false, joinTargetUids, spatialMode = 'pose', showDetailed = false,
+  selectStatic = false, joinTargetUids, spatialMode = 'pose', showDetailed = false, faceShownUids,
   viewScale = 1, autoSize = true, minDiameter = 4, maxDiameter = 10, descriptorCache,
 } = {}) {
   if (!geometry?.objects) return [];
@@ -139,7 +139,8 @@ export function getPivotHandles(geometry, {
     const selected = uid === selectedUid || Boolean(selectedUids?.has(uid));
     const allEndpoints = selected || showUnselected || Boolean(g.obj.join) || attaching;
     const joinedVertices = targets.get(g.slot ?? g.obj.object_slot);
-    const objectKey = `${selected}|${uid===selectedUid}|${[...(joinedVertices||[])].join(',')}`;
+    const faceShown = Boolean(faceShownUids?.has(uid));
+    const objectKey = `${selected}|${uid===selectedUid}|${faceShown}|${[...(joinedVertices||[])].join(',')}`;
     const cached=descriptorCache?.objects.get(g);
     if(cached?.key===objectKey){groups.push({uid,offset:result.length,handles:cached.handles});for(const handle of cached.handles)result.push(handle);continue;}
     const first=result.length;
@@ -173,6 +174,9 @@ export function getPivotHandles(geometry, {
       if(segment.static&&!showStatic&&!selectStatic&&!attaching&&!builderSelection?.has(index)&&!g.obj._stykIK?.[segmentId(segment)]?.enabled)continue;
       const id = segmentId(segment), joined = Boolean(joinedVertices?.has(id));
       if (rigControlIsDetail(segment.seg) && !showDetailed && !builder && !attaching &&
+          !joined && !(uid === selectedUid && index === selectedJoint)) continue;
+      // Face controls stay hidden until the figure's face badge opens them.
+      if (rigControlIsFace(segment.seg) && !faceShown && !builder && !attaching &&
           !joined && !(uid === selectedUid && index === selectedJoint)) continue;
       if (allEndpoints || joined || (selectStatic && segment.static)) add(segment.handle ?? segment.end, segment.index, id, 'segment', Boolean(segment.static), joined);
     }

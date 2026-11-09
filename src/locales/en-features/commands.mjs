@@ -207,7 +207,7 @@ export default Object.freeze({
   "commands.drawingFlipView": "Flip view",
   "commands.libraryOpen": "Insert library item",
   "commands.libraryRename": "Rename library item",
-  "commands.about": "About StykAnimate",
+  "commands.about": "About StykNowdz",
   "commands.releaseNotes": "What’s new",
   "commands.checkUpdates": "Check for updates…",
   "commands.restartUpdate": "Restart to update",
@@ -219,5 +219,8 @@ export default Object.freeze({
   "commands.minimize": "Minimize window",
   "commands.maximize": "Maximize window",
   "commands.close": "Quit",
-  "commands.closeDialog": "Close dialog"
+  "commands.closeDialog": "Close dialog",
+  "commands.make3D": "Make 3D",
+  "commands.makeFree3DJoint": "Make free 3D joint",
+  "commands.makeGroup3D": "Make whole group 3D"
 });

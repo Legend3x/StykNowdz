@@ -154,7 +154,7 @@ export default Object.freeze({
   "supportCenter.reportDetails": "Report details",
   "supportCenter.noReproductionDetails": "No reproduction details",
   "supportCenter.sentFrom": "Sent from",
-  "supportCenter.stykanimateApp": "StykAnimate app",
+  "supportCenter.stykanimateApp": "StykNowdz app",
   "supportCenter.website": "Website",
   "supportCenter.reportIdCopied": "Report ID copied.",
   "supportCenter.clipboardUnavailableTheFullIdIsInThe": "Clipboard unavailable. The full ID is in the conversation export.",

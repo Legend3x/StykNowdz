@@ -71,14 +71,17 @@ export async function releaseOutputs(directory = root, { env = process.env } = {
     readFile(path.join(directory, 'package.json'), 'utf8').then(JSON.parse),
     readFile(path.join(directory, 'package-lock.json'), 'utf8').then(JSON.parse),
   ]);
-  const release = parseChangelog(source)[1];
+  const sections = parseChangelog(source), release = sections[1];
   assert.equal(release.version, metadata.version, 'Newest changelog version must match package.json.');
   assert.equal(lock.version, metadata.version, 'package-lock.json version must match package.json.');
   assert.equal(lock.packages?.['']?.version, metadata.version, 'Lockfile root package version must match package.json.');
   if (env.GITHUB_REF_TYPE === 'tag') assert.equal(env.GITHUB_REF_NAME, `v${metadata.version}`, 'Release tag must match package.json.');
   const info = { version: release.version, title: release.title, notes: release.groups.flatMap(group => group.notes), groups: release.groups };
-  const markdown = `# StykAnimate ${info.version}\n\n${info.title}\n\n${info.groups.map(group => `### ${group.name}\n\n${group.notes.map(note => `- ${note}`).join('\n')}`).join('\n\n')}\n\nFree to create. Powered by your support.\n\nStykAnimate is completely free. If it helps bring your ideas to life, a donation helps keep development moving. [Support development on Ko-fi](https://ko-fi.com/Q5Q41WY7QC).\n\nInstall the **Setup** version for automatic updates. Portable copies require manual updates.\n`;
-  return { 'desktop/release-info.json': JSON.stringify(info, null, 2) + '\n', 'release-notes.md': markdown };
+  const markdown = `# StykNowdz ${info.version}\n\n${info.title}\n\n${info.groups.map(group => `### ${group.name}\n\n${group.notes.map(note => `- ${note}`).join('\n')}`).join('\n\n')}\n\nStykNowdz is free and open source, built on StykAnimate under the GPL-3.0 license.\n\nAutomatic updates are off. Download new versions from the StykNowdz GitHub releases page.\n`;
+  // StykNowdz's earlier releases, bundled for the What's new dialog's Recent releases list.
+  const history = {releases: sections.slice(1).map(item => ({version: item.version,
+    markdown: `# StykNowdz ${item.version}\n\n${item.title}\n\n${item.groups.map(group => `### ${group.name}\n\n${group.notes.map(note => `- ${note}`).join('\n')}`).join('\n\n')}\n`}))};
+  return { 'desktop/release-info.json': JSON.stringify(info, null, 2) + '\n', 'desktop/release-history.json': JSON.stringify(history, null, 2) + '\n', 'release-notes.md': markdown };
 }
 
 export async function checkReleaseNotes(directory = root, options) {

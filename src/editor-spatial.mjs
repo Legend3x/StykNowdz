@@ -8,6 +8,8 @@ import {spatialBone,spatialSkin,spatialMotionValue,spatialAxisQuaternion,quatMul
 import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK,flatSpatialBend,spatialPoleFor,spatialKnee} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {poseChoiceGroups,applyChannelPoseChoice} from './rig-pose-choices.mjs';
+import {keepsSharedControls,turnJoinedPieces3D,figureRotation3D} from './editor-make-3d.mjs';
+import {rotateOriginSupport} from './animation-origin-support.mjs';
 
 const plans=e=>geometryPlans(e.geometry.objects.get(e.selectedSlot));
 const layout=e=>plans(e)?.definition??ikLayout(e.figure);
@@ -86,7 +88,8 @@ export const editorSpatialMethods={
   const r=s._stykRig.spatial,delta=animationRotation(f,o),find=id=>{const i=f.segments.findIndex(s=>s.segment_id===id);return i<0?undefined:i;},parent=find(r.parent),turn=find(r.turn),pitch=find(r.pitch);
   const angles=this.geometry.objects.get(this.selectedSlot)?.solvedAngles??o.angles;
   const sign=o.image_text_flags?-1:1,parentAngle=parent===undefined?0:(angles[parent]-delta)*sign-f.segments[parent].angle_rad;
-  const bend=(angles[index]-delta)*sign-s.angle_rad-parentAngle;
+  // The Figure rotation bone's roll is the figure's own rotation (see _rollSpatialBone).
+  const bend=index===0&&figureRotation3D(f)?delta*sign:(angles[index]-delta)*sign-s.angle_rad-parentAngle;
   // Mechanical details expose their authored residual. Their master's applied
   // rotation remains an evaluation dependency, not another editable channel.
   return r.motion?{bend:r.motion.type==='hinge'?Math.atan2(Math.sin(bend),Math.cos(bend)):0,turn:0,pitch:0}:
@@ -98,6 +101,9 @@ export const editorSpatialMethods={
   // A hinge accepts only its own rotation; a slide does not rotate.
   const motion=this.getSpatialMotion();if(motion)return motion.type==='hinge'&&patch.bend!==undefined?this.setSpatialMotion(patch.bend):false;
   if(Object.entries(patch).every(([k,v])=>Math.abs(v-before[k])<1e-12))return false;
+  // Make 3D: a joint sharing its turn/tilt controls only bends in its own plane.
+  if(keepsSharedControls(this.figure,this.selectedJoint)&&['turn','pitch'].some(k=>patch[k]!==undefined&&Math.abs(patch[k]-before[k])>1e-12))
+   throw messageError(new Error(''), "errors.spatialConvert.makeThisAFree3DJointFirst", {});
   const f=this.figure,r=f.segments[this.selectedJoint]._stykRig.spatial,ids=rigPlan(this).ids;
   const frame=this.geometry.objects.get(this.selectedSlot).segments[this.selectedJoint].spatialFrame;
   const parent=quatMultiply(frame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch))),next={...before,...patch};
@@ -109,8 +115,10 @@ export const editorSpatialMethods={
   const center=wholeFigure?spatialWorldVector(spatialPoint(frame,r.origin),f,this.object).map((v,i)=>v*this.object.scale+(i===0?root.x:i===1?root.y:0)):null;
   return this._objectEdit('Rotate articulated joint',o=>{
    this._releaseSpatialChain(o);
-   if(patch.bend!==undefined)this._rotateJoint((patch.bend-before.bend)*(o.image_text_flags?-1:1));
+   if(patch.bend!==undefined)this._rollSpatialBone(o,(patch.bend-before.bend)*(o.image_text_flags?-1:1));
    for(const key of ['turn','pitch'])if(patch[key]!==undefined)o.angles[ids.get(r[key])]+=(patch[key]-before[key])*(o.image_text_flags?-1:1);
+   // Make 3D groups: pieces joined below turn with the whole figure.
+   if(wholeFigure)turnJoinedPieces3D(this,o,(patch.turn??before.turn)-before.turn,(patch.pitch??before.pitch)-before.pitch);
    this._plantSpatialFollower(o,handle,world);
    // Figure orientation moves the existing targets and their bend planes as
    // one rigid transform. Local torso posing still leaves planted feet alone.
@@ -153,7 +161,7 @@ export const editorSpatialMethods={
   let root=shape;while(root.seg._stykRig?.spatial?.parent){const parent=g.segments[rigPlan(this).ids.get(root.seg._stykRig.spatial.parent)];if(!parent?.spatialFrame)break;root=parent;}
   const front=quatRotate(spatialWorldQuaternion(root.spatialFrame.q,f,o),[0,0,1])[2];
   const depth=length>1e-9?vector[2]/length:0;
-  gesture={origin,tip,length,direction:length>1e-9?vector.map(v=>v/length):[1,0,0],side:Math.abs(depth)>.04?Math.sign(depth):front<-.2?-1:1,
+  gesture={kind,origin,tip,length,direction:length>1e-9?vector.map(v=>v/length):[1,0,0],side:Math.abs(depth)>.04?Math.sign(depth):front<-.2?-1:1,
    world:spatialWorldQuaternion(frame.q,f,o),parent:quatMultiply(frame.q,inverseQuaternion(local)),start:null};
   this._drag?.spatialGesture.set(key,gesture);
   return gesture;
@@ -165,12 +173,30 @@ export const editorSpatialMethods={
    object._stykIK={...object._stykIK,[id]:{...c,spatialFollowers:{...c.spatialFollowers,[handle]:quatMultiply(spatialQuaternion(-c.target.rotation,0,0),world)}}};
  },
  /** Write a world orientation for the selected bone into its native channels. */
+ /** Apply a bend (screen-plane roll) to the selected 3D bone. The Figure
+  * rotation bone (segment 0 of Make 3D and Blender lite figures) is the
+  * figure's own rotation: rolling it turns every channel together, as Rotate
+  * figure does, so the turn/tilt controls (stored as screen angles) keep their
+  * meaning. Rolling only segment 0 used to twist them, and a trackball drag
+  * then jumped between orientations. */
+ _rollSpatialBone(target,delta){
+  if(this.selectedJoint===0&&figureRotation3D(this.figure)){
+   if(!delta)return;
+   target.angles=target.angles.map(a=>a+delta);delete target.runtime_segments;
+   rotateOriginSupport(this.figure,target,delta);
+  }else this._rotateJoint(delta);
+ },
  _setSpatialWorldOrientation(world,gesture,label,edit){
   const f=this.figure,o=this.object,i=this.selectedJoint,r=f.segments[i]._stykRig.spatial,before=this.getSpatialPose(),ids=rigPlan(this).ids;
   const pose=quaternionPose(quatMultiply(inverseQuaternion(gesture.parent),spatialWorldQuaternion(world,f,o,true)),before);
+  if(keepsSharedControls(f,i)){
+   // Plain drags bend the part in its own plane, like a flat figure; depth swings and twists need its own controls.
+   if(gesture.kind!=='flat')throw messageError(new Error(''), "errors.spatialConvert.makeThisAFree3DJointFirst", {});
+   pose.turn=before.turn;pose.pitch=before.pitch;
+  }
   return this._objectEdit(label,target=>{
    this._releaseSpatialChain(target);
-   const sign=target.image_text_flags?-1:1;this._rotateJoint((pose.bend-before.bend)*sign);
+   const sign=target.image_text_flags?-1:1;this._rollSpatialBone(target,(pose.bend-before.bend)*sign);
    for(const key of ['turn','pitch'])target.angles[ids.get(r[key])]+=(pose[key]-before[key])*sign;
    this._plantSpatialFollower(target,f.segments[i].segment_id,world);
    edit?.(target);

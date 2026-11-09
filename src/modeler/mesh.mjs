@@ -1,0 +1,815 @@
+/** Blender lite (docs/BLENDER-LITE.md): the polygon mesh and its edit
+ * operations. A mesh is {verts: [[x, y, z]], faces: [{v: [i, j, k, ...], c}]}
+ * in the object's local space: Y up, X right, +Z toward the front view.
+ * Faces are counter-clockwise seen from outside and may have any number of
+ * corners (quads mostly); `c` is a palette index.
+ *
+ * While tracing a shape point by point (Blender's "extrude a single vertex"),
+ * a mesh may also have `edges` ([[a, b]]: wire edges, lines with no face yet)
+ * and `loose` ([i]: single points kept on purpose). Filling or bridging turns
+ * wires into faces; the stage only ever shows faces.
+ *
+ * Data integrity ("Data integrity" in the doc):
+ * - Vertex transforms are pure: transformMesh() and the object transforms use
+ *   the matrix module and return new values; nothing is changed in place.
+ * - Every topology edit (extrude, inset, loop cut, merge, delete...) is
+ *   atomic: it runs, then validateMesh() checks the half-edge rules. If any
+ *   rule breaks, the mesh is restored exactly and a TopologyError (with the
+ *   printed report) is thrown. Edits return the new selection where that
+ *   matters. */
+import {fromTRS, invert, transformPoint, determinant3} from './matrix.mjs';
+import {assertValidMesh} from './topology.mjs';
+
+/** Run a topology edit atomically: validate afterwards, roll back and throw if it broke a rule. */
+function atomic(operation, edit) {
+  const run = (mesh, ...args) => {
+    const before = {verts: mesh.verts, faces: mesh.faces, edges: mesh.edges, loose: mesh.loose};
+    // Work on fresh arrays so a failed edit can't leave half-written data behind.
+    mesh.verts = mesh.verts.map(v => v.slice()); mesh.faces = mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0}));
+    if (mesh.edges) mesh.edges = mesh.edges.map(e => e.slice());
+    if (mesh.loose) mesh.loose = mesh.loose.slice();
+    try {
+      const result = edit(mesh, ...args);
+      tidyWires(mesh);
+      // Vertex numbers in the report refer to the result the edit would have made.
+      assertValidMesh(mesh, operation, {label: `${operation} (the result it would have made)`});
+      return result;
+    } catch (error) {
+      mesh.verts = before.verts; mesh.faces = before.faces;
+      for (const key of ['edges', 'loose']) { if (before[key] === undefined) delete mesh[key]; else mesh[key] = before[key]; }
+      throw error;
+    }
+  };
+  Object.defineProperty(run, 'name', {value: edit.name});
+  return run;
+}
+
+export const EPS = 1e-6;
+/** An edit that can't apply to this selection: shown to the user, nothing changes. */
+const refused = message => Object.assign(new RangeError(message), {modelerMessage: true});
+export const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+export const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+export const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+export const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+export const length = a => Math.hypot(a[0], a[1], a[2]);
+export const normalize = a => { const l = length(a); return l > 1e-12 ? scale(a, 1 / l) : [0, 0, 0]; };
+export const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+export const edgeKey = (a, b) => a < b ? `${a},${b}` : `${b},${a}`;
+export const keyVerts = key => key.split(',').map(Number);
+
+export const emptyMesh = () => ({verts: [], faces: []});
+/** Copies of a mesh's wire edges and loose points, for building a new mesh (only the keys it has). */
+export const copyWires = mesh => ({...(mesh.edges?.length ? {edges: mesh.edges.map(e => e.slice())} : {}), ...(mesh.loose?.length ? {loose: mesh.loose.slice()} : {})});
+export const cloneMesh = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh)});
+/** Just the surface (faces and the points they use), as the stage and the modifiers see it. */
+export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0}))});
+
+/** Keep wire data consistent after an edit, without renumbering points:
+ * wires that became face edges (after a fill or bridge), joined a point to
+ * itself, repeat, or point nowhere are dropped; loose points that now belong
+ * to something stop being loose. Empty lists are removed. */
+export function tidyWires(mesh) {
+  const n = mesh.verts.length, faceEdges = new Set(), used = new Set();
+  for (const f of mesh.faces) f.v.forEach((a, i) => { faceEdges.add(edgeKey(a, f.v[(i + 1) % f.v.length])); used.add(a); });
+  if (mesh.edges) {
+    const seen = new Set();
+    mesh.edges = mesh.edges.filter(([a, b]) => {
+      if (!(Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= 0 && a < n && b < n) || a === b) return false;
+      const key = edgeKey(a, b); if (seen.has(key) || faceEdges.has(key)) return false;
+      seen.add(key); return true;
+    });
+    for (const [a, b] of mesh.edges) { used.add(a); used.add(b); }
+    if (!mesh.edges.length) delete mesh.edges;
+  }
+  if (mesh.loose) {
+    mesh.loose = [...new Set(mesh.loose)].filter(i => Number.isInteger(i) && i >= 0 && i < n && !used.has(i));
+    if (!mesh.loose.length) delete mesh.loose;
+  }
+  return mesh;
+}
+
+/** Points joined to each point by faces or wires: Map vertex → Set of neighbours. */
+export function neighbours(mesh) {
+  const out = new Map(), link = (a, b) => { if (!out.has(a)) out.set(a, new Set()); out.get(a).add(b); };
+  for (const f of mesh.faces) f.v.forEach((a, i) => { const b = f.v[(i + 1) % f.v.length]; link(a, b); link(b, a); });
+  for (const [a, b] of mesh.edges ?? []) { link(a, b); link(b, a); }
+  return out;
+}
+
+/** Newell normal (unit), robust for non-planar polygons. */
+export function faceNormal(mesh, face) {
+  const n = [0, 0, 0], v = face.v;
+  for (let i = 0; i < v.length; i++) {
+    const a = mesh.verts[v[i]], b = mesh.verts[v[(i + 1) % v.length]];
+    n[0] += (a[1] - b[1]) * (a[2] + b[2]); n[1] += (a[2] - b[2]) * (a[0] + b[0]); n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+  }
+  return normalize(n);
+}
+export function faceCenter(mesh, face) {
+  const c = [0, 0, 0];
+  for (const i of face.v) { const p = mesh.verts[i]; c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
+  return scale(c, 1 / face.v.length);
+}
+export function centroid(mesh, verts) {
+  const list = [...verts]; if (!list.length) return [0, 0, 0];
+  return scale(list.reduce((s, i) => add(s, mesh.verts[i]), [0, 0, 0]), 1 / list.length);
+}
+
+/** Edge key → indices of the faces using it. */
+export function edgeFaces(mesh) {
+  const map = new Map();
+  mesh.faces.forEach((f, fi) => f.v.forEach((a, i) => {
+    const key = edgeKey(a, f.v[(i + 1) % f.v.length]);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(fi);
+  }));
+  return map;
+}
+export const meshEdges = mesh => [...edgeFaces(mesh).keys()].map(keyVerts);
+/** Face edges and wire edges together. */
+export const allEdges = mesh => [...meshEdges(mesh), ...(mesh.edges ?? []).map(e => e.slice())];
+
+/** Vertex → indices of faces around it. */
+export function vertexFaces(mesh) {
+  const map = Array.from({length: mesh.verts.length}, () => []);
+  mesh.faces.forEach((f, fi) => f.v.forEach(i => map[i].push(fi)));
+  return map;
+}
+
+/** Fan triangles of every face: [[a, b, c, faceIndex]]. Faces are convex in practice. */
+export function triangulate(mesh) {
+  const out = [];
+  mesh.faces.forEach((f, fi) => { for (let i = 1; i + 1 < f.v.length; i++) out.push([f.v[0], f.v[i], f.v[i + 1], fi]); });
+  return out;
+}
+
+/** Faces whose every vertex is selected. */
+export const facesFromVerts = (mesh, verts) => new Set(mesh.faces.flatMap((f, i) => f.v.every(v => verts.has(v)) ? [i] : []));
+export const vertsFromFaces = (mesh, faces) => new Set([...faces].flatMap(i => mesh.faces[i].v));
+/** Edges whose two vertices are selected. */
+export const edgesFromVerts = (mesh, verts) => allEdges(mesh).filter(([a, b]) => verts.has(a) && verts.has(b));
+
+/** Drop faces with repeated corners and vertices nothing uses (no face, wire
+ * edge or loose-point entry), renumbering what remains: face points first in
+ * face order, then wire points, then loose points. Returns old → new index map. */
+export function cleanup(mesh) {
+  mesh.faces = mesh.faces.map(f => {
+    const v = f.v.filter((x, i) => x !== f.v[(i + 1) % f.v.length]);
+    return {...f, v};
+  }).filter(f => f.v.length >= 3 && new Set(f.v).size === f.v.length);
+  tidyWires(mesh);
+  const used = new Map(), verts = [], keep = i => { if (!used.has(i)) { used.set(i, verts.length); verts.push(mesh.verts[i]); } };
+  for (const f of mesh.faces) for (const i of f.v) keep(i);
+  for (const [a, b] of mesh.edges ?? []) { keep(a); keep(b); }
+  for (const i of mesh.loose ?? []) keep(i);
+  mesh.faces.forEach(f => { f.v = f.v.map(i => used.get(i)); });
+  if (mesh.edges) mesh.edges = mesh.edges.map(([a, b]) => [used.get(a), used.get(b)]);
+  if (mesh.loose) mesh.loose = mesh.loose.map(i => used.get(i));
+  mesh.verts = verts;
+  return used;
+}
+
+/** A new mesh with `matrix` applied to the chosen vertices (all by default).
+ * Pure: the input mesh is not touched. Topology is unchanged by construction. */
+export function transformMesh(mesh, matrix, verts = null) {
+  const chosen = verts ? new Set(verts) : null;
+  return {verts: mesh.verts.map((p, i) => !chosen || chosen.has(i) ? [...transformPoint(matrix, p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh)};
+}
+
+/** Move each listed vertex by its own matrix (`matrices`: Map vertex → matrix).
+ * Pure: returns a new mesh; topology is untouched. Used by soft selection,
+ * where points near the selection move part of the way. */
+export function transformMeshEach(mesh, matrices) {
+  return {verts: mesh.verts.map((p, i) => matrices.has(i) ? [...transformPoint(matrices.get(i), p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh)};
+}
+
+/** Mirror clipping (the Mirror modifier's "Clipping"): for a part mirrored
+ * across world X = 0, a moved point that started on that plane stays on it,
+ * and no point crosses it, so the two halves stay joined. `objectMatrix` takes
+ * the part's points into world space. Pure: returns a new mesh. */
+export function clipToMirror(startMesh, mesh, objectMatrix, verts, tolerance = 1e-5) {
+  const inverse = invert(objectMatrix), out = cloneMesh(mesh);
+  for (const i of verts) {
+    const before = transformPoint(objectMatrix, startMesh.verts[i]), after = [...transformPoint(objectMatrix, mesh.verts[i])];
+    const onPlane = Math.abs(before[0]) <= tolerance, crossed = Math.sign(after[0]) !== Math.sign(before[0]) && Math.abs(after[0]) > tolerance;
+    if (!onPlane && !crossed) continue;
+    after[0] = 0;
+    out.verts[i] = [...transformPoint(inverse, after)];
+  }
+  return out;
+}
+
+/** Soft select falloff curves (Blender's proportional editing): each maps
+ * t (1 at the selection, 0 at the radius) to how far a point follows. */
+export const SOFT_FALLOFFS = Object.freeze({
+  smooth: t => t * t * (3 - 2 * t),
+  sphere: t => Math.sqrt(Math.max(0, 2 * t - t * t)),
+  root: t => Math.sqrt(t),
+  inverseSquare: t => t * (2 - t),
+  sharp: t => t * t,
+  linear: t => t,
+  constant: () => 1,
+});
+
+/** Soft selection (Blender's proportional editing): for every unselected point
+ * within `radius` of the nearest selected point, a weight from 1 (touching) to
+ * 0 (at the radius) on a smooth curve. `points` are positions to measure in
+ * (world space, so the part's size doesn't matter). Returns Map vertex → weight. */
+export function softWeights(points, selected, radius, falloff = 'smooth') {
+  const out = new Map(), r = Number(radius), curve = SOFT_FALLOFFS[falloff] ?? SOFT_FALLOFFS.smooth;
+  if (!(r > 0) || !selected.size) return out;
+  const chosen = [...selected].map(i => points[i]).filter(Boolean);
+  points.forEach((p, i) => {
+    if (selected.has(i)) return;
+    let d = Infinity;
+    for (const q of chosen) { d = Math.min(d, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])); if (d === 0) break; }
+    if (d >= r) return;
+    out.set(i, curve(1 - d / r));
+  });
+  return out;
+}
+
+/** Delete vertices and every face and wire using them. A traced point left
+ * with nothing joined to it stays as a loose point (as in Blender); points of
+ * deleted faces go with them. */
+function deleteVertsEdit(mesh, verts) {
+  const onFaces = new Set(mesh.faces.flatMap(f => f.v)), wireOnly = new Set((mesh.edges ?? []).flat().filter(i => !onFaces.has(i) && !verts.has(i)));
+  mesh.faces = mesh.faces.filter(f => !f.v.some(v => verts.has(v)));
+  if (mesh.edges) mesh.edges = mesh.edges.filter(([a, b]) => !verts.has(a) && !verts.has(b));
+  if (mesh.loose) mesh.loose = mesh.loose.filter(i => !verts.has(i));
+  const still = new Set([...mesh.faces.flatMap(f => f.v), ...(mesh.edges ?? []).flat()]);
+  const stranded = [...wireOnly].filter(i => !still.has(i));
+  if (stranded.length) mesh.loose = [...(mesh.loose ?? []), ...stranded];
+  cleanup(mesh);
+  return new Set();
+}
+/** Delete faces; vertices no remaining face uses go too. */
+function deleteFacesEdit(mesh, faces) {
+  mesh.faces = mesh.faces.filter((f, i) => !faces.has(i));
+  cleanup(mesh);
+  return new Set();
+}
+
+/** Region extrude: selected faces move to new vertices, joined to the rest
+ * by side walls along the region's border. Returns the new vertex selection. */
+function extrudeFacesEdit(mesh, faces) {
+  if (!faces.size) return new Set();
+  const edges = new Map();
+  for (const fi of faces) {
+    const v = mesh.faces[fi].v;
+    v.forEach((a, i) => { const b = v[(i + 1) % v.length], key = edgeKey(a, b); edges.set(key, (edges.get(key) ?? []).concat([[a, b, fi]])); });
+  }
+  const copy = new Map(), dup = i => { if (!copy.has(i)) { copy.set(i, mesh.verts.length); mesh.verts.push(mesh.verts[i].slice()); } return copy.get(i); };
+  for (const fi of faces) mesh.faces[fi].v.forEach(dup);
+  // Border edges are used once inside the region; their walls keep the face's winding.
+  for (const [, uses] of edges) if (uses.length === 1) {
+    const [a, b, fi] = uses[0];
+    mesh.faces.push({v: [a, b, copy.get(b), copy.get(a)], c: mesh.faces[fi].c});
+  }
+  for (const fi of faces) mesh.faces[fi].v = mesh.faces[fi].v.map(i => copy.get(i));
+  return new Set(copy.values());
+}
+
+/** Average normal of a face region (for moving an extrusion outward). */
+export function regionNormal(mesh, faces) {
+  return normalize([...faces].reduce((s, fi) => add(s, faceNormal(mesh, mesh.faces[fi])), [0, 0, 0]));
+}
+
+/** Extrude open edges (a border, a strip, or traced wire edges) into new
+ * quads. Returns the new vertex selection. The quads start flat (the copies sit
+ * on the originals) and get their facing once moved, so wire quads are wound
+ * afterwards with orientWireFaces(). */
+function extrudeEdgesEdit(mesh, edges, {color = 0} = {}) {
+  const uses = edgeFaces(mesh), copy = new Map(), dup = i => { if (!copy.has(i)) { copy.set(i, mesh.verts.length); mesh.verts.push(mesh.verts[i].slice()); } return copy.get(i); };
+  const fromWires = [];
+  for (const [a, b] of edges) {
+    const owner = (uses.get(edgeKey(a, b)) ?? [])[0];
+    // Wind the new quad opposite to the owning face across the shared edge.
+    let [p, q] = [a, b];
+    if (owner !== undefined) { const v = mesh.faces[owner].v, i = v.indexOf(a); if (v[(i + 1) % v.length] === b) [p, q] = [b, a]; }
+    mesh.faces.push({v: [p, q, dup(q), dup(p)], c: owner !== undefined ? mesh.faces[owner].c : color});
+    if (owner === undefined) fromWires.push(mesh.faces.length - 1);
+  }
+  // Quads grown from wires must agree with each other along shared edges.
+  if (fromWires.length) windConsistently(mesh, new Set(fromWires));
+  return new Set(copy.values());
+}
+
+/** Make the winding of `faces` agree with neighbours (existing faces first,
+ * then each other), flipping whole connected groups. Then, for groups that
+ * touch no older face, point them toward `facing` (a direction toward the
+ * viewer) when given. */
+function windConsistently(mesh, faces, facing = null) {
+  const list = [...faces], fresh = new Set(list), half = new Map();
+  mesh.faces.forEach((f, fi) => { if (!fresh.has(fi)) f.v.forEach((a, i) => half.set(`${a}>${f.v[(i + 1) % f.v.length]}`, fi)); });
+  const groups = [], seen = new Set(), byEdge = new Map();
+  for (const fi of list) mesh.faces[fi].v.forEach((a, i) => { const k = edgeKey(a, mesh.faces[fi].v[(i + 1) % mesh.faces[fi].v.length]); byEdge.set(k, [...(byEdge.get(k) ?? []), fi]); });
+  for (const start of list) {
+    if (seen.has(start)) continue;
+    const group = [start]; seen.add(start);
+    for (let k = 0; k < group.length; k++) {
+      const v = mesh.faces[group[k]].v;
+      v.forEach((a, i) => {
+        const b = v[(i + 1) % v.length];
+        for (const other of byEdge.get(edgeKey(a, b)) ?? []) {
+          if (seen.has(other)) continue;
+          const w = mesh.faces[other].v, j = w.indexOf(a);
+          if (w[(j + 1) % w.length] === b) w.reverse();
+          seen.add(other); group.push(other);
+        }
+      });
+    }
+    groups.push(group);
+  }
+  for (const group of groups) {
+    // Against older faces: a shared edge must run the other way.
+    let vote = 0;
+    for (const fi of group) { const v = mesh.faces[fi].v; v.forEach((a, i) => { const b = v[(i + 1) % v.length]; if (half.has(`${a}>${b}`)) vote--; else if (half.has(`${b}>${a}`)) vote++; }); }
+    if (vote < 0 || (vote === 0 && facing && dot(group.reduce((n, fi) => add(n, faceNormal(mesh, mesh.faces[fi])), [0, 0, 0]), facing) < 0)) for (const fi of group) mesh.faces[fi].v.reverse();
+  }
+}
+
+/** Wind faces made from wires (by extrude, fill or bridge) so they face
+ * `facing` where no neighbouring face decides; atomic. */
+function orientWireFacesEdit(mesh, faces, facing) { windConsistently(mesh, faces, facing); return faces; }
+
+/** Inset each selected face: a smaller copy inside a ring of quads. `amount` is 0..1 toward the center. */
+function insetFacesEdit(mesh, faces, amount = 0.25) {
+  const selected = new Set();
+  for (const fi of [...faces]) {
+    const face = mesh.faces[fi], center = faceCenter(mesh, face), inner = face.v.map(i => { mesh.verts.push(lerp(mesh.verts[i], center, amount)); return mesh.verts.length - 1; });
+    face.v.forEach((a, i) => { const j = (i + 1) % face.v.length; mesh.faces.push({v: [a, face.v[j], inner[j], inner[i]], c: face.c}); });
+    face.v = inner; inner.forEach(i => selected.add(i));
+  }
+  return selected;
+}
+
+/** Split selected faces: quads into four quads, others into quads around their center.
+ * Neighbours gain the new edge midpoints so the surface stays closed. */
+function subdivideFacesEdit(mesh, faces) {
+  const mids = new Map(), mid = (a, b) => { const k = edgeKey(a, b); if (!mids.has(k)) { mids.set(k, mesh.verts.length); mesh.verts.push(lerp(mesh.verts[a], mesh.verts[b], .5)); } return mids.get(k); };
+  const result = [], selected = new Set();
+  mesh.faces.forEach((face, fi) => {
+    if (!faces.has(fi)) { result.push(face); return; }
+    const v = face.v, n = v.length, m = v.map((a, i) => mid(a, v[(i + 1) % n]));
+    if (n === 3) { result.push({v: [v[0], m[0], m[2]], c: face.c}, {v: [m[0], v[1], m[1]], c: face.c}, {v: [m[2], m[1], v[2]], c: face.c}, {v: [m[0], m[1], m[2]], c: face.c}); }
+    else {
+      mesh.verts.push(faceCenter(mesh, face)); const c = mesh.verts.length - 1;
+      for (let i = 0; i < n; i++) result.push({v: [v[i], m[i], c, m[(i + n - 1) % n]], c: face.c});
+      selected.add(c);
+    }
+    v.forEach(i => selected.add(i)); m.forEach(i => selected.add(i));
+  });
+  // Unselected neighbours get the midpoints of edges they share with split faces.
+  for (const face of result) {
+    const out = [];
+    face.v.forEach((a, i) => { out.push(a); const b = face.v[(i + 1) % face.v.length], k = mids.get(edgeKey(a, b)); if (k !== undefined && !face.v.includes(k)) out.push(k); });
+    face.v = out;
+  }
+  mesh.faces = result;
+  return selected;
+}
+
+/** The ring of quad edges across from `start` (each quad's opposite edge), both directions. */
+export function edgeRing(mesh, start) {
+  const uses = edgeFaces(mesh), seen = new Set([edgeKey(...start)]);
+  const walk = (edge, from) => {
+    const out = [];
+    let current = edge, came = from;
+    for (;;) {
+      const next = (uses.get(edgeKey(...current)) ?? []).find(fi => fi !== came && mesh.faces[fi].v.length === 4);
+      if (next === undefined) return out;
+      const v = mesh.faces[next].v, i = v.indexOf(current[0]), j = v.indexOf(current[1]);
+      // In a quad the opposite edge uses the other two corners; each corner's partner is
+      // its neighbour along the quad's side, so the ring keeps one direction throughout.
+      const forward = j === (i + 1) % 4, a = v[forward ? (i + 3) % 4 : (i + 1) % 4], b = v[forward ? (j + 1) % 4 : (j + 3) % 4], key = edgeKey(a, b);
+      if (seen.has(key)) return out;
+      seen.add(key); out.push([a, b]); current = [a, b]; came = next;
+    }
+  };
+  const first = uses.get(edgeKey(...start)) ?? [];
+  // Walk out through each face on the starting edge; the result runs end to end.
+  const ahead = walk(start, first[1] ?? -1), behind = first.length > 1 ? walk(start, first[0]) : [];
+  return [...behind.reverse(), start, ...ahead];
+}
+
+/** Loop cut: new edge loops across the quads of the ring through `start`. One cut
+ * goes at `t` (0..1) along each ring edge, measured from the start edge's first
+ * point; several (`cuts`) are spaced evenly. Returns the new loops' vertices. */
+function loopCutEdit(mesh, start, t = 0.5, cuts = 1) {
+  const n = Math.max(1, Math.min(LOOP_CUTS_MAX, Math.round(cuts) || 1));
+  const at = n === 1 ? [Math.max(0, Math.min(1, t))] : Array.from({length: n}, (_, k) => (k + 1) / (n + 1));
+  const ring = edgeRing(mesh, start), cut = new Map(), selected = new Set();
+  for (const [a, b] of ring) {
+    const key = edgeKey(a, b);
+    if (cut.has(key)) continue;
+    const points = at.map(f => { mesh.verts.push(lerp(mesh.verts[a], mesh.verts[b], f)); selected.add(mesh.verts.length - 1); return mesh.verts.length - 1; });
+    cut.set(key, {from: a, points});
+  }
+  // The new points on edge a→b, in order from a.
+  const along = (a, b) => { const c = cut.get(edgeKey(a, b)); return c ? (c.from === a ? c.points : [...c.points].reverse()) : null; };
+  const result = [];
+  for (const face of mesh.faces) {
+    const v = face.v, hits = v.map((a, i) => along(a, v[(i + 1) % v.length]));
+    const count = hits.filter(Boolean).length;
+    if (v.length === 4 && count === 2 && Boolean(hits[0]) === Boolean(hits[2])) {
+      // Split the quad into strips between its two cut (opposite) edges.
+      const s = hits[0] ? 0 : 1, P = hits[s], Q = [...hits[s + 2]].reverse();
+      const left = [v[s], ...P, v[s + 1]], right = [v[(s + 3) % 4], ...Q, v[(s + 2) % 4]];
+      for (let k = 0; k + 1 < left.length; k++) result.push({v: [left[k], left[k + 1], right[k + 1], right[k]], c: face.c});
+    } else if (count) {
+      // Faces at the ends of an open ring keep the new points in their outline.
+      const out = []; v.forEach((a, i) => { out.push(a); if (hits[i]) out.push(...hits[i]); });
+      result.push({v: out, c: face.c});
+    } else result.push(face);
+  }
+  mesh.faces = result;
+  return selected;
+}
+
+/** Most loop cuts made at once. */
+export const LOOP_CUTS_MAX = 16;
+
+/** For edge slide: each selected point's neighbours along edges (face edges or
+ * traced lines) that lead out of the selection. Map vertex → [neighbour]. */
+export function slideNeighbours(mesh, verts) {
+  const out = new Map([...verts].map(v => [v, new Set()]));
+  const link = (a, b) => { if (verts.has(a) && !verts.has(b)) out.get(a).add(b); if (verts.has(b) && !verts.has(a)) out.get(b).add(a); };
+  for (const key of edgeFaces(mesh).keys()) link(...keyVerts(key));
+  for (const [a, b] of mesh.edges ?? []) link(a, b);
+  return new Map([...out].map(([v, s]) => [v, [...s]]));
+}
+
+/** Edge slide: a copy of `mesh` with each point of `toward` (Map vertex → neighbour)
+ * moved fraction `f` (0..1) of the way along its edge. Topology is untouched. */
+export function slideMesh(mesh, toward, f) {
+  const out = cloneMesh(mesh), k = Math.max(0, Math.min(1, f));
+  for (const [v, n] of toward) out.verts[v] = lerp(mesh.verts[v], mesh.verts[n], k);
+  return out;
+}
+
+/** The edge loop through an edge: continue straight through every 4-valent vertex. */
+export function edgeLoop(mesh, start) {
+  const uses = edgeFaces(mesh), startUses = uses.get(edgeKey(...start))?.length ?? 0;
+  // A traced line: follow the chain of lines through points with exactly two of them.
+  if (!startUses) return chainLoop(mesh, start, (mesh.edges ?? []).filter(([a, b]) => !uses.has(edgeKey(a, b))));
+  // An open border (an edge with one face): follow the border all the way round.
+  if (startUses === 1) return chainLoop(mesh, start, [...uses].filter(([, fs]) => fs.length === 1).map(([key]) => keyVerts(key)));
+  const byVertex = new Map();
+  for (const key of uses.keys()) { const [a, b] = keyVerts(key); for (const [p, q] of [[a, b], [b, a]]) { if (!byVertex.has(p)) byVertex.set(p, []); byVertex.get(p).push(q); } }
+  const loop = new Set([edgeKey(...start)]), verts = new Set(start);
+  const walk = (prev, at) => {
+    for (;;) {
+      const around = byVertex.get(at) ?? [];
+      if (around.length !== 4) return;
+      const shared = new Set(uses.get(edgeKey(prev, at)));
+      const next = around.find(n => n !== prev && !(uses.get(edgeKey(at, n)) ?? []).some(f => shared.has(f)));
+      if (next === undefined || loop.has(edgeKey(at, next))) return;
+      loop.add(edgeKey(at, next)); verts.add(next); prev = at; at = next;
+    }
+  };
+  walk(start[0], start[1]); walk(start[1], start[0]);
+  return verts;
+}
+
+/** The points of the chain through `start` among `edges`: it carries on through
+ * every point where exactly two of the edges meet, and stops at forks and ends. */
+function chainLoop(mesh, start, edges) {
+  const around = new Map();
+  for (const [a, b] of edges) for (const [p, q] of [[a, b], [b, a]]) { if (!around.has(p)) around.set(p, []); around.get(p).push(q); }
+  const verts = new Set(start), done = new Set([edgeKey(...start)]);
+  if (!(around.get(start[0]) ?? []).includes(start[1])) return verts;
+  const walk = (prev, at) => {
+    for (;;) {
+      const next = around.get(at) ?? [];
+      if (next.length !== 2) return;
+      const to = next[0] === prev ? next[1] : next[0];
+      if (done.has(edgeKey(at, to))) return;
+      done.add(edgeKey(at, to)); verts.add(to); prev = at; at = to;
+    }
+  };
+  walk(start[0], start[1]); walk(start[1], start[0]);
+  return verts;
+}
+
+/** Collapse selected vertices to their center (or `at`) and weld them. */
+function mergeVertsEdit(mesh, verts, at = centroid(mesh, verts)) {
+  const list = [...verts]; if (list.length < 2) return new Set(list);
+  const keep = list[0]; mesh.verts[keep] = at.slice();
+  const map = i => verts.has(i) ? keep : i;
+  mesh.faces.forEach(f => { f.v = f.v.map(map); });
+  if (mesh.edges) mesh.edges = mesh.edges.map(e => e.map(map));
+  if (mesh.loose) mesh.loose = mesh.loose.map(map);
+  // A merged point with nothing left but itself stays as a loose point.
+  if (!mesh.faces.some(f => f.v.includes(keep)) && !(mesh.edges ?? []).some(([a, b]) => a !== b && (a === keep || b === keep))) mesh.loose = [...(mesh.loose ?? []), keep];
+  const index = cleanup(mesh);
+  return new Set([index.get(keep)].filter(i => i !== undefined));
+}
+
+/** Weld vertices closer than `distance`; only `verts` if given. Returns removed count. */
+function mergeByDistanceEdit(mesh, distance = 1e-4, verts = null) {
+  const cell = Math.max(distance, 1e-9), grid = new Map(), target = mesh.verts.map((_, i) => i);
+  const key = p => p.map(x => Math.floor(x / cell)).join(',');
+  mesh.verts.forEach((p, i) => {
+    if (verts && !verts.has(i)) return;
+    const [x, y, z] = p.map(v => Math.floor(v / cell));
+    for (let dx = -1; dx <= 1 && target[i] === i; dx++) for (let dy = -1; dy <= 1 && target[i] === i; dy++) for (let dz = -1; dz <= 1 && target[i] === i; dz++)
+      for (const j of grid.get(`${x + dx},${y + dy},${z + dz}`) ?? []) if (length(sub(mesh.verts[j], p)) <= distance) { target[i] = j; break; }
+    if (target[i] === i) { const k = key(p); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); }
+  });
+  const before = mesh.verts.length;
+  mesh.faces.forEach(f => { f.v = f.v.map(i => target[i]); });
+  if (mesh.edges) mesh.edges = mesh.edges.map(e => e.map(i => target[i]));
+  if (mesh.loose) mesh.loose = mesh.loose.map(i => target[i]);
+  cleanup(mesh);
+  return before - mesh.verts.length;
+}
+
+/** F: two points get a wire edge between them; three or more become one face.
+ * A closed ring of traced edges is filled in its own order; other points are
+ * ordered around their centre. `facing` (toward the viewer) winds a face that
+ * touches no other face. Returns the face index, or null for an edge. */
+function fillVertsEdit(mesh, verts, color = 0, {facing = null} = {}) {
+  const list = [...verts];
+  if (list.length === 2) {
+    const [a, b] = list, key = edgeKey(a, b);
+    if (!edgeFaces(mesh).has(key) && !(mesh.edges ?? []).some(e => edgeKey(...e) === key)) mesh.edges = [...(mesh.edges ?? []), [a, b]];
+    return null;
+  }
+  if (list.length < 3) return null;
+  const ring = closedRing(mesh, verts);
+  if (ring) {
+    mesh.faces.push({v: ring, c: color});
+    windConsistently(mesh, new Set([mesh.faces.length - 1]), facing);
+    return mesh.faces.length - 1;
+  }
+  const c = centroid(mesh, verts);
+  // Best-fit plane normal from the spread of points (Newell over a rough angular order).
+  let n = [0, 0, 0];
+  for (let i = 0; i < list.length; i++) n = add(n, cross(sub(mesh.verts[list[i]], c), sub(mesh.verts[list[(i + 1) % list.length]], c)));
+  if (length(n) < 1e-12) n = [0, 0, 1];
+  n = normalize(n);
+  const u = normalize(Math.abs(n[0]) < .9 ? cross(n, [1, 0, 0]) : cross(n, [0, 1, 0])), w = cross(n, u);
+  list.sort((a, b) => { const pa = sub(mesh.verts[a], c), pb = sub(mesh.verts[b], c); return Math.atan2(dot(pa, w), dot(pa, u)) - Math.atan2(dot(pb, w), dot(pb, u)); });
+  // Face outward: match the winding of neighbouring faces if any share an edge.
+  const uses = edgeFaces(mesh);
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i], b = list[(i + 1) % list.length], f = (uses.get(edgeKey(a, b)) ?? [])[0];
+    if (f === undefined) continue;
+    const v = mesh.faces[f].v, k = v.indexOf(a);
+    if (v[(k + 1) % v.length] === b) list.reverse();
+    break;
+  }
+  mesh.faces.push({v: list, c: color});
+  if (!list.some((a, i) => (uses.get(edgeKey(a, list[(i + 1) % list.length])) ?? []).length) && facing && dot(faceNormal(mesh, mesh.faces.at(-1)), facing) < 0) mesh.faces.at(-1).v.reverse();
+  return mesh.faces.length - 1;
+}
+
+/** The selected points in order around a closed ring of wire / border edges
+ * that uses exactly them, or null. */
+function closedRing(mesh, verts) {
+  const uses = edgeFaces(mesh), links = new Map(), add2 = (a, b) => { links.set(a, [...(links.get(a) ?? []), b]); };
+  const open = [...(mesh.edges ?? []), ...[...uses].filter(([, fs]) => fs.length === 1).map(([k]) => keyVerts(k))];
+  for (const [a, b] of open) if (verts.has(a) && verts.has(b)) { add2(a, b); add2(b, a); }
+  if (links.size !== verts.size || [...links.values()].some(l => l.length !== 2)) return null;
+  const start = [...verts][0], ring = [start];
+  let prev = null, at = start;
+  for (;;) {
+    const next = links.get(at).find(x => x !== prev);
+    if (next === start) break;
+    if (ring.includes(next)) return null;
+    ring.push(next); prev = at; at = next;
+  }
+  return ring.length === verts.size ? ring : null;
+}
+
+/** Extrude single points (Blender's E on a vertex): each selected point gets a
+ * new point on top of it, joined by a wire edge. Returns the new points (to
+ * move with the pointer). */
+function extrudePointsEdit(mesh, verts) {
+  const created = new Set();
+  for (const v of verts) {
+    mesh.verts.push(mesh.verts[v].slice());
+    const k = mesh.verts.length - 1;
+    mesh.edges = [...(mesh.edges ?? []), [v, k]]; created.add(k);
+  }
+  return created;
+}
+
+/** Ctrl+click: a new point at `at`, joined to `from` by a wire edge (or loose
+ * when `from` is null). Returns the new point. */
+function addPointEdit(mesh, at, from = null) {
+  mesh.verts.push(at.slice());
+  const k = mesh.verts.length - 1;
+  if (from === null || from === undefined) mesh.loose = [...(mesh.loose ?? []), k];
+  else mesh.edges = [...(mesh.edges ?? []), [from, k]];
+  return k;
+}
+
+/** The selected edges (wire or open border) as connected chains: [{points, closed}]. */
+export function selectedChains(mesh, verts) {
+  const uses = edgeFaces(mesh), links = new Map(), link = (a, b) => { links.set(a, [...(links.get(a) ?? []), b]); };
+  const open = [...(mesh.edges ?? []), ...[...uses].filter(([, fs]) => fs.length === 1).map(([k]) => keyVerts(k))];
+  for (const [a, b] of open) if (verts.has(a) && verts.has(b)) { link(a, b); link(b, a); }
+  const seen = new Set(), chains = [];
+  for (const start of links.keys()) {
+    if (seen.has(start)) continue;
+    // Collect the component, then walk it from an end (or anywhere on a ring).
+    const component = [start]; seen.add(start);
+    for (let k = 0; k < component.length; k++) for (const n of links.get(component[k])) if (!seen.has(n)) { seen.add(n); component.push(n); }
+    if (component.some(v => links.get(v).length > 2)) return null;
+    const ends = component.filter(v => links.get(v).length === 1), first = ends[0] ?? component[0], points = [first];
+    let prev = null, at = first;
+    for (;;) { const next = links.get(at).find(x => x !== prev && (points.length < 2 || x !== points[points.length - 2])); if (next === undefined || next === first || points.includes(next)) break; points.push(next); prev = at; at = next; }
+    chains.push({points, closed: !ends.length});
+  }
+  return chains;
+}
+
+/** Bridge: fill the strip between two selected chains of edges with faces
+ * (quads where the chains have the same number of points, triangles where one
+ * needs to catch up). Both chains open, or both closed rings. Returns the new
+ * faces. */
+function bridgeEdit(mesh, verts, {color = 0, facing = null} = {}) {
+  const chains = selectedChains(mesh, verts);
+  if (!chains || chains.length !== 2) throw refused('Bridge needs exactly two separate lines of edges selected (lines with no branches).');
+  let [A, B] = chains;
+  if (A.closed !== B.closed) throw refused('Bridge needs two open lines or two closed rings, not one of each.');
+  const P = i => mesh.verts[i], gap = (x, y) => length(sub(P(x), P(y)));
+  let a = A.points.slice(), b = B.points.slice();
+  if (A.closed) {
+    // Rings: line up B's start and direction with A's.
+    let best = null;
+    for (const dir of [b, b.slice().reverse()]) for (let s = 0; s < dir.length; s++) {
+      const r = dir.slice(s).concat(dir.slice(0, s));
+      const cost = a.reduce((sum, p, i) => sum + gap(p, r[Math.round(i * r.length / a.length) % r.length]), 0);
+      if (!best || cost < best.cost) best = {r, cost};
+    }
+    b = best.r; a = [...a, a[0]]; b = [...b, b[0]];
+  } else if (gap(a[0], b[0]) + gap(a.at(-1), b.at(-1)) > gap(a[0], b.at(-1)) + gap(a.at(-1), b[0])) b.reverse();
+  // Walk both chains by how far along they are, so the faces stay even.
+  const along = c => { const d = [0]; for (let i = 1; i < c.length; i++) d.push(d[i - 1] + gap(c[i - 1], c[i])); const total = d.at(-1) || 1; return d.map(x => x / total); };
+  const ta = along(a), tb = along(b), made = [];
+  let i = 0, j = 0;
+  while (i < a.length - 1 || j < b.length - 1) {
+    const stepA = i < a.length - 1 ? ta[i + 1] : Infinity, stepB = j < b.length - 1 ? tb[j + 1] : Infinity;
+    if (a.length === b.length || Math.abs(stepA - stepB) < 1e-9) { mesh.faces.push({v: [a[i], a[i + 1], b[j + 1], b[j]], c: color}); i++; j++; }
+    else if (stepA < stepB) { mesh.faces.push({v: [a[i], a[i + 1], b[j]], c: color}); i++; }
+    else { mesh.faces.push({v: [a[i], b[j + 1], b[j]], c: color}); j++; }
+    made.push(mesh.faces.length - 1);
+  }
+  windConsistently(mesh, new Set(made), facing);
+  return new Set(made);
+}
+
+/** Shift+D on traced points: copy the selected points and the wires between them. */
+function duplicatePointsEdit(mesh, verts) {
+  const map = new Map();
+  for (const v of verts) { mesh.verts.push(mesh.verts[v].slice()); map.set(v, mesh.verts.length - 1); }
+  const wires = (mesh.edges ?? []).filter(([a, b]) => verts.has(a) && verts.has(b)).map(([a, b]) => [map.get(a), map.get(b)]);
+  const joined = new Set(wires.flat());
+  mesh.edges = [...(mesh.edges ?? []), ...wires];
+  mesh.loose = [...(mesh.loose ?? []), ...[...map.values()].filter(k => !joined.has(k))];
+  return new Set(map.values());
+}
+
+
+
+/** Turn faces inside out. A closed piece must keep one winding throughout
+ * (rule H4), so every face of each connected piece the selection touches is
+ * flipped. Returns the flipped faces. */
+function flipFacesEdit(mesh, faces) {
+  const around = vertexFaces(mesh), seen = new Set(), queue = [...faces];
+  while (queue.length) {
+    const fi = queue.pop(); if (seen.has(fi)) continue; seen.add(fi);
+    for (const v of mesh.faces[fi].v) for (const other of around[v]) if (!seen.has(other)) queue.push(other);
+  }
+  for (const fi of seen) mesh.faces[fi].v.reverse();
+  return seen;
+}
+
+/** Make winding consistent across each connected piece and point it outward (positive volume). */
+function recalculateNormalsEdit(mesh) {
+  const uses = edgeFaces(mesh), seen = new Set();
+  for (let start = 0; start < mesh.faces.length; start++) {
+    if (seen.has(start)) continue;
+    const piece = [start]; seen.add(start);
+    for (let k = 0; k < piece.length; k++) {
+      const face = mesh.faces[piece[k]], v = face.v;
+      v.forEach((a, i) => {
+        const b = v[(i + 1) % v.length];
+        for (const other of uses.get(edgeKey(a, b)) ?? []) {
+          if (seen.has(other)) continue;
+          const w = mesh.faces[other].v, j = w.indexOf(a);
+          // Neighbours must run the shared edge the other way.
+          if (w[(j + 1) % w.length] === b) w.reverse();
+          seen.add(other); piece.push(other);
+        }
+      });
+    }
+    // Only a closed piece has an inside; open surfaces keep the winding they were given.
+    const closed = piece.every(fi => mesh.faces[fi].v.every((a, i, v) => (uses.get(edgeKey(a, v[(i + 1) % v.length])) ?? []).length === 2));
+    let volume = 0;
+    for (const fi of piece) { const v = mesh.faces[fi].v, p0 = mesh.verts[v[0]]; for (let i = 1; i + 1 < v.length; i++) volume += dot(p0, cross(mesh.verts[v[i]], mesh.verts[v[i + 1]])); }
+    if (closed && volume < 0) for (const fi of piece) mesh.faces[fi].v.reverse();
+  }
+}
+
+/** Vertices connected to the selection through faces or wire edges. */
+export function linkedVerts(mesh, verts) {
+  const around = vertexFaces(mesh), wires = neighbours({faces: [], edges: mesh.edges}), out = new Set(verts), queue = [...verts];
+  while (queue.length) {
+    const at = queue.pop();
+    for (const fi of around[at] ?? []) for (const v of mesh.faces[fi].v) if (!out.has(v)) { out.add(v); queue.push(v); }
+    for (const v of wires.get(at) ?? []) if (!out.has(v)) { out.add(v); queue.push(v); }
+  }
+  return out;
+}
+
+/** Grow the selection by one ring of neighbours (through faces and wires). */
+export function growSelection(mesh, verts) {
+  const out = new Set(verts);
+  for (const f of mesh.faces) if (f.v.some(v => verts.has(v))) f.v.forEach(v => out.add(v));
+  for (const [a, b] of mesh.edges ?? []) if (verts.has(a) || verts.has(b)) { out.add(a); out.add(b); }
+  return out;
+}
+
+/** Copy selected faces as a separate piece. Returns the copy's vertices. */
+function duplicateFacesEdit(mesh, faces) {
+  const map = new Map(), dup = i => { if (!map.has(i)) { map.set(i, mesh.verts.length); mesh.verts.push(mesh.verts[i].slice()); } return map.get(i); };
+  for (const fi of [...faces]) mesh.faces.push({v: mesh.faces[fi].v.map(dup), c: mesh.faces[fi].c});
+  return new Set(map.values());
+}
+
+/** Rebuild the -X half as a mirror of the +X half (or the reverse), welding the middle. */
+function symmetrizeEdit(mesh, fromPositive = true, tolerance = 1e-4) {
+  const side = x => fromPositive ? x >= -tolerance : x <= tolerance;
+  mesh.faces = mesh.faces.filter(f => f.v.every(i => side(mesh.verts[i][0])));
+  if (mesh.edges) mesh.edges = mesh.edges.filter(e => e.every(i => side(mesh.verts[i][0])));
+  if (mesh.loose) mesh.loose = mesh.loose.filter(i => side(mesh.verts[i][0]));
+  cleanup(mesh);
+  mesh.verts.forEach(p => { if (Math.abs(p[0]) <= tolerance) p[0] = 0; });
+  const count = mesh.verts.length, map = mesh.verts.map((p, i) => {
+    if (p[0] === 0) return i;
+    mesh.verts.push([-p[0], p[1], p[2]]); return mesh.verts.length - 1;
+  });
+  const faces = mesh.faces.length;
+  for (let i = 0; i < faces; i++) mesh.faces.push({v: mesh.faces[i].v.map(j => map[j]).reverse(), c: mesh.faces[i].c});
+  if (mesh.edges) mesh.edges = [...mesh.edges, ...mesh.edges.map(e => e.map(j => map[j]))];
+  if (mesh.loose) mesh.loose = [...mesh.loose, ...mesh.loose.map(j => map[j])];
+  cleanup(mesh);
+  return count;
+}
+
+/** Mirror a mesh across X (a copy, welded on the middle); used by the mirror modifier. */
+export function mirrored(mesh, tolerance = 1e-4) {
+  const out = surfaceOf(mesh);
+  // Faces lying on the mirror plane would sit inside the whole; drop them.
+  out.faces = out.faces.filter(f => !f.v.every(i => Math.abs(out.verts[i][0]) <= tolerance));
+  const map = out.verts.map((p, i) => {
+    if (Math.abs(p[0]) <= tolerance) { p[0] = 0; return i; }
+    out.verts.push([-p[0], p[1], p[2]]); return out.verts.length - 1;
+  });
+  const faces = out.faces.length;
+  for (let i = 0; i < faces; i++) out.faces.push({v: out.faces[i].v.map(j => map[j]).reverse(), c: out.faces[i].c});
+  cleanup(out);
+  return out;
+}
+
+/** Axis-aligned bounds {min, max}. */
+export function bounds(points) {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (const p of points) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], p[k]); max[k] = Math.max(max[k], p[k]); }
+  return {min, max};
+}
+
+/** A part's local → world matrix (T · R · S). */
+export const objectMatrix = object => fromTRS(object.position ?? [0, 0, 0], object.rotation ?? [0, 0, 0], object.scale ?? [1, 1, 1]);
+/** True when a part's transform mirrors it (negative scale), turning faces inside out. */
+export const objectMirrors = object => determinant3(objectMatrix(object)) < 0;
+/** A part's local → world transform as a pure function of a point. */
+export function objectTransform(object) { const m = objectMatrix(object); return p => [...transformPoint(m, p)]; }
+/** World → local (the inverse of objectTransform), also pure. */
+export function objectInverse(object) { const m = invert(objectMatrix(object)); return p => [...transformPoint(m, p)]; }
+
+// The public, atomic edits (see atomic() above).
+export const deleteVerts = atomic('Delete', deleteVertsEdit);
+export const deleteFaces = atomic('Delete faces', deleteFacesEdit);
+export const extrudeFaces = atomic('Extrude', extrudeFacesEdit);
+export const extrudeEdges = atomic('Extrude edges', extrudeEdgesEdit);
+export const insetFaces = atomic('Inset', insetFacesEdit);
+export const subdivideFaces = atomic('Subdivide', subdivideFacesEdit);
+export const loopCut = atomic('Loop cut', loopCutEdit);
+export const mergeVerts = atomic('Merge', mergeVertsEdit);
+export const mergeByDistance = atomic('Merge doubles', mergeByDistanceEdit);
+export const fillVerts = atomic('Fill', fillVertsEdit);
+export const flipFaces = atomic('Flip faces', flipFacesEdit);
+export const recalculateNormals = atomic('Fix inside-out faces', recalculateNormalsEdit);
+export const duplicateFaces = atomic('Duplicate', duplicateFacesEdit);
+export const symmetrize = atomic('Symmetrize', symmetrizeEdit);
+export const extrudePoints = atomic('Extrude point', extrudePointsEdit);
+export const addPoint = atomic('Add point', addPointEdit);
+export const bridge = atomic('Bridge', bridgeEdit);
+export const orientWireFaces = atomic('Face the viewer', orientWireFacesEdit);
+export const duplicatePoints = atomic('Duplicate points', duplicatePointsEdit);

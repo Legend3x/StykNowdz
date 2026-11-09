@@ -209,6 +209,11 @@ Choosing one from Articulation reveals its marker individually; Builder and
 joining also expose them. This checkbox is editor presentation state, not an
 animation channel or an undo step.
 
+Controls with `_stykControl: {level: 'face'}` (a Blender lite face rig) work the
+same way but per figure: they stay hidden until the face badge beside the head
+joint (or **Face controls** in the 3D rig panel) opens that figure's face
+controls. Any other `level` fails validation.
+
 Mechanical joints keep a part on a fixed track, such as a pistol's slide and
 trigger. A spatial bone with `motion: {type: 'slide' | 'hinge', min, max}` is
 rigid. A slide moves along its rest origin-to-tip direction, carried by its

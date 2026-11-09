@@ -65,6 +65,8 @@ const shapes = Object.freeze({
   "ws-animate": '<circle cx="14.5" cy="4.5" r="2.1"/><path d="M14 7l-1.6 5.8 3.6 2.8.9 4.9M12.4 12.8l-3.8 1.9-1.4 4.8M13.2 8.8l4.2 1.8M13.2 8.8 9 8"/><path d="M2.5 10.5h3.5M3 14.5h2.5"/>',
   "ws-draw": '<path d="M3 19.5c2.7-3.4 4.6 1.3 7.4-2.3 2.2-2.8 3.6-.6 5.4-2.2"/><path d="m14.6 4.2 5.2 5.2-6.7 6.7-5.9 1.3 1.3-5.9z"/><path d="m12.5 6.3 5.2 5.2"/>',
   "ws-build": '<path d="M7.6 13.8 13.8 7.6M10.2 16.4l6.2-6.2"/><circle cx="5.6" cy="15.6" r="2.4"/><circle cx="8.4" cy="18.4" r="2.4"/><circle cx="15.6" cy="5.6" r="2.4"/><circle cx="18.4" cy="8.4" r="2.4"/>',
+  // Model (Blender lite): a cube seen from a corner.
+  "ws-model": '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
   "test-rig": '<circle cx="9" cy="5" r="2.2"/><path d="M9 7.5v5.5M9 13l-3 6M9 13l3 6M5.5 10l3.5-1 3.5 1"/><path d="M15 9.5v7l5-3.5z"/>',
   // The rail (experience §3.2): the Tweener is an in-between (two key nodes and the blended node on a dashed arc),
   // never a key diamond; Shapes is a triangle, a square and a circle. Their variants, listed by the corner tick:
