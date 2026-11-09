@@ -60,7 +60,8 @@ try {
   expect('The update service starts without an error', facts.updates !== 'error', facts.updates);
   if (!packaged) expect('Source builds do not update', facts.updates === 'unavailable', facts.updates);
   if (packaged && process.platform === 'linux' && executablePath?.endsWith('.AppImage')) {
-    expect('The Linux AppImage enables updates', facts.updates !== 'unavailable', facts.updates);
+    // StykNowdz ships with automatic updates off: new versions come from its GitHub releases page.
+    expect('The Linux AppImage has automatic updates off', facts.updates === 'unavailable', facts.updates);
   }
   expect('The page raised no errors', errors.length === 0, errors[0]);
 } finally {
