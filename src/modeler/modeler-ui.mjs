@@ -59,6 +59,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const commit = (fn, {keepRedo = false} = {}) => {
     const before = snapshot();
     let result;
+    S.lastOp = null;
     try { result = fn(); }
     catch (error) { restore(before); refuse(error); return undefined; }
     S.undo.push(before); if (S.undo.length > 120) S.undo.shift(); if (!keepRedo) S.redo = []; touch(); return result;
@@ -69,8 +70,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (error instanceof TopologyError || error instanceof RangeError || error?.modelerMessage) { toast(error.message); return; }
     throw error;
   }
-  const undo = () => { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); };
-  const redo = () => { if (!S.redo.length) return; S.undo.push(snapshot()); restore(S.redo.pop()); };
+  const undo = () => { if (!S.undo.length) return; S.lastOp = null; S.redo.push(snapshot()); restore(S.undo.pop()); };
+  const redo = () => { if (!S.redo.length) return; S.lastOp = null; S.undo.push(snapshot()); restore(S.redo.pop()); };
   const touch = (partId = null) => { if (partId) S.cache.delete(partId); else S.cache.clear(); refresh(); };
   let finished = false;
 
@@ -242,10 +243,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         // Mirror mode (Blender's Mirror modifier) where it's needed: while editing.
         el('label', {class: 'modeler-check modeler-mirror-toggle', title: t("modeler.mirrorHint")}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => setMirror(p, e.target.checked)}), t("modeler.mirrorX")]),
         p.mirror ? el('label', {class: 'modeler-check', title: t("modeler.clippingHint")}, [el('input', {type: 'checkbox', checked: p.clip !== false, onchange: e => commit(() => { if (e.target.checked) delete p.clip; else p.clip = false; })}), t("modeler.clipping")]) : null,
-        actions([[t("modeler.extrude"), extrude, 'E'], [t("modeler.inset"), startInset, 'I'], [t("modeler.loopCut"), startLoopCut, 'Ctrl+R'],
-          [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge"), merge, 'M'], [t("modeler.fill"), fill, 'F'],
-          [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.duplicateSelected"), duplicateSelected, 'Shift+D'], [t("modeler.separate"), separate, 'P'],
+        actions([[t("modeler.extrude"), extrude, 'E'], [t("modeler.inset"), startInset, 'I'], [t("modeler.bevel"), () => startBevel(S.selectMode === 'vert' && !M.edgesFromVerts(activePart().mesh, S.verts).length), 'Ctrl+B'], [t("modeler.loopCut"), startLoopCut, 'Ctrl+R'], [t("modeler.knife"), startKnife, 'K'],
+          [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge") + ' ▾', e => merge(e?.currentTarget), 'M'], [t("modeler.fill"), fill, 'F'], [t("modeler.gridFill"), gridFillSelected, t("modeler.gridFillHint")],
+          [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.dissolve"), dissolve, 'Ctrl+X'], [t("modeler.duplicateSelected"), duplicateSelected, 'Shift+D'], [t("modeler.separate"), separate, 'P'], [t("modeler.rip"), ripSelected, 'V'],
           [t("modeler.shear"), startShear, t("modeler.shearHint")], [t("modeler.bridge"), bridgeSelected, t("modeler.bridgeHint")]]),
+        S.lastOp?.kind === 'grid' && S.lastOp.part === p.id ? el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: t("modeler.gridFill")}),
+          field(t("modeler.gridSpan"), S.lastOp.span, v => redoGridFill(Math.max(1, Math.min(S.lastOp.max, Math.round(v))), S.lastOp.offset), {step: 1, min: 1, max: S.lastOp.max}),
+          field(t("modeler.gridOffset"), S.lastOp.offset, v => redoGridFill(S.lastOp.span, Math.round(v)), {step: 1})]) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.traceHint")}),
         el('label', {class: 'modeler-check', title: t("modeler.softHint")}, [el('input', {type: 'checkbox', checked: S.soft, onchange: e => { S.soft = e.target.checked; renderProps(); }}), t("modeler.softSelect")]),
         S.soft ? field(t("modeler.softRadius"), S.softRadius, v => { S.softRadius = Math.max(.01, Math.min(10, v)); }, {step: .05, min: .01}) : null,
@@ -256,7 +260,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           [t("modeler.flipNormals"), () => commit(() => { M.flipFaces(mesh, faces); S.cache.delete(p.id); })],
           [t("modeler.fixNormals"), () => commit(() => { M.recalculateNormals(mesh); S.cache.delete(p.id); }), 'Shift+N'],
           [t("modeler.symmetrize"), () => symmetrizePart(p), t("modeler.symmetrizeHint")],
-          [t("modeler.mergeByDistance"), () => commit(() => { const n = M.mergeByDistance(mesh, .001); S.verts.clear(); S.cache.delete(p.id); toast(t("modeler.mergedCount", {count: n})); })]]),
+          [t("modeler.mergeByDistance"), () => mergeAt('distance')]]),
         el('p', {class: 'modeler-hint', text: t("modeler.editHint")})]));
     } else if (S.mode === 'bones') {
       const bone = model.bones.find(b => S.bones.has(b.id) && S.bones.size === 1);
@@ -313,7 +317,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const m = S.modal;
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
       : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '')
-      : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
+      : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'bevel' ? t("modeler.bevelStatus", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind === 'knife' ? t("modeler.knifeStatus", {count: m.path.length}) : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
       : S.mode === 'edit' ? t("modeler.editStatus") : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
     // Soft select: its radius, which the scroll wheel changes while moving.
     status.textContent = m?.target?.soft ? `${text} · ${t("modeler.softStatus", {radius: fmt(S.softRadius)})}` : text;
@@ -365,8 +369,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'edit') drawCage(ctx);
     if (S.mode === 'bones' || S.showBones) drawBones(ctx);
     if (S.modal?.kind === 'loopcut' && S.modal.ring) drawRing(ctx, S.modal.ring, S.modal.cuts);
+    if (S.modal?.kind === 'knife') drawKnife(ctx);
     if (S.modal?.box) drawBox(ctx, S.modal.box);
-    if (S.modal?.pivotScreen && [...TRANSFORMS, 'inset'].includes(S.modal.kind)) drawPivot(ctx, S.modal);
+    if (S.modal?.pivotScreen && [...TRANSFORMS, 'inset', 'bevel'].includes(S.modal.kind)) drawPivot(ctx, S.modal);
     if (S.modal?.target?.soft) drawSoftRadius(ctx, S.modal);
     drawAxes(ctx, w, h);
   }
@@ -765,9 +770,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const m = S.modal; if (!m) return;
     S.modal = null;
     if (m.kind === 'loopcut' || m.kind === 'box') { refresh(); return; }
+    if (m.kind === 'knife') { S.modal = m; applyKnife(); return; }
     const edited = m.target?.part ?? m.part;
     if (edited) {
-      try { m.after?.(); assertValidMesh(edited.mesh, m.kind === 'inset' ? 'Inset' : 'This move'); }
+      try { m.after?.(); assertValidMesh(edited.mesh, m.kind === 'inset' ? 'Inset' : m.kind === 'bevel' ? 'Bevel' : 'This move'); }
       catch (error) { restore(m.before); refuse(error); return; }
     }
     S.undo.push(m.before); S.redo = []; S.cache.clear(); refresh();
@@ -863,6 +869,26 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     });
   }
   /** Bridge: fill between two selected lines of edges. */
+  /** Grid Fill (Blender's Face > Grid Fill): fill the selected closed ring with
+   * quads. Span and Offset can be changed afterwards in the Edit panel, which
+   * redoes the fill (Blender's "adjust last operation"). */
+  function gridFillSelected() {
+    const p = editPart(); if (!p || S.mode !== 'edit') return;
+    const sel = [...S.verts], before = snapshot();
+    const done = commit(() => { const r = M.gridFill(p.mesh, new Set(sel), {color: paintColor(p), facing: localFacing(p)}); S.verts = r.verts; S.cache.delete(p.id); return r; });
+    if (done) S.lastOp = {kind: 'grid', part: p.id, sel, before, span: done.span, offset: 0, max: Math.max(1, sel.length / 2 - 1)};
+    renderProps();
+  }
+  function redoGridFill(span, offset) {
+    const g = S.lastOp; if (g?.kind !== 'grid') return;
+    const after = snapshot(); restore(g.before);
+    const p = part(g.part);
+    try {
+      const r = M.gridFill(p.mesh, new Set(g.sel), {span, offset, color: paintColor(p), facing: localFacing(p)});
+      S.verts = r.verts; g.span = r.span; g.offset = offset; S.cache.delete(p.id); S.redo = []; touch(p.id);
+    } catch (error) { restore(after); refuse(error); }
+    S.lastOp = g; renderProps();
+  }
   function bridgeSelected() {
     const p = editPart(); if (!p || S.mode !== 'edit') return;
     commit(() => { const made = M.bridge(p.mesh, S.verts, {color: paintColor(p), facing: localFacing(p)}); S.cache.delete(p.id); toast(t("modeler.bridged", {count: made.size})); });
@@ -883,6 +909,66 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     try { S.verts = M.insetFaces(mesh, m.faces, amount); }
     catch (error) { cancelModal(); refuse(error); return; }
     m.part.mesh = mesh; S.cache.delete(m.part.id); draw();
+  }
+  /** Ctrl+B (edges) or Ctrl+Shift+B (points), as in Blender: move the mouse away from
+   * the selection to widen the bevel, scroll for more segments, click or Enter to keep. */
+  function startBevel(points = false) {
+    const p = editPart(); if (!p || S.mode !== 'edit') return;
+    if (!S.verts.size) { toast(t(points ? "modeler.selectPointsToBevel" : "modeler.selectEdgesToBevel")); return; }
+    const edges = M.edgesFromVerts(p.mesh, S.verts);
+    if (!points && !edges.length) { toast(t("modeler.selectEdgesToBevel")); return; }
+    const before = snapshot(), original = M.cloneMesh(p.mesh), verts = new Set(S.verts), tr = M.objectTransform(p);
+    const pivot = tr(M.centroid(p.mesh, S.verts)), pivotScreen = frame.project(pivot), mouse = S.pointer ?? {x: pivotScreen.x + 80, y: pivotScreen.y};
+    // Pixels per model unit at the selection, so the width follows the mouse at any zoom.
+    const right = frame.project(M.add(pivot, M.scale(frame.right, .1)));
+    const perUnit = Math.max(1, Math.hypot(right.x - pivotScreen.x, right.y - pivotScreen.y) / .1 / Math.max(1e-6, Math.abs(p.scale?.[0] ?? 1)));
+    S.modal = {kind: 'bevel', points, edges, before, original, verts, pivot, pivotScreen, start: {...mouse}, mouse: {...mouse}, part: p, perUnit, segments: 1, width: 0};
+    applyBevel(); setStatus();
+  }
+  function applyBevel() {
+    const m = S.modal, d0 = Math.hypot(m.start.x - m.pivotScreen.x, m.start.y - m.pivotScreen.y), d1 = Math.hypot(m.mouse.x - m.pivotScreen.x, m.mouse.y - m.pivotScreen.y);
+    m.width = Math.max(.002, (d1 - d0) / m.perUnit + .02);
+    const mesh = M.cloneMesh(m.original);
+    try { S.verts = m.points ? M.bevelVerts(mesh, m.verts, {width: m.width}) : M.bevelEdges(mesh, m.edges, {width: m.width, segments: m.segments}); }
+    catch (error) { cancelModal(); refuse(error); return; }
+    m.part.mesh = mesh; S.cache.delete(m.part.id); setStatus(); draw();
+  }
+  /** K (Blender's Knife): click points on edges or corners; the cut follows the line
+   * between them across the faces. Ctrl snaps to the middle of an edge. Enter or
+   * Space cuts, Esc or right-click cancels, Backspace removes the last point. */
+  function startKnife() {
+    const p = editPart(); if (!p || S.mode !== 'edit') return;
+    if (!p.mesh.faces.length) { toast(t("modeler.knifeNeedsFaces")); return; }
+    S.modal = {kind: 'knife', before: snapshot(), part: p, path: [], hover: null};
+    setStatus(); draw();
+  }
+  function knifeSnap(x, y, middle = false) {
+    const c = cage(); if (!c) return null;
+    let best = null;
+    c.pts.forEach((q, v) => { if (!q.ok || !c.visible[v] || !c.p.mesh.faces.some(f => f.v.includes(v))) return; const d = Math.hypot(q.x - x, q.y - y); if (d < 10 && (!best || d < best.d)) best = {v, d}; });
+    if (best) return {v: best.v, local: c.p.mesh.verts[best.v].slice()};
+    const edge = pickEdge(x, y); if (!edge) return null;
+    const [a, b] = edge, A = c.pts[a], B = c.pts[b], L = (B.x - A.x) ** 2 + (B.y - A.y) ** 2;
+    let t = L > 1e-9 ? Math.max(0, Math.min(1, ((x - A.x) * (B.x - A.x) + (y - A.y) * (B.y - A.y)) / L)) : .5;
+    if (middle) t = .5;
+    return {edge, t, local: M.lerp(c.p.mesh.verts[a], c.p.mesh.verts[b], t)};
+  }
+  function applyKnife() {
+    const m = S.modal, p = m.part, tr = M.objectTransform(p);
+    S.modal = null;
+    if (m.path.length < 2) { restore(m.before); toast(t("modeler.knifeNeedsTwo")); return; }
+    try { S.verts = M.knife(p.mesh, m.path.map(({v, edge, t: at}) => v !== undefined ? {v} : {edge, t: at}), v => frame.project(tr(v))); }
+    catch (error) { restore(m.before); refuse(error); return; }
+    S.selectMode = 'vert'; S.undo.push(m.before); S.redo = []; S.cache.delete(p.id); refresh();
+  }
+  function drawKnife(ctx) {
+    const m = S.modal, tr = M.objectTransform(m.part), pts = m.path.map(q => frame.project(tr(q.local)));
+    const end = m.hover ? frame.project(tr(m.hover.local)) : S.pointer;
+    ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = '#d6336c'; ctx.fillStyle = '#d6336c';
+    ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (pts.length && end) ctx.lineTo(end.x, end.y); ctx.stroke();
+    for (const q of pts) { ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, Math.PI * 2); ctx.fill(); }
+    if (m.hover && end) { ctx.beginPath(); ctx.arc(end.x, end.y, 5, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.restore();
   }
   /** Click during Ctrl+R: cut, then (for a single cut) slide it until the next click. */
   function placeLoopCut(edge, cuts) {
@@ -948,7 +1034,38 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     S.modal = {kind: 'loopcut', ring: null, cuts: 1}; setStatus(); draw();
   }
   function subdivide() { const p = editPart(); if (!p) return; const faces = selectedFaces(p); if (!faces.size) { toast(t("modeler.selectFacesFirst")); return; } commit(() => { S.verts = M.subdivideFaces(p.mesh, faces); S.cache.delete(p.id); }); }
-  function merge() { const p = editPart(); if (!p || S.verts.size < 2) { toast(t("modeler.selectTwoOrMoreVertices")); return; } commit(() => { S.verts = M.mergeVerts(p.mesh, S.verts); S.cache.delete(p.id); }); }
+  /** Blender's M menu: At Center, At First, At Last, Collapse, By Distance. */
+  function merge(anchor = null) {
+    const p = editPart(); if (!p) return;
+    const item = (label, fn) => el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); fn(); }}, label);
+    popover(anchor ?? pointerAnchor(), [
+      item(t("modeler.mergeAtCenter"), () => mergeAt('center')), item(t("modeler.mergeAtFirst"), () => mergeAt('first')), item(t("modeler.mergeAtLast"), () => mergeAt('last')),
+      item(t("modeler.mergeCollapse"), () => mergeAt('collapse')), item(t("modeler.mergeByDistance"), () => mergeAt('distance'))]);
+  }
+  function mergeAt(how) {
+    const p = editPart(); if (!p) return;
+    if (how === 'distance') { commit(() => { const n = M.mergeByDistance(p.mesh, .001, S.verts.size > 1 ? S.verts : null); S.verts = new Set(); S.cache.delete(p.id); toast(t("modeler.mergedCount", {count: n})); }); return; }
+    if (S.verts.size < 2) { toast(t("modeler.selectTwoOrMoreVertices")); return; }
+    const order = [...S.verts], at = how === 'first' ? p.mesh.verts[order[0]] : how === 'last' ? p.mesh.verts[order.at(-1)] : undefined;
+    commit(() => { S.verts = how === 'collapse' ? M.collapseVerts(p.mesh, S.verts) : M.mergeVerts(p.mesh, S.verts, at?.slice()); S.cache.delete(p.id); });
+  }
+  /** A menu opened by a key shows up under the mouse, as in Blender. */
+  function pointerAnchor() {
+    const box = canvas.getBoundingClientRect(), x = box.left + (S.pointer?.x ?? box.width / 2), y = box.top + (S.pointer?.y ?? box.height / 2);
+    return {getBoundingClientRect: () => ({left: x, right: x, top: y, bottom: y})};
+  }
+  /** Ctrl+X: dissolve what the select mode picks (points, edges or faces), keeping the surface. */
+  function dissolve() {
+    const p = editPart(); if (!p) return;
+    if (!S.verts.size) { toast(t("modeler.selectSomethingToDissolve")); return; }
+    const mesh = p.mesh, faces = selectedFaces(p);
+    commit(() => {
+      if (S.selectMode === 'face' && faces.size) S.verts = M.dissolveFaces(mesh, faces);
+      else if (S.selectMode === 'edge') { M.dissolveEdges(mesh, M.edgesFromVerts(mesh, S.verts)); S.verts = new Set(); }
+      else { M.dissolveVerts(mesh, S.verts); S.verts = new Set(); }
+      S.cache.delete(p.id);
+    });
+  }
   function fill() {
     const p = editPart(); if (!p) return;
     if (S.verts.size < 2) { toast(t("modeler.selectTwoOrMorePoints")); return; }
@@ -959,6 +1076,22 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const p = editPart(); if (!p) return; const faces = selectedFaces(p);
     if (!faces.size && !S.verts.size) { toast(t("modeler.selectFacesFirst")); return; }
     const before = snapshot(); if (attempt(() => { S.verts = faces.size ? M.duplicateFaces(p.mesh, faces) : M.duplicatePoints(p.mesh, S.verts); return true; }) !== true) return;
+    S.cache.delete(p.id); startTransform('grab'); if (S.modal) S.modal.before = before;
+  }
+  /** V (Blender's Rip): tear the surface open along the selected edges; the side
+   * nearer the mouse comes away and follows the mouse. */
+  function ripSelected() {
+    const p = editPart(); if (!p || S.mode !== 'edit') return;
+    const edges = M.edgesFromVerts(p.mesh, S.verts);
+    if (!edges.length) { toast(t("modeler.ripHint")); return; }
+    const sides = M.ripSides(p.mesh, edges), tr = M.objectTransform(p);
+    let side = 'left';
+    if (sides && S.pointer) {
+      const near = set => { let best = Infinity; for (const fi of set) { const q = frame.project(tr(M.faceCenter(p.mesh, p.mesh.faces[fi]))); if (q.ok) best = Math.min(best, Math.hypot(q.x - S.pointer.x, q.y - S.pointer.y)); } return best; };
+      side = near(sides.right) < near(sides.left) ? 'right' : 'left';
+    }
+    const before = snapshot();
+    if (attempt(() => { S.verts = M.rip(p.mesh, edges, side); return true; }) !== true) return;
     S.cache.delete(p.id); startTransform('grab'); if (S.modal) S.modal.before = before;
   }
   function separate() {
@@ -1290,7 +1423,15 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('pointerdown', e => {
     closePopover(); canvas.focus();
     const p = local(e); S.pointer = p;
-    if (S.modal && [...TRANSFORMS, 'inset', 'slide', 'loopslide'].includes(S.modal.kind)) { e.preventDefault(); if (e.button === 2) cancelModal(); else confirmModal(); return; }
+    if (S.modal && [...TRANSFORMS, 'inset', 'bevel', 'slide', 'loopslide'].includes(S.modal.kind)) { e.preventDefault(); if (e.button === 2) cancelModal(); else confirmModal(); return; }
+    if (S.modal?.kind === 'knife') {
+      e.preventDefault();
+      if (e.button === 2) { cancelModal(); return; }
+      if (e.button === 1) { drag = {kind: 'orbit', last: p}; canvas.setPointerCapture(e.pointerId); return; }
+      const hit = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey);
+      if (hit) { S.modal.path.push(hit); setStatus(); draw(); } else toast(t("modeler.knifeClickEdge"));
+      return;
+    }
     if (S.modal?.kind === 'loopcut') {
       e.preventDefault();
       if (e.button === 2) { cancelModal(); return; }
@@ -1306,8 +1447,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const p = local(e); S.pointer = p;
     if (S.modal && TRANSFORMS.includes(S.modal.kind)) { S.modal.mouse = p; S.modal.snap = S.modal.tweak ? e.shiftKey : e.ctrlKey; applyTransform(); return; }
     if (S.modal?.kind === 'inset') { S.modal.mouse = p; applyInset(); return; }
+    if (S.modal?.kind === 'bevel') { S.modal.mouse = p; applyBevel(); return; }
     if (S.modal?.kind === 'loopcut') { const edge = pickEdge(p.x, p.y), part = activePart(); S.modal.ring = edge && part ? M.edgeRing(part.mesh, edge) : null; S.hover = edge ? {edge} : null; draw(); return; }
     if (S.modal?.kind === 'loopslide') { S.modal.mouse = p; applyLoopSlide(); return; }
+    if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
     if (!drag) return;
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
@@ -1332,6 +1475,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     // While moving with soft select, the wheel grows or shrinks its circle (as in Blender).
+    if (S.modal?.kind === 'bevel') { if (!S.modal.points) { S.modal.segments = Math.max(1, Math.min(12, S.modal.segments + (e.deltaY < 0 ? 1 : -1))); applyBevel(); } return; }
     if (S.modal?.kind === 'loopcut') {
       S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (e.deltaY < 0 ? 1 : -1))); setStatus(); draw(); return;
     }
@@ -1361,6 +1505,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal && TRANSFORMS.includes(S.modal.kind) && ['x', 'y', 'z'].includes(key) && !ctrl) setAxis(key.toUpperCase());
     else if (S.modal && (key === 'Enter' || key === ' ')) confirmModal();
     else if (S.modal && key === 'Escape') cancelModal();
+    else if (S.modal?.kind === 'knife' && key !== 'Backspace') { /* other keys wait until the cut is done */ }
     else if (S.modal?.kind === 'grab' && !S.modal.tweak && S.modal.target?.kind === 'verts' && key === 'g' && !ctrl) startEdgeSlide();
     else if (S.modal && !ctrl && ['g', 'r', 's'].includes(key)) switchTransform({g: 'grab', r: 'rotate', s: 'scale'}[key]);
     else if (S.modal?.kind === 'loopcut' && ['+', '=', '-'].includes(key)) { S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (key === '-' ? -1 : 1))); setStatus(); draw(); }
@@ -1370,6 +1515,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (ctrl && e.altKey && e.shiftKey && key === 's') startShear();
     else if (ctrl && key === 'e' && S.mode === 'edit') bridgeSelected();
     else if (ctrl && key === 'r') startLoopCut();
+    else if (ctrl && key === 'b' && S.mode === 'edit') startBevel(e.shiftKey);
+    else if (S.modal?.kind === 'knife' && key === 'Backspace') { S.modal.path.pop(); setStatus(); draw(); }
+    else if (key === 'k' && !ctrl && S.mode === 'edit' && !S.modal) startKnife();
     else if (ctrl && key === 'l') { if (S.mode === 'edit' && activePart()) { S.verts = M.linkedVerts(activePart().mesh, S.verts); refresh(); } }
     else if (ctrl && (key === '+' || key === '=')) { if (S.mode === 'edit' && activePart()) { S.verts = M.growSelection(activePart().mesh, S.verts); refresh(); } }
     else if (ctrl) handled = false;
@@ -1381,8 +1529,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (key === 'i' && S.mode === 'edit') startInset();
     else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? "modeler.softOn" : "modeler.softOff")); renderProps(); }
     else if (key === 'm' && S.mode === 'edit') merge();
+    else if (ctrl && key === 'x' && S.mode === 'edit') dissolve();
     else if (key === 'f' && S.mode === 'edit') fill();
     else if (key === 'p' && S.mode === 'edit') separate();
+    else if (key === 'v' && !ctrl && S.mode === 'edit') ripSelected();
     else if (key === 'x' || key === 'Delete') deleteSelection();
     else if (key === 'd' && e.shiftKey) S.mode === 'edit' ? duplicateSelected() : duplicateParts();
     else if (key === 'a' && e.altKey) { S.verts = new Set(); S.parts = new Set(); S.bones = new Set(); refresh(); }
@@ -1409,7 +1559,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function close() {
     listeners.abort(); cancelAnimationFrame(frameRequest); clearTimeout(flashTimer); root.remove();
     const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model)) && (model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0);
-    onClose?.(changed ? {model: structuredClone(model), camera: structuredClone(S.camera)} : null);
+    // The draft remembers where you were (mode, part and selection), so coming back
+    // from another tab carries straight on instead of dropping to Object mode.
+    const where = {mode: S.mode, selectMode: S.selectMode, active: S.active, parts: [...S.parts], verts: [...S.verts]};
+    onClose?.(changed ? {model: structuredClone(model), camera: structuredClone(S.camera), where} : null);
   }
   function done() {
     if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t("modeler.addAPartFirst")); return; }
@@ -1419,6 +1572,16 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   syncRefs();
   if (!model.parts.length) S.camera = defaultCamera();
   if (draft?.camera) S.camera = {...S.camera, ...draft.camera};
+  if (draft?.where) {
+    const w = draft.where, ids = new Set(model.parts.map(p => p.id));
+    if (ids.has(w.active)) S.active = w.active;
+    S.parts = new Set((w.parts ?? []).filter(id => ids.has(id)));
+    if (['vert', 'edge', 'face'].includes(w.selectMode)) S.selectMode = w.selectMode;
+    if (w.mode === 'edit' && activePart()) { S.mode = 'edit'; const n = activePart().mesh.verts.length; S.verts = new Set((w.verts ?? []).filter(v => Number.isInteger(v) && v >= 0 && v < n)); }
+    else if (w.mode === 'bones') S.mode = 'bones';
+  }
+  // A draft with one part is ready to edit: select it so Tab works straight away.
+  if (S.mode === 'object' && !S.parts.size && model.parts.length === 1) { S.parts = new Set([model.parts[0].id]); S.active = model.parts[0].id; }
   refresh();
   canvas.focus();
   if (!controlsHidden()) showControls();

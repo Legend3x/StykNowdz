@@ -8,18 +8,21 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- 3D Nowdz has Blender's modeling tools: Bevel (Ctrl+B), Knife (K), Dissolve (Ctrl+X), Rip (V), Grid fill, and a Merge menu (M) with At First, At Last and Collapse.
 - 3D Nowdz: Mirror mode is now a checkbox at the top of the Edit panel, so you can trace one side of a face and see the other side follow.
 - 3D Nowdz: File > Start over clears the model in one step, and Undo brings it back.
 
 ### Changed
 
 - Blender Lite is now called 3D Nowdz.
-- Leaving 3D Nowdz for another tab keeps your unfinished model, and it comes back the next time you open the Model tab, even after a restart.
+- Leaving 3D Nowdz for another tab keeps your unfinished model, and it comes back where you left off the next time you open the Model tab, even after a restart.
 - Extrude, Delete and Duplicate now work on selections Blender allows, such as faces that touch only at a corner or a whole block of faces.
 
 ### Fixed
 
 - Fixed being unable to leave the Model tab without closing the app.
+- Fixed traced points looking greyed out and not editable after coming back to the Model tab.
+- Fixed Close and Add to animation being hidden off the edge of the 3D Nowdz bar on smaller windows.
 - Fixed Symmetrize mirroring around the part instead of the middle of the model.
 - Fixed the walls of an extruded eye ring disappearing while you dragged them.
 - Fixed Loop cut on a traced line, which now cuts the line into pieces.

@@ -21,9 +21,8 @@
   .modeler-bar {
     container: modeler-bar / inline-size;
     display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    /* Wrap to a second row rather than hiding Close and Add to animation off the edge. */
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
     min-block-size: calc(var(--control-md) + var(--space-2) * 2);
@@ -53,7 +52,7 @@
   .modeler-title-badge > svg { inline-size: var(--icon-md); block-size: var(--icon-md); }
   .modeler-gap { flex: none; inline-size: 1px; block-size: 20px; margin: 0 var(--space-1-5); background: var(--line-1); }
   /* Narrow windows: the move, rotate and scale buttons keep only their keys. */
-  @container modeler-bar (max-width: 1240px) {
+  @container modeler-bar (max-width: 1400px) {
     .modeler-bar .modeler-transform { padding: 0 var(--space-1-5); font-size: 0; gap: 0; }
     .modeler-bar .modeler-transform > .modeler-key { font-size: var(--text-11); }
   }

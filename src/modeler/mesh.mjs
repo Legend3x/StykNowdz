@@ -616,9 +616,10 @@ function fillVertsEdit(mesh, verts, color = 0, {facing = null} = {}) {
 /** The selected points in order around a closed ring of wire / border edges
  * that uses exactly them, or null. */
 function closedRing(mesh, verts) {
+  if (verts.size < 3) return null;
   const uses = edgeFaces(mesh), links = new Map(), add2 = (a, b) => { links.set(a, [...(links.get(a) ?? []), b]); };
-  const open = [...(mesh.edges ?? []), ...[...uses].filter(([, fs]) => fs.length === 1).map(([k]) => keyVerts(k))];
-  for (const [a, b] of open) if (verts.has(a) && verts.has(b)) { add2(a, b); add2(b, a); }
+  const open = [...new Set([...(mesh.edges ?? []).map(([a, b]) => edgeKey(a, b)), ...[...uses].filter(([, fs]) => fs.length === 1).map(([k]) => k)])].map(keyVerts);
+  for (const [a, b] of open) if (a !== b && verts.has(a) && verts.has(b)) { add2(a, b); add2(b, a); }
   if (links.size !== verts.size || [...links.values()].some(l => l.length !== 2)) return null;
   const start = [...verts][0], ring = [start];
   let prev = null, at = start;
@@ -657,8 +658,8 @@ function addPointEdit(mesh, at, from = null) {
 /** The selected edges (wire or open border) as connected chains: [{points, closed}]. */
 export function selectedChains(mesh, verts) {
   const uses = edgeFaces(mesh), links = new Map(), link = (a, b) => { links.set(a, [...(links.get(a) ?? []), b]); };
-  const open = [...(mesh.edges ?? []), ...[...uses].filter(([, fs]) => fs.length === 1).map(([k]) => keyVerts(k))];
-  for (const [a, b] of open) if (verts.has(a) && verts.has(b)) { link(a, b); link(b, a); }
+  const open = [...new Set([...(mesh.edges ?? []).map(([a, b]) => edgeKey(a, b)), ...[...uses].filter(([, fs]) => fs.length === 1).map(([k]) => k)])].map(keyVerts);
+  for (const [a, b] of open) if (a !== b && verts.has(a) && verts.has(b)) { link(a, b); link(b, a); }
   const seen = new Set(), chains = [];
   for (const start of links.keys()) {
     if (seen.has(start)) continue;
@@ -790,6 +791,482 @@ function duplicateFacesEdit(mesh, faces) {
   return new Set([...map.values(), ...made.keys()]);
 }
 
+// ---------- grid fill (Blender's Face > Grid Fill) ----------
+
+/** How sharp a corner of a closed ring is (0 for straight on). */
+const cornerAngle = (mesh, ring, i) => {
+  const n = ring.length, p = mesh.verts[ring[i]], a = normalize(sub(mesh.verts[ring[(i + n - 1) % n]], p)), b = normalize(sub(mesh.verts[ring[(i + 1) % n]], p));
+  return Math.abs(Math.PI - Math.acos(Math.max(-1, Math.min(1, dot(a, b)))));
+};
+
+/** The layout Grid Fill uses for a selected closed ring, as Blender works it out:
+ * the sharpest corner (or `start`) first, `offset` turns it, and `span` (0 = work
+ * it out from the next sharpest corner) is how many edges the first side has. */
+export function gridFillLayout(mesh, verts, {span = 0, offset = 0, start = null} = {}) {
+  const ring = closedRing(mesh, verts);
+  if (!ring) throw refused('Grid Fill needs one closed ring of open edges selected, like the edge of a hole or a traced outline.');
+  const n = ring.length;
+  if (n < 4 || n % 2) throw refused(`Grid Fill needs an even number of points around the ring (this one has ${n}). Add or remove one point.`);
+  let first = start !== null && ring.includes(start) ? ring.indexOf(start) : 0;
+  if (start === null || !ring.includes(start)) { let best = -1; ring.forEach((_, i) => { const a = cornerAngle(mesh, ring, i); if (a > best + 1e-6) { best = a; first = i; } }); }
+  let order = [...ring.slice(first), ...ring.slice(0, first)];
+  const turn = ((Math.round(offset) % n) + n) % n; order = [...order.slice(turn), ...order.slice(0, turn)];
+  let s = 0, a = Math.max(1, Math.min(n / 2 - 1, Math.round(span) || 0));
+  if (!span) {
+    a = Math.max(1, Math.min(Math.floor(n / 4), n / 2 - 1));
+    const angles = order.map((_, i) => i === 0 || i === n / 2 ? 0 : cornerAngle(mesh, order, i)), sorted = [...angles].sort((x, y) => y - x);
+    if (sorted[0] - sorted[n - 3] > .1) a = angles.indexOf(sorted[0]);
+    if (a > n / 2) { a = n - a; s = n / 2 - a; }
+    a = Math.max(1, Math.min(n / 2 - 1, a));
+  }
+  return {order, start: s, span: a, other: n / 2 - a};
+}
+
+/** Fill a closed ring with a grid of quads: `span` columns by (ring/2 − span) rows.
+ * Inner points sit on a smooth blend of the four sides (a Coons patch). */
+function gridFillEdit(mesh, verts, {span = 0, offset = 0, start = null, color = 0, facing = null} = {}) {
+  const {order, start: s, span: a, other: b} = gridFillLayout(mesh, verts, {span, offset, start}), n = order.length;
+  const L = i => order[((i % n) + n) % n];
+  const grid = Array.from({length: b + 1}, () => new Array(a + 1));
+  for (let x = 0; x <= a; x++) { grid[0][x] = L(s + x); grid[b][x] = L(s + n / 2 + a - x); }
+  for (let y = 0; y <= b; y++) { grid[y][a] = L(s + a + y); grid[y][0] = L(s - y); }
+  const P = i => mesh.verts[i], c0 = P(grid[0][0]), c1 = P(grid[0][a]), c2 = P(grid[b][a]), c3 = P(grid[b][0]);
+  const made = new Set();
+  for (let y = 1; y < b; y++) for (let x = 1; x < a; x++) {
+    const u = x / a, v = y / b;
+    const p = [0, 1, 2].map(k => (1 - v) * P(grid[0][x])[k] + v * P(grid[b][x])[k] + (1 - u) * P(grid[y][0])[k] + u * P(grid[y][a])[k]
+      - ((1 - u) * (1 - v) * c0[k] + u * (1 - v) * c1[k] + (1 - u) * v * c3[k] + u * v * c2[k]));
+    grid[y][x] = mesh.verts.length; mesh.verts.push(p); made.add(grid[y][x]);
+  }
+  const faces = new Set();
+  for (let y = 0; y < b; y++) for (let x = 0; x < a; x++) { faces.add(mesh.faces.length); mesh.faces.push({v: [grid[y][x], grid[y][x + 1], grid[y + 1][x + 1], grid[y + 1][x]], c: color}); }
+  // The ring's traced wires are now face edges.
+  if (mesh.edges) { const ringKeys = new Set(order.map((v, i) => edgeKey(v, L(i + 1)))); mesh.edges = mesh.edges.filter(([p, q]) => !ringKeys.has(edgeKey(p, q))); }
+  windConsistently(mesh, faces, facing);
+  return {verts: new Set([...made, ...order]), span: a, offset, faces};
+}
+
+// ---------- rip (Blender's V) ----------
+
+/** The two faces along each selected edge, split into the "left" faces (that run
+ * the chain's way) and the "right" ones. Used to pick a side to rip. */
+export function ripSides(mesh, edges) {
+  const chains = selectedChainsOf(edges);
+  if (!chains) return null;
+  const half = new Map(); mesh.faces.forEach((f, fi) => f.v.forEach((a, i) => half.set(`${a}>${f.v[(i + 1) % f.v.length]}`, fi)));
+  const left = new Set(), right = new Set();
+  for (const {points, closed} of chains) for (let i = 0; i < points.length - (closed ? 0 : 1); i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    if (half.has(`${a}>${b}`)) left.add(half.get(`${a}>${b}`));
+    if (half.has(`${b}>${a}`)) right.add(half.get(`${b}>${a}`));
+  }
+  return {chains, left, right};
+}
+/** Chains (ordered points) from a list of edges, or null where a point joins three or more. */
+function selectedChainsOf(edges) {
+  const links = new Map(), link = (a, b) => { links.set(a, [...(links.get(a) ?? []), b]); };
+  for (const [a, b] of edges) { link(a, b); link(b, a); }
+  if ([...links.values()].some(l => l.length > 2)) return null;
+  const seen = new Set(), chains = [];
+  for (const startAt of links.keys()) {
+    if (seen.has(startAt)) continue;
+    const comp = [startAt]; seen.add(startAt);
+    for (let k = 0; k < comp.length; k++) for (const n of links.get(comp[k])) if (!seen.has(n)) { seen.add(n); comp.push(n); }
+    const ends = comp.filter(v => links.get(v).length === 1), first = ends[0] ?? comp[0], points = [first];
+    let prev = null, at = first;
+    for (;;) { const next = links.get(at).find(x => x !== prev); if (next === undefined || next === first) break; points.push(next); prev = at; at = next; }
+    chains.push({points, closed: !ends.length});
+  }
+  return chains;
+}
+
+/** Rip: tear the surface open along the selected edges. The faces on one side
+ * (`side`: 'left' or 'right', see ripSides) get their own copies of the points,
+ * except where the line ends inside the surface, so it opens like a slit.
+ * Returns the copies (to move them away, as Blender does). */
+function ripEdit(mesh, edges, side = 'left') {
+  const keys = new Set(edges.map(([a, b]) => edgeKey(a, b))), uses = edgeFaces(mesh);
+  const inner = edges.filter(([a, b]) => uses.get(edgeKey(a, b))?.length === 2);
+  if (!inner.length) throw refused('Rip needs a line of edges with faces on both sides. Select the edges to tear open (in Edge mode), then press V.');
+  const sides = ripSides(mesh, inner);
+  if (!sides) throw refused('Rip works on lines of edges without branches.');
+  const chosen = sides[side], verts = new Set(inner.flat()), copies = new Set();
+  for (const v of verts) {
+    const around = mesh.faces.flatMap((f, i) => f.v.includes(v) ? [i] : []);
+    // Fans around v, split by the selected edges.
+    const parent = new Map(around.map(f => [f, f])), root = f => { while (parent.get(f) !== f) { parent.set(f, parent.get(parent.get(f))); f = parent.get(f); } return f; };
+    for (const [key, list] of uses) {
+      if (list.length !== 2 || keys.has(key)) continue;
+      const [a, b] = keyVerts(key); if (a !== v && b !== v) continue;
+      parent.set(root(list[0]), root(list[1]));
+    }
+    const fans = new Map(); for (const f of around) { const r = root(f); if (!fans.has(r)) fans.set(r, []); fans.get(r).push(f); }
+    if (fans.size < 2) continue;
+    const pick = [...fans.values()].find(list => list.some(f => chosen.has(f)));
+    if (!pick) continue;
+    const copy = mesh.verts.length; mesh.verts.push(mesh.verts[v].slice()); copies.add(copy);
+    for (const f of pick) { const w = mesh.faces[f].v; w[w.indexOf(v)] = copy; }
+  }
+  if (!copies.size) throw refused('Nothing to rip here: the line must cross the surface or reach its edge.');
+  return copies;
+}
+
+// ---------- bevel (Blender's Ctrl+B and Ctrl+Shift+B) ----------
+
+/** Fill the closed holes a bevel leaves around its corners: loops of open edges
+ * that weren't open before. Returns the faces made. */
+function fillNewHoles(mesh, wasOpen, color, onEdge = new Map()) {
+  const half = new Set(); mesh.faces.forEach(f => f.v.forEach((a, i) => half.add(`${a}>${f.v[(i + 1) % f.v.length]}`)));
+  // An open edge lying along an edge that was already open (the mesh's own border) is no hole.
+  const incident = new Map(); for (const key of wasOpen) for (const v of keyVerts(key)) incident.set(v, [...(incident.get(v) ?? []), key]);
+  const lines = v => onEdge.has(v) ? [edgeKey(...onEdge.get(v))].filter(k => wasOpen.has(k)) : incident.get(v) ?? [];
+  const old = (a, b) => wasOpen.has(edgeKey(a, b)) || lines(a).some(k => lines(b).includes(k));
+  const next = new Map();
+  mesh.faces.forEach(f => f.v.forEach((a, i) => { const b = f.v[(i + 1) % f.v.length]; if (!half.has(`${b}>${a}`) && !old(a, b)) next.set(b, next.has(b) ? null : a); }));
+  const made = [], seen = new Set();
+  for (const start of next.keys()) {
+    if (seen.has(start) || next.get(start) === null) continue;
+    const loop = []; let at = start, closed = false;
+    while (at !== undefined && at !== null && !seen.has(at)) { seen.add(at); loop.push(at); at = next.get(at); if (at === start) { closed = true; break; } }
+    if (closed && loop.length >= 3) { made.push(mesh.faces.length); mesh.faces.push({v: loop, c: color}); }
+  }
+  return made;
+}
+
+/** The profile from p to q bulging toward the old corner c (a circle-like curve,
+ * Blender's default profile), `segments` pieces; the inner points only. */
+function profilePoints(p, c, q, segments) {
+  const out = [];
+  for (let k = 1; k < segments; k++) { const t = k / segments; out.push([0, 1, 2].map(i => (1 - t) * (1 - t) * p[i] + 2 * t * (1 - t) * c[i] + t * t * q[i])); }
+  return out;
+}
+
+/** Bevel edges: each selected edge between two faces becomes a strip `width`
+ * wide (measured at right angles to the edge, as Blender's Offset), rounded
+ * with `segments` pieces. Corners left open are closed with one face; a corner
+ * left joining just two edges is dissolved, as Blender does at a cube corner.
+ * Returns the new points. */
+function bevelEdgesEdit(mesh, edges, {width = .1, segments = 1} = {}) {
+  const uses = edgeFaces(mesh), keys = new Set(edges.map(([a, b]) => edgeKey(a, b)).filter(k => uses.get(k)?.length === 2));
+  if (!keys.size) throw refused('Bevel needs edges with a face on each side. Select edges (in Edge mode), then press Ctrl+B.');
+  const n = Math.max(1, Math.min(12, Math.round(segments))), wasOpen = new Set([...uses].filter(([, fs]) => fs.length === 1).map(([k]) => k));
+  const corners = new Set([...keys].flatMap(keyVerts)), made = new Map(), fresh = new Set(), onEdge = new Map();
+  const point = (key, p) => { if (!made.has(key)) { made.set(key, mesh.verts.length); mesh.verts.push(p); fresh.add(mesh.verts.length - 1); } return made.get(key); };
+  const P = i => mesh.verts[i];
+  const slideAmount = (a, along, other) => { const sin = length(cross(normalize(sub(P(along), P(a))), normalize(sub(P(other), P(a))))); return width / Math.max(.2, sin); };
+  // 1. Each face touching a bevelled edge at a corner swaps the corner for a new point.
+  const plan = [];
+  mesh.faces.forEach((f, fi) => f.v.forEach((a, i) => {
+    if (!corners.has(a)) return;
+    const prev = f.v[(i + f.v.length - 1) % f.v.length], next = f.v[(i + 1) % f.v.length];
+    const inPrev = keys.has(edgeKey(prev, a)), inNext = keys.has(edgeKey(a, next));
+    if (!inPrev && !inNext) return;
+    let at;
+    if (inPrev && inNext) {
+      // Both edges bevelled: the point where the two offset lines meet, inside the face.
+      const d1 = normalize(sub(P(prev), P(a))), d2 = normalize(sub(P(next), P(a))), sin = Math.max(.2, length(cross(d1, d2)));
+      at = point(`in:${fi}:${a}`, add(P(a), scale(add(d1, d2), width / sin)));
+    } else {
+      const along = inPrev ? next : prev, beside = inPrev ? prev : next, edgeLength = length(sub(P(along), P(a)));
+      const d = Math.min(edgeLength * .95, slideAmount(a, along, beside));
+      at = point(`on:${edgeKey(a, along)}:${a}`, add(P(a), scale(normalize(sub(P(along), P(a))), d))); onEdge.set(at, [a, along]);
+    }
+    plan.push({fi, a, at});
+  }));
+  // 2. Faces sharing a slid-along edge but not touching the bevel get the new point in that edge.
+  const splits = [...made].filter(([k]) => k.startsWith('on:')).map(([k, v]) => { const [, key, a] = k.split(':'); return {edge: keyVerts(key), a: Number(a), v}; });
+  for (const {fi, a, at} of plan) { const f = mesh.faces[fi].v; f[f.indexOf(a)] = at; }
+  for (const {edge: [x, y], a, v} of splits) {
+    const other = x === a ? y : x;
+    for (const f of mesh.faces) {
+      const w = f.v; for (let i = 0; i < w.length; i++) { const p = w[i], q = w[(i + 1) % w.length];
+        if ((p === a && q === other) || (p === other && q === a)) { w.splice(i + 1, 0, v); break; } }
+    }
+  }
+  // 3. A strip of faces along each bevelled edge, between the points that replaced its ends.
+  const color = edge => mesh.faces[uses.get(edge)[0]].c ?? 0;
+  const rails = new Map();
+  for (const {fi, a, at} of plan) rails.set(`${fi}:${a}`, at);
+  for (const key of keys) {
+    const [a, b] = keyVerts(key), [f1, f2] = uses.get(key);
+    const w1 = mesh.faces[f1].v;
+    const a1 = rails.get(`${f1}:${a}`), b1 = rails.get(`${f1}:${b}`), a2 = rails.get(`${f2}:${a}`), b2 = rails.get(`${f2}:${b}`);
+    // f1 runs a1→b1 or b1→a1; the strip runs the other way along that side.
+    const i1 = w1.indexOf(a1), forward = w1[(i1 + 1) % w1.length] === b1;
+    const side = (p, c, q) => {
+      // The same corner's profile is shared by the strips on both sides of it.
+      const lo = Math.min(p, q), hi = Math.max(p, q), inner = profilePoints(P(lo), P(c), P(hi), n).map((at, k) => point(`pr:${lo}:${hi}:${k}`, at));
+      return [p, ...(p === lo ? inner : inner.reverse()), q];
+    };
+    const sideA = side(a1, a, a2), sideB = side(b1, b, b2);
+    for (let k = 0; k < n; k++) mesh.faces.push({v: forward ? [sideB[k], sideA[k], sideA[k + 1], sideB[k + 1]] : [sideA[k], sideB[k], sideB[k + 1], sideA[k + 1]], c: color(key)});
+  }
+  // 4. Close the corners, then dissolve corners left joining just two edges.
+  fillNewHoles(mesh, wasOpen, 0, onEdge).forEach(fi => { mesh.faces[fi].c = mesh.faces.find(f => f.v.some(v => fresh.has(v)))?.c ?? 0; });
+  for (const a of corners) if (mesh.faces.some(f => f.v.includes(a)) && edgeCount(mesh, a) === 2) {
+    const around = new Set(mesh.faces.flatMap((f, i) => f.v.includes(a) ? [i] : []));
+    const face = joinRegion(mesh, around, new Set([a]));
+    mesh.faces = [...mesh.faces.filter((_, i) => !around.has(i)), ...(face ? [face] : [])];
+  }
+  const index = cleanup(mesh);
+  return new Set([...fresh].map(v => index.get(v)).filter(v => v !== undefined));
+}
+
+/** Bevel points (Ctrl+Shift+B): each selected point is cut off by a face whose
+ * corners sit `width` along each of its edges. */
+function bevelVertsEdit(mesh, verts, {width = .1} = {}) {
+  const uses = edgeFaces(mesh), wasOpen = new Set([...uses].filter(([, fs]) => fs.length === 1).map(([k]) => k)), made = new Map(), fresh = new Set();
+  const onEdge = new Map();
+  const point = (a, b) => { const key = `${a}>${b}`; if (!made.has(key)) { const d = Math.min(width, length(sub(mesh.verts[b], mesh.verts[a])) * .45); made.set(key, mesh.verts.length); onEdge.set(mesh.verts.length, [a, b]); mesh.verts.push(add(mesh.verts[a], scale(normalize(sub(mesh.verts[b], mesh.verts[a])), d))); fresh.add(mesh.verts.length - 1); } return made.get(key); };
+  let any = false;
+  for (const f of mesh.faces) {
+    if (!f.v.some(v => verts.has(v))) continue;
+    const out = [];
+    f.v.forEach((a, i) => {
+      if (!verts.has(a)) { out.push(a); return; }
+      const prev = f.v[(i + f.v.length - 1) % f.v.length], next = f.v[(i + 1) % f.v.length];
+      out.push(point(a, prev), point(a, next)); any = true;
+    });
+    f.v = out;
+  }
+  if (!any) throw refused('Select points on faces to bevel them.');
+  const color = mesh.faces.find(f => f.v.some(v => fresh.has(v)))?.c ?? 0;
+  fillNewHoles(mesh, wasOpen, color, onEdge);
+  const index = cleanup(mesh);
+  return new Set([...fresh].map(v => index.get(v)).filter(v => v !== undefined));
+}
+
+// ---------- knife (Blender's K) ----------
+
+/** Put a new point on edge a–b at `t` (0 at a), in every face and line using that
+ * edge; t at either end returns that end. */
+function pointOnEdge(mesh, a, b, t) {
+  if (t <= 1e-4) return a; if (t >= 1 - 1e-4) return b;
+  const v = mesh.verts.length; mesh.verts.push(lerp(mesh.verts[a], mesh.verts[b], t));
+  for (const f of mesh.faces) { const w = f.v; for (let i = 0; i < w.length; i++) { const p = w[i], q = w[(i + 1) % w.length]; if ((p === a && q === b) || (p === b && q === a)) { w.splice(i + 1, 0, v); break; } } }
+  if (mesh.edges) mesh.edges = mesh.edges.flatMap(([p, q]) => (p === a && q === b) || (p === b && q === a) ? [[p, v], [v, q]] : [[p, q]]);
+  return v;
+}
+/** Split face fi along a new edge between two of its corners. */
+function splitFace(mesh, fi, p, q) {
+  const w = mesh.faces[fi].v, i = w.indexOf(p), j = w.indexOf(q), n = w.length;
+  if (i < 0 || j < 0 || p === q || (i + 1) % n === j || (j + 1) % n === i) return;
+  const one = [], two = [];
+  for (let k = i; ; k = (k + 1) % n) { one.push(w[k]); if (k === j) break; }
+  for (let k = j; ; k = (k + 1) % n) { two.push(w[k]); if (k === i) break; }
+  mesh.faces[fi] = {v: one, c: mesh.faces[fi].c}; mesh.faces.push({v: two, c: mesh.faces[fi].c});
+}
+const segmentHit = (p, q, a, b) => {
+  const r = {x: q.x - p.x, y: q.y - p.y}, s = {x: b.x - a.x, y: b.y - a.y}, den = r.x * s.y - r.y * s.x;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((a.x - p.x) * s.y - (a.y - p.y) * s.x) / den, u = ((a.x - p.x) * r.y - (a.y - p.y) * r.x) / den;
+  return t > 1e-4 && t < 1 + 1e-6 && u >= -1e-6 && u <= 1 + 1e-6 ? {t, u: Math.max(0, Math.min(1, u))} : null;
+};
+const insidePolygon = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
+
+/** Knife: cut new edges along a path of points, each on a corner ({v}) or on an
+ * edge ({edge: [a, b], t}). Between two points the cut follows the straight line
+ * on screen (`project`: local point → {x, y}) across the faces in between, as
+ * Blender's knife does. Returns the points on the cut. */
+function knifeEdit(mesh, path, project) {
+  if (path.length < 2) throw refused('Click at least two points on edges or corners for the knife to cut between.');
+  const resolve = point => point.v !== undefined ? point.v : pointOnEdge(mesh, point.edge[0], point.edge[1], point.t);
+  const onFaceOf = (point, fi) => { const w = mesh.faces[fi].v; return point.v !== undefined ? w.includes(point.v) : w.includes(point.edge[0]) && w.includes(point.edge[1]); };
+  const cut = new Set();
+  let cur = resolve(path[0]); cut.add(cur);
+  for (let k = 1; k < path.length; k++) {
+    const target = path[k], goal = project(target.v !== undefined ? mesh.verts[target.v] : lerp(mesh.verts[target.edge[0]], mesh.verts[target.edge[1]], target.t));
+    for (let guard = 0; ; guard++) {
+      if (guard > 256) throw refused('The knife line is too long to follow; add points in between.');
+      const faces = mesh.faces.flatMap((f, i) => f.v.includes(cur) ? [i] : []);
+      const direct = faces.find(fi => onFaceOf(target, fi));
+      if (direct !== undefined) {
+        const end = resolve(target), fi = mesh.faces.findIndex(f => f.v.includes(cur) && f.v.includes(end));
+        if (fi >= 0) splitFace(mesh, fi, cur, end);
+        cur = end; cut.add(cur); break;
+      }
+      // Leave the current point through the face the line runs into.
+      const from = project(mesh.verts[cur]);
+      let best = null;
+      for (const fi of faces) {
+        const w = mesh.faces[fi].v, poly = w.map(v => project(mesh.verts[v]));
+        for (let i = 0; i < w.length; i++) {
+          const a = w[i], b = w[(i + 1) % w.length]; if (a === cur || b === cur) continue;
+          const hit = segmentHit(from, goal, poly[i], poly[(i + 1) % w.length]); if (!hit) continue;
+          const mid = {x: from.x + (goal.x - from.x) * hit.t / 2, y: from.y + (goal.y - from.y) * hit.t / 2};
+          if (!insidePolygon(mid, poly)) continue;
+          if (!best || hit.t < best.t) best = {t: hit.t, fi, a, b, u: hit.u};
+        }
+      }
+      if (!best) throw refused('The knife line has to run across faces between the points you click.');
+      const next = pointOnEdge(mesh, best.a, best.b, best.u);
+      const fi = mesh.faces.findIndex(f => f.v.includes(cur) && f.v.includes(next));
+      if (fi >= 0) splitFace(mesh, fi, cur, next);
+      cur = next; cut.add(cur);
+    }
+  }
+  return cut;
+}
+
+// ---------- dissolve (Blender's Ctrl+X) ----------
+
+/** The outline loops of a set of faces: each loop follows the faces' winding.
+ * Returns null when the outline is ambiguous (the region touches itself at a point). */
+function regionLoops(mesh, faces) {
+  const half = new Set(), out = new Map();
+  for (const fi of faces) { const v = mesh.faces[fi].v; v.forEach((a, i) => half.add(`${a}>${v[(i + 1) % v.length]}`)); }
+  for (const fi of faces) {
+    const v = mesh.faces[fi].v;
+    v.forEach((a, i) => { const b = v[(i + 1) % v.length]; if (!half.has(`${b}>${a}`)) { if (out.has(a)) out.set(a, null); else out.set(a, b); } });
+  }
+  if ([...out.values()].includes(null)) return null;
+  const loops = [], seen = new Set();
+  for (const start of out.keys()) {
+    if (seen.has(start)) continue;
+    const loop = []; let at = start;
+    while (!seen.has(at)) { seen.add(at); loop.push(at); at = out.get(at); if (at === undefined) return null; }
+    if (at !== start) return null;
+    loops.push(loop);
+  }
+  return loops;
+}
+
+/** Drop `drop` from a closed loop, and fold back spurs (a→b→a) that dissolving leaves. */
+function tidyLoop(loop, drop = new Set()) {
+  let l = loop.filter(v => !drop.has(v)), changed = true;
+  while (changed && l.length >= 3) {
+    changed = false;
+    for (let i = 0; i < l.length; i++) {
+      const n = l.length, a = l[(i + n - 1) % n], c = l[(i + 1) % n];
+      if (a === c) { l.splice(i, 1); l.splice(i % l.length, 1); changed = true; break; }
+      if (l[i] === c) { l.splice(i, 1); changed = true; break; }
+    }
+  }
+  return l;
+}
+
+/** Replace a connected set of faces with one face along its outline. */
+function joinRegion(mesh, faces, drop = new Set()) {
+  const loops = regionLoops(mesh, faces);
+  if (!loops) throw refused('These faces touch each other at a single point, so they can\'t become one face.');
+  if (loops.length !== 1) throw refused('These faces surround a hole, so they can\'t become one face. Dissolve part of them, or fill the hole first.');
+  const loop = tidyLoop(loops[0], drop);
+  const color = mesh.faces[Math.min(...faces)].c ?? 0;
+  return loop.length >= 3 && new Set(loop).size === loop.length ? {v: loop, c: color} : null;
+}
+
+const faceGroups = (mesh, faces, joinable) => {
+  const parent = new Map([...faces].map(f => [f, f])), root = f => { while (parent.get(f) !== f) { parent.set(f, parent.get(parent.get(f))); f = parent.get(f); } return f; };
+  for (const [key, list] of edgeFaces(mesh)) if (list.length === 2 && parent.has(list[0]) && parent.has(list[1]) && joinable(key)) parent.set(root(list[0]), root(list[1]));
+  const groups = new Map(); for (const f of faces) { const r = root(f); if (!groups.has(r)) groups.set(r, new Set()); groups.get(r).add(f); }
+  return [...groups.values()];
+};
+
+/** Points used by exactly two edges (faces' or wires'), counting each edge once. */
+function edgeCount(mesh, v) {
+  const n = new Set();
+  for (const f of mesh.faces) { const i = f.v.indexOf(v); if (i >= 0) { n.add(f.v[(i + 1) % f.v.length]); n.add(f.v[(i + f.v.length - 1) % f.v.length]); } }
+  for (const [a, b] of mesh.edges ?? []) { if (a === v) n.add(b); if (b === v) n.add(a); }
+  return n.size;
+}
+
+/** Take point v out of the faces and wires using it, joining its two edges into one. */
+function collapsePoint(mesh, v) {
+  const around = mesh.faces.filter(f => f.v.includes(v));
+  if (around.some(f => f.v.length <= 3)) return false;
+  around.forEach(f => { f.v = f.v.filter(x => x !== v); });
+  const wires = (mesh.edges ?? []).filter(e => e.includes(v));
+  if (wires.length === 2) { const ends = wires.map(([a, b]) => a === v ? b : a); mesh.edges = mesh.edges.filter(e => !e.includes(v)); if (ends[0] !== ends[1]) mesh.edges.push(ends); }
+  return true;
+}
+
+/** Dissolve faces: each group of touching selected faces becomes one face. */
+function dissolveFacesEdit(mesh, faces) {
+  const made = [], gone = new Set();
+  for (const group of faceGroups(mesh, faces, () => true)) {
+    if (group.size < 2) continue;
+    const face = joinRegion(mesh, group);
+    group.forEach(f => gone.add(f)); if (face) made.push(face);
+  }
+  if (!gone.size) throw refused('Select two or more faces that share an edge to dissolve them into one.');
+  mesh.faces = [...mesh.faces.filter((_, i) => !gone.has(i)), ...made];
+  const index = cleanup(mesh);
+  return new Set(made.flatMap(f => f.v.map(v => index.get(v))).filter(i => i !== undefined));
+}
+
+/** Dissolve edges: the faces on both sides of each edge become one face; wires
+ * are removed. With `verts` (Blender's default), points left joining just two
+ * edges in a line are taken out too. */
+function dissolveEdgesEdit(mesh, edges, {verts = true} = {}) {
+  const keys = new Set(edges.map(([a, b]) => edgeKey(a, b))), uses = edgeFaces(mesh);
+  const faces = new Set([...keys].flatMap(k => (uses.get(k)?.length === 2 ? uses.get(k) : [])));
+  const ends = new Set(edges.flat()), onFaces = new Set(mesh.faces.flatMap(f => f.v));
+  let changed = false;
+  if (mesh.edges) { const before = mesh.edges.length; mesh.edges = mesh.edges.filter(([a, b]) => !keys.has(edgeKey(a, b))); changed = mesh.edges.length !== before; }
+  if (faces.size) {
+    const made = [], gone = new Set();
+    for (const group of faceGroups(mesh, faces, key => keys.has(key))) {
+      const face = joinRegion(mesh, group); group.forEach(f => gone.add(f)); if (face) made.push(face);
+    }
+    mesh.faces = [...mesh.faces.filter((_, i) => !gone.has(i)), ...made]; changed = true;
+  }
+  if (!changed) throw refused('Select edges between two faces (or traced lines) to dissolve them.');
+  if (verts) for (const v of ends) if (mesh.faces.some(f => f.v.includes(v)) && edgeCount(mesh, v) === 2) collapsePoint(mesh, v);
+  // Traced points left with nothing stay as loose points.
+  const used = new Set([...mesh.faces.flatMap(f => f.v), ...(mesh.edges ?? []).flat()]);
+  const strand = [...ends].filter(v => !onFaces.has(v) && !used.has(v) && !(mesh.loose ?? []).includes(v));
+  if (strand.length) mesh.loose = [...(mesh.loose ?? []), ...strand];
+  cleanup(mesh);
+  return new Set();
+}
+
+/** Dissolve points: the faces around each point become one face without it;
+ * a point in the middle of a line joins its two edges into one. */
+function dissolveVertsEdit(mesh, verts) {
+  let changed = false;
+  for (const v of verts) {
+    const around = new Set(mesh.faces.flatMap((f, i) => f.v.includes(v) ? [i] : []));
+    if (around.size >= 2) {
+      const face = joinRegion(mesh, around, new Set([v]));
+      mesh.faces = [...mesh.faces.filter((_, i) => !around.has(i)), ...(face ? [face] : [])];
+      if (mesh.edges) mesh.edges = mesh.edges.filter(e => !e.includes(v));
+      changed = true;
+    } else if (around.size === 1) {
+      const f = mesh.faces[[...around][0]];
+      if (f.v.length > 3) f.v = f.v.filter(x => x !== v); else mesh.faces = mesh.faces.filter(x => x !== f);
+      if (mesh.edges) mesh.edges = mesh.edges.filter(e => !e.includes(v));
+      changed = true;
+    } else {
+      const wires = (mesh.edges ?? []).filter(e => e.includes(v));
+      if (wires.length === 2) { collapsePoint(mesh, v); changed = true; }
+      else if (wires.length) { mesh.edges = mesh.edges.filter(e => !e.includes(v)); changed = true; }
+      else if ((mesh.loose ?? []).includes(v)) { mesh.loose = mesh.loose.filter(x => x !== v); changed = true; }
+    }
+  }
+  if (!changed) throw refused('Select points to dissolve.');
+  cleanup(mesh);
+  return new Set();
+}
+
+/** Merge each connected group of selected points at its own centre (Blender's Collapse). */
+function collapseVertsEdit(mesh, verts) {
+  const parent = new Map([...verts].map(v => [v, v])), root = v => { while (parent.get(v) !== v) { parent.set(v, parent.get(parent.get(v))); v = parent.get(v); } return v; };
+  for (const [a, b] of allEdges(mesh)) if (parent.has(a) && parent.has(b)) parent.set(root(a), root(b));
+  const groups = new Map(); for (const v of verts) { const r = root(v); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(v); }
+  const target = new Map();
+  for (const list of groups.values()) { const at = centroid(mesh, new Set(list)); mesh.verts[list[0]] = at; for (const v of list) target.set(v, list[0]); }
+  const map = i => target.get(i) ?? i;
+  mesh.faces.forEach(f => { f.v = f.v.map(map); });
+  if (mesh.edges) mesh.edges = mesh.edges.map(e => e.map(map));
+  if (mesh.loose) mesh.loose = [...new Set(mesh.loose.map(map))];
+  const keepers = [...groups.values()].map(l => l[0]);
+  for (const k of keepers) if (!mesh.faces.some(f => f.v.includes(k)) && !(mesh.edges ?? []).some(([a, b]) => a !== b && (a === k || b === k)) && !(mesh.loose ?? []).includes(k)) mesh.loose = [...(mesh.loose ?? []), k];
+  // Faces that now repeat another face's points go.
+  const seen = new Set(); mesh.faces = mesh.faces.filter(f => { const k = [...new Set(f.v)].sort((a, b) => a - b).join(','); if (seen.has(k)) return false; seen.add(k); return true; });
+  const index = cleanup(mesh);
+  return new Set(keepers.map(k => index.get(k)).filter(i => i !== undefined));
+}
+
 /** Rebuild the -X half as a mirror of the +X half (or the reverse), welding the middle. */
 /** Symmetrize: make one side of the middle (world X = 0, the plane the mirror uses)
  * a copy of the other. `fromPositive`: keep +X and copy it to -X, or 'auto' to keep
@@ -884,3 +1361,12 @@ export const orientWireFaces = atomic('Face the viewer', orientWireFacesEdit);
  * checked when it's confirmed), so quads grown from traced lines face you while they grow. */
 export const faceViewerDuringMove = orientWireFacesEdit;
 export const duplicatePoints = atomic('Duplicate points', duplicatePointsEdit);
+export const dissolveFaces = atomic('Dissolve faces', dissolveFacesEdit);
+export const dissolveEdges = atomic('Dissolve edges', dissolveEdgesEdit);
+export const dissolveVerts = atomic('Dissolve points', dissolveVertsEdit);
+export const collapseVerts = atomic('Collapse', collapseVertsEdit);
+export const gridFill = atomic('Grid Fill', gridFillEdit);
+export const rip = atomic('Rip', ripEdit);
+export const bevelEdges = atomic('Bevel', bevelEdgesEdit);
+export const bevelVerts = atomic('Bevel points', bevelVertsEdit);
+export const knife = atomic('Knife', knifeEdit);

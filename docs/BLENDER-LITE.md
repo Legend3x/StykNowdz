@@ -32,7 +32,8 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
   (Ctrl+R), Subdivide, Merge (M), Fill (F), Delete (X), Duplicate (Shift+D),
   Separate (P), Select all (A), Select connected (L, Ctrl+L), Grow (Ctrl++),
   edge loops (Alt+click), Flip faces, Fix inside-out faces (Shift+N),
-  Symmetrize, Merge doubles. Points behind the model can't be picked unless
+  Symmetrize, Merge doubles, and the tools ported from Blender below (Bevel,
+  Knife, Dissolve, Merge options, Grid fill, Rip). Points behind the model can't be picked unless
   X-ray is on, as in Blender.
 - **Bones**: Humanoid skeleton (fitted to the model's size), Add bone, Extrude
   bone (E), Delete, Mirror .L to .R; click a bone to select it and drag its
@@ -148,13 +149,38 @@ pointer. X, Y or Z locks to an axis (again to unlock), Ctrl snaps (0.05 units,
 15°, tenths), click or Enter finishes, right-click or Esc cancels. Extrude moves
 the new faces along their normal; when that points at you, drag up to push it out.
 
+### Blender's modeling tools
+
+Ported from Blender's own source (GPL-2.0-or-later, compatible with this
+project's GPL-3.0-or-later): `source/blender/editors/mesh/editmesh_tools.cc`,
+`editmesh_rip.cc`, `editmesh_knife.cc` and `bmesh/operators/` (`bmo_dissolve`,
+`bmo_fill_grid`, `bmo_bevel`). The behaviour follows Blender; the code is a
+smaller rewrite for this mesh format (src/modeler/mesh.mjs), each edit atomic
+and validated like the rest.
+
+| Tool | Keys | What it does |
+| --- | --- | --- |
+| Dissolve | Ctrl+X | By select mode. Points: the faces around each point become one face without it (a point in a line joins its two edges). Edges: the faces on both sides become one; ends left joining two edges go too (Blender's "Dissolve Vertices" option, on by default). Faces: each touching group becomes one face; a group around a hole is refused |
+| Merge | M (menu) | At Center, At First, At Last (selection order), Collapse (each connected group at its own centre), By Distance (selection, or the whole part) |
+| Grid fill | Edit panel | A selected closed ring of open edges (a hole or a traced outline), even point count: quads, Span × (ring/2 − Span). Start at the sharpest corner; Span from the next sharpest corner, else ring/4 (`gridFillLayout`). Inner points: a Coons patch of the four sides (Blender blends rails slightly differently). Span and Offset can be changed afterwards in the Edit panel (redoes the fill, like Blender's Adjust Last Operation) |
+| Rip | V | Selected edges with faces on both sides: the side nearer the mouse gets its own points, then follows the mouse. Ends inside the surface stay joined (a slit); a line reaching the border cuts through |
+| Bevel | Ctrl+B, Ctrl+Shift+B | Edges: a strip at right angles `width` from the edge (Offset mode, slide clamped at 95% of the edge), rounded by Segments (scroll; quadratic profile toward the old corner). Faces between two bevelled edges get the meeting point of the offset lines; corners left open are closed with one face; a corner left joining two edges is dissolved (the cube-corner pentagons). Points: each selected point is cut off by a face |
+| Knife | K | Click points on edges or corners (Ctrl: edge middle); between points the cut follows the straight screen line across faces. Backspace removes the last point, Enter/Space cuts, Esc or right-click cancels. Clicks inside a face (away from edges) aren't supported yet |
+
+Vertex slide is GG on points (the existing edge slide). Not ported yet: Bevel
+profile shapes and vertex-only corner patches with several segments (an
+n-gon closes them), Knife cuts starting inside a face, Rip of a single point,
+Grid fill between two separate lines, Limited dissolve.
+
 ### Drafts and starting over
 
 Leaving 3D Nowdz without **Add to animation** (Close or
 another workspace tab) never asks and never loses work: the model and camera
 are kept as a draft, one for a new model and one per figure being edited, and
 saved in `localStorage` (`stykNowdz.modelDraft`) so they survive a restart.
-Opening the Model tab again resumes the draft. **File > Start over** asks once
+Opening the Model tab again resumes the draft in the mode, part and selection
+it was left in (`where` in the draft); a draft with one part comes back with
+that part selected. **File > Start over** asks once
 and clears parts, bones and references as one undoable step. Add to animation
 or Update figure clears the draft.
 
@@ -358,6 +384,6 @@ undo step.
 
 ## Not yet
 
-Bevel, knife, sculpting, weight painting by hand, UVs and
+Sculpting, weight painting by hand, UVs and
 textures, and glTF. Faces are flat-colored in the animation (the viewport adds
 lighting only while modeling).
