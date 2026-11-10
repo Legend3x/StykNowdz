@@ -3,7 +3,7 @@
  * (grid, cage, bones, gizmos) draw on top. No app state lives here. */
 import {sub, dot, cross, normalize, add, scale, length, isOpenMesh} from './mesh.mjs';
 import {about, rotationAxis, transformPoint} from './matrix.mjs';
-import {toonLight, toonThreshold, shadowColor} from '../toon-shading.mjs';
+import {toonLight, toonThreshold, shadowColor, inkColor} from '../toon-shading.mjs';
 
 export const VIEW_COLORS = Object.freeze({
   background: '#e8eaee', grid: 'rgba(40,48,60,.10)', gridStrong: 'rgba(40,48,60,.22)', axisX: 'rgba(214,72,72,.75)', axisZ: 'rgba(60,110,214,.75)',
@@ -98,7 +98,7 @@ const shade = (rgb, k) => `rgb(${rgb.map(v => Math.max(0, Math.min(255, Math.rou
  * Paint the scene. `items` are {mesh, palette, partId, highlight, weights?}
  * with world-space meshes. Returns the painted polygon list (front last) for picking.
  */
-// Area-weighted unit vertex normals, cached per (immutable) evaluated mesh.
+// Area-weighted unit vertex normals (or custom ones), cached per (immutable) evaluated mesh.
 const normalCache = new WeakMap();
 function vertexNormalsOf(mesh) {
   let n = normalCache.get(mesh);
@@ -109,7 +109,9 @@ function vertexNormalsOf(mesh) {
       for (let i = 0; i < f.v.length; i++) s = add(s, cross(mesh.verts[f.v[i]], mesh.verts[f.v[(i + 1) % f.v.length]]));
       for (const i of f.v) n[i] = add(n[i], s);
     }
-    n = n.map(normalize); normalCache.set(mesh, n);
+    // Custom shading normals (Edit mode, Shading) replace the smooth ones.
+    const custom = mesh.vdata?.normal;
+    n = n.map((v, i) => custom?.[i] ? normalize(custom[i]) : normalize(v)); normalCache.set(mesh, n);
   }
   return n;
 }
@@ -175,6 +177,7 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
   for (const poly of polys) {
     const {item, face} = poly;
     let rgb = item.palette[face.c] ?? item.palette[0] ?? [200, 200, 200];
+    if (face.ink !== undefined) rgb = inkColor(rgb, face.ink);
     if (item.weights) rgb = weightColor(item.weights[poly.fi] ?? 0);
     ctx.globalAlpha = xray ? .55 : 1;
     // Toon: flat lit colour, cut along the exact shadow line (as the stage does).

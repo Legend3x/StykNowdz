@@ -17,17 +17,18 @@
  *   rule breaks, the mesh is restored exactly and a TopologyError (with the
  *   printed report) is thrown. Edits return the new selection where that
  *   matters. */
-import {fromTRS, invert, transformPoint, determinant3} from './matrix.mjs';
+import {fromTRS, invert, transformPoint, transformDirection, determinant3} from './matrix.mjs';
 import {assertValidMesh} from './topology.mjs';
 
 /** Run a topology edit atomically: validate afterwards, roll back and throw if it broke a rule. */
 function atomic(operation, edit) {
   const run = (mesh, ...args) => {
-    const before = {verts: mesh.verts, faces: mesh.faces, edges: mesh.edges, loose: mesh.loose};
+    const before = {verts: mesh.verts, faces: mesh.faces, edges: mesh.edges, loose: mesh.loose, vdata: mesh.vdata};
     // Work on fresh arrays so a failed edit can't leave half-written data behind.
     mesh.verts = mesh.verts.map(v => v.slice()); mesh.faces = mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0}));
     if (mesh.edges) mesh.edges = mesh.edges.map(e => e.slice());
     if (mesh.loose) mesh.loose = mesh.loose.slice();
+    if (mesh.vdata) mesh.vdata = copyVData(mesh).vdata;
     try {
       const result = edit(mesh, ...args);
       tidyWires(mesh);
@@ -36,7 +37,7 @@ function atomic(operation, edit) {
       return result;
     } catch (error) {
       mesh.verts = before.verts; mesh.faces = before.faces;
-      for (const key of ['edges', 'loose']) { if (before[key] === undefined) delete mesh[key]; else mesh[key] = before[key]; }
+      for (const key of ['edges', 'loose', 'vdata']) { if (before[key] === undefined) delete mesh[key]; else mesh[key] = before[key]; }
       throw error;
     }
   };
@@ -61,9 +62,111 @@ export const keyVerts = key => key.split(',').map(Number);
 export const emptyMesh = () => ({verts: [], faces: []});
 /** Copies of a mesh's wire edges and loose points, for building a new mesh (only the keys it has). */
 export const copyWires = mesh => ({...(mesh.edges?.length ? {edges: mesh.edges.map(e => e.slice())} : {}), ...(mesh.loose?.length ? {loose: mesh.loose.slice()} : {})});
-export const cloneMesh = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh)});
-/** Just the surface (faces and the points they use), as the stage and the modifiers see it. */
-export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0}))});
+export const cloneMesh = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh), ...copyVData(mesh)});
+/** Just the surface (faces and the points they use, with their point data), as the stage and the modifiers see it. */
+export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyVData(mesh)});
+
+// ---------- per-point data (Blender's point attributes) ----------
+// `mesh.vdata` holds optional sparse per-point values keyed by point index:
+//   line:   {[i]: weight}    outline thickness factor (1 = the part's thickness, 0 = no line)
+//   normal: {[i]: [x, y, z]} a custom shading normal (unit, in the mesh's space)
+// Points without an entry use the default. Edits that renumber points remap it
+// (cleanup); edits that only add points leave the new points at the default.
+export const VDATA_KEYS = Object.freeze(['line', 'normal']);
+const hasVData = mesh => Boolean(mesh.vdata && VDATA_KEYS.some(k => mesh.vdata[k] && Object.keys(mesh.vdata[k]).length));
+/** A copy of a mesh's per-point data (spread into new meshes). `matrix` turns custom normals with the points. */
+export function copyVData(mesh, matrix = null) {
+  if (!hasVData(mesh)) return {};
+  const out = {};
+  for (const key of VDATA_KEYS) {
+    const src = mesh.vdata[key]; if (!src || !Object.keys(src).length) continue;
+    out[key] = {};
+    for (const [i, value] of Object.entries(src)) out[key][i] = key === 'normal' ? (matrix ? normalize([...transformDirection(matrix, value)]) : value.slice()) : value;
+  }
+  return {vdata: out};
+}
+/** Renumber per-point data with `map` (old index → new index); points not in the map lose theirs. */
+function remapVData(mesh, map) {
+  if (!mesh.vdata) return;
+  for (const key of VDATA_KEYS) {
+    const src = mesh.vdata[key]; if (!src) continue;
+    const next = {};
+    for (const [i, value] of Object.entries(src)) { const j = map.get(Number(i)); if (j !== undefined) next[j] = value; }
+    if (Object.keys(next).length) mesh.vdata[key] = next; else delete mesh.vdata[key];
+  }
+  if (!hasVData(mesh)) delete mesh.vdata;
+}
+/** Give mirrored copies (map[i] = copy of i, across X) the same data, normals mirrored. */
+function mirrorVData(mesh, map) {
+  if (!hasVData(mesh)) return;
+  for (const key of VDATA_KEYS) {
+    const src = mesh.vdata[key]; if (!src) continue;
+    for (const [i, value] of Object.entries({...src})) { const j = map[Number(i)]; if (j === undefined || j === Number(i)) continue; src[j] = key === 'normal' ? [-value[0], value[1], value[2]] : value; }
+  }
+}
+/** Set (or with value null, clear) one kind of per-point data on some points. Shape is untouched. */
+export function setVData(mesh, key, verts, value) {
+  if (!VDATA_KEYS.includes(key)) throw new Error(`Unknown point data “${key}”.`);
+  mesh.vdata ??= {}; mesh.vdata[key] ??= {};
+  for (const v of verts) {
+    const each = typeof value === 'function' ? value(v) : value;
+    if (each === null || each === undefined) delete mesh.vdata[key][v]; else mesh.vdata[key][v] = Array.isArray(each) ? each.slice() : each;
+  }
+  if (!Object.keys(mesh.vdata[key]).length) delete mesh.vdata[key];
+  if (!hasVData(mesh)) delete mesh.vdata;
+}
+/** Area-weighted vertex normals of a mesh from its shape (faces wind
+ * counter-clockwise seen from outside; Newell's method per face). */
+export function vertexNormals(mesh) {
+  const sums = mesh.verts.map(() => [0, 0, 0]);
+  for (const face of mesh.faces) {
+    let n = [0, 0, 0];
+    for (let i = 0; i < face.v.length; i++) n = add(n, cross(mesh.verts[face.v[i]], mesh.verts[face.v[(i + 1) % face.v.length]]));
+    for (const i of face.v) sums[i] = add(sums[i], n);
+  }
+  return sums.map(normalize);
+}
+
+/** Custom shading normals for anime faces (Blender's Normal Edit / Data
+ * Transfer tricks), as {point: normal} for `verts`, in the mesh's space:
+ *   'direction' all toward `direction` (e.g. the front, or the current view),
+ *   'sphere'    away from `center`, as if the face were a smooth ball,
+ *   'flatten'   the selection's average normal (one flat shadow plane).
+ * `strength` 0..1 blends from the shape's own normal to the target. */
+export function shadingNormals(mesh, verts, how, {direction = [0, 0, 1], center = null, strength = 1} = {}) {
+  const own = vertexNormals(mesh), k = Math.max(0, Math.min(1, Number(strength)));
+  const pick = [...verts].filter(v => mesh.faces.some(f => f.v.includes(v)));
+  if (!pick.length) throw refused('Select points on faces to set their shading normals.');
+  const middle = center ?? scale(pick.reduce((s, v) => add(s, mesh.verts[v]), [0, 0, 0]), 1 / pick.length);
+  const average = normalize(pick.reduce((s, v) => add(s, own[v]), [0, 0, 0]));
+  const out = {};
+  for (const v of pick) {
+    const target = how === 'sphere' ? normalize(sub(mesh.verts[v], middle)) : how === 'flatten' ? average : normalize(direction);
+    const blended = normalize(add(scale(own[v], 1 - k), scale(length(target) > 0 ? target : own[v], k)));
+    out[v] = length(blended) > 0 ? blended : own[v];
+  }
+  return out;
+}
+
+/** Line weights that taper along a selection (a hair strand, an eyelash):
+ * full at its root (where it joins the rest of the mesh, or the point nearest
+ * the mesh's middle) down to 0 at the point farthest from it, so the outline
+ * ends in a sharp tip. Returns {point: weight}. */
+export function taperWeights(mesh, verts) {
+  const pick = [...verts];
+  if (pick.length < 2) throw refused('Select a strand of at least two points to taper its line.');
+  const chosen = new Set(pick), outside = v => { let n = 0; for (const f of mesh.faces) { const i = f.v.indexOf(v); if (i < 0) continue; for (const w of [f.v[(i + 1) % f.v.length], f.v[(i + f.v.length - 1) % f.v.length]]) if (!chosen.has(w)) n++; } return n; };
+  const middle = scale(mesh.verts.reduce((s, p) => add(s, p), [0, 0, 0]), 1 / mesh.verts.length);
+  let root = pick[0], best = -1;
+  for (const v of pick) { const score = outside(v) * 1e6 - length(sub(mesh.verts[v], middle)); if (score > best) { best = score; root = v; } }
+  const far = Math.max(...pick.map(v => length(sub(mesh.verts[v], mesh.verts[root])))) || 1;
+  return Object.fromEntries(pick.map(v => [v, Math.max(0, 1 - length(sub(mesh.verts[v], mesh.verts[root])) / far)]));
+}
+
+/** A point's line weight (1 by default). */
+export const lineWeightOf = (mesh, v) => mesh.vdata?.line?.[v] ?? 1;
+/** A point's custom normal, or undefined. */
+export const customNormalOf = (mesh, v) => mesh.vdata?.normal?.[v];
 
 /** Keep wire data consistent after an edit, without renumbering points:
  * wires that became face edges (after a fill or bridge), joined a point to
@@ -177,21 +280,28 @@ export function cleanup(mesh) {
   if (mesh.edges) mesh.edges = mesh.edges.map(([a, b]) => [used.get(a), used.get(b)]);
   if (mesh.loose) mesh.loose = mesh.loose.map(i => used.get(i));
   mesh.verts = verts;
+  remapVData(mesh, used);
   return used;
+}
+
+/** The matrix that turns normals with a transform (inverse transpose of its 3×3 part). */
+function normalMatrix(m) {
+  const inv = invert(m);
+  return [inv[0], inv[4], inv[8], 0, inv[1], inv[5], inv[9], 0, inv[2], inv[6], inv[10], 0, 0, 0, 0, 1];
 }
 
 /** A new mesh with `matrix` applied to the chosen vertices (all by default).
  * Pure: the input mesh is not touched. Topology is unchanged by construction. */
 export function transformMesh(mesh, matrix, verts = null) {
   const chosen = verts ? new Set(verts) : null;
-  return {verts: mesh.verts.map((p, i) => !chosen || chosen.has(i) ? [...transformPoint(matrix, p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh)};
+  return {verts: mesh.verts.map((p, i) => !chosen || chosen.has(i) ? [...transformPoint(matrix, p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh), ...copyVData(mesh, chosen ? null : normalMatrix(matrix))};
 }
 
 /** Move each listed vertex by its own matrix (`matrices`: Map vertex → matrix).
  * Pure: returns a new mesh; topology is untouched. Used by soft selection,
  * where points near the selection move part of the way. */
 export function transformMeshEach(mesh, matrices) {
-  return {verts: mesh.verts.map((p, i) => matrices.has(i) ? [...transformPoint(matrices.get(i), p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh)};
+  return {verts: mesh.verts.map((p, i) => matrices.has(i) ? [...transformPoint(matrices.get(i), p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh), ...copyVData(mesh)};
 }
 
 /** Mirror clipping (the Mirror modifier's "Clipping"): for a part mirrored
@@ -1287,8 +1397,10 @@ function symmetrizeEdit(mesh, fromPositive = true, matrix = null, tolerance = 1e
   if (matrix) {
     const inverse = invert(matrix);
     mesh.verts = mesh.verts.map(p => [...transformPoint(matrix, p)]);
+    if (mesh.vdata) Object.assign(mesh, copyVData(mesh, normalMatrix(matrix)));
     const result = symmetrizeEdit(mesh, fromPositive, null, tolerance);
     mesh.verts = mesh.verts.map(p => { const q = [...transformPoint(inverse, p)]; return q; });
+    if (mesh.vdata) Object.assign(mesh, copyVData(mesh, normalMatrix(inverse)));
     return result;
   }
   if (fromPositive === 'auto') fromPositive = symmetrizeSide(mesh);
@@ -1304,6 +1416,7 @@ function symmetrizeEdit(mesh, fromPositive = true, matrix = null, tolerance = 1e
   });
   const faces = mesh.faces.length;
   for (let i = 0; i < faces; i++) mesh.faces.push({v: mesh.faces[i].v.map(j => map[j]).reverse(), c: mesh.faces[i].c});
+  mirrorVData(mesh, map);
   if (mesh.edges) mesh.edges = [...mesh.edges, ...mesh.edges.map(e => e.map(j => map[j]))];
   if (mesh.loose) mesh.loose = [...mesh.loose, ...mesh.loose.map(j => map[j])];
   cleanup(mesh);
@@ -1328,6 +1441,7 @@ export function mirrored(mesh, tolerance = 1e-4) {
   });
   const faces = out.faces.length;
   for (let i = 0; i < faces; i++) out.faces.push({v: out.faces[i].v.map(j => map[j]).reverse(), c: out.faces[i].c});
+  mirrorVData(out, map);
   cleanup(out);
   return out;
 }

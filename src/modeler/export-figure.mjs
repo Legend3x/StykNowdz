@@ -8,7 +8,7 @@ import {triangulate} from './mesh.mjs';
 import {scaling, transformPoint} from './matrix.mjs';
 import {assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings} from './toon.mjs';
-import {toonLight, toonThreshold} from '../toon-shading.mjs';
+import {toonLight, toonThreshold, inkColor} from '../toon-shading.mjs';
 import {evaluateModel, readModel} from './model.mjs';
 import {boneOrder, autoWeights, addBone} from './armature.mjs';
 import {MESH_LIMITS} from '../spatial-mesh.mjs';
@@ -77,9 +77,15 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     segments.push(s); boneSegment.set(bone.id, s);
   }
   // The mesh: every part's triangles, in part order, skinned to the bones.
-  const positions = [], meshBones = [], weights = [], indices = [], materials = [], groups = [];
+  const positions = [], meshBones = [], weights = [], indices = [], materials = [], groups = [], normals = [];
+  let customNormals = false;
   const used = new Map(), colors = [];
-  const color = c => { const key = Math.min(Math.max(0, c ?? 0), model.palette.length - 1); if (!used.has(key)) { used.set(key, colors.length); colors.push(model.palette[key].map(v => Math.max(0, Math.min(255, Math.round(v))))); } return used.get(key); };
+  // One stage colour per palette colour used, and per (colour, darkening) for coloured outlines.
+  const color = (c, ink) => {
+    const index = Math.min(Math.max(0, c ?? 0), model.palette.length - 1), key = ink === undefined ? index : `${index}:${ink}`;
+    if (!used.has(key)) { const rgb = model.palette[index].map(v => Math.max(0, Math.min(255, Math.round(v)))); used.set(key, colors.length); colors.push(ink === undefined ? rgb : inkColor(rgb, ink)); }
+    return used.get(key);
+  };
   const toon = toonSettings(model), flat = [];
   // One surface (the part, or its outline shell) skinned like the part. Model faces
   // wind counter-clockwise seen from outside; the engine shows triangles that
@@ -87,8 +93,10 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   const addSurface = (surface, skin, name, noShadow) => {
     const base = positions.length / 3, start = indices.length / 3;
     for (const p of surface.verts) positions.push(...toFigure(p).map(v => Math.fround(v)));
+    // Custom shading normals, in figure space (Y flips as positions do); zero = smooth.
+    surface.verts.forEach((_, i) => { const n = surface.vdata?.normal?.[i]; if (n) customNormals = true; normals.push(...(n ? [n[0], -n[1], n[2]].map(v => Math.fround(v)) : [0, 0, 0])); });
     for (let k = 0; k < skin.bones.length; k++) { const id = skin.bones[k]; meshBones.push(id ? boneSegment.get(id).segment_id : 0); weights.push(skin.weights[k]); }
-    for (const [a, b, c, fi] of triangulate(surface)) { indices.push(base + a, base + c, base + b); materials.push(color(surface.faces[fi].c)); }
+    for (const [a, b, c, fi] of triangulate(surface)) { indices.push(base + a, base + c, base + b); materials.push(color(surface.faces[fi].c, surface.faces[fi].ink)); }
     const count = indices.length / 3 - start;
     if (count) { if (noShadow) flat.push(groups.length); groups.push({name: String(name).slice(0, 256), start, count}); }
   };
@@ -99,14 +107,15 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     addSurface(mesh, skin, name, part.shadows === false);
     // Its ink outline: an inverted hull sharing the part's skin, never shaded.
     const outline = partOutline(part, model.palette.length);
-    if (outline) addSurface(outlineHull(mesh, outline.thickness, outline.color), skin, `${name} outline`, true);
+    if (outline) addSurface(outlineHull(mesh, outline.thickness, outline.color, outline), skin, `${name} outline`, true);
   }
   if (positions.length / 3 > MESH_LIMITS.vertices) throw problem(`The model has ${positions.length / 3} vertices after smoothing; the limit is ${MESH_LIMITS.vertices}. Lower Smooth on some parts.`);
   if (indices.length / 3 > MESH_LIMITS.triangles) throw problem(`The model has ${indices.length / 3} triangles after smoothing; the limit is ${MESH_LIMITS.triangles}. Lower Smooth on some parts.`);
   segments.forEach((s, i) => { s.z_order = i + 1; });
   const figure = {figure_type_id: figureTypeId, name: String(model.name || '3D model').slice(0, 250), segments, segment_count: segments.length, polyfills: [], image_assets: [], text_assets: [],
     _styk: {colorMode: 'segments', spatialMesh: {positions, bones: meshBones, weights, indices, colors, materials, basis: [0, surfaceX.segment_id, surfaceY.segment_id], groups,
-      ...(toon.shadows ? {toon: {light: [...toonLight(toon.turn, toon.height)], threshold: toonThreshold(toon.size), strength: toon.strength, flat}} : {})}, modelSource: source}};
+      ...(toon.shadows ? {toon: {light: [...toonLight(toon.turn, toon.height)], threshold: toonThreshold(toon.size), strength: toon.strength, flat}} : {}),
+      ...(toon.shadows && customNormals ? {normals} : {})}, modelSource: source}};
   return {figure, stats: {vertices: positions.length / 3, triangles: indices.length / 3, bones: bones.length, parts: parts.length}};
 }
 

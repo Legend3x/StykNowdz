@@ -11,7 +11,7 @@ import {shadowColor} from './toon-shading.mjs';
 
 const EPS=1e-9,NEAR=.05;
 export const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
-const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon']);
+const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals']);
 export const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
 
 export function validateSpatialMesh(figure){
@@ -73,6 +73,10 @@ export function validateSpatialMesh(figure){
       end=g.start+g.count;
     }
   }
+  // Custom shading normals (3D Nowdz): xyz per vertex in figure space, all zero
+  // for vertices that use the smooth normal of their faces.
+  if(m.normals!==undefined&&(!Array.isArray(m.normals)||m.normals.length!==count*3||m.normals.some(v=>typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1.01)))
+    fail("errors.spatialMesh.invalid3dMeshNormals", {});
   // Toon (cel) shading: a view-space light, the lit/shadow cut-off, the shadow
   // strength, and parts (group indices) drawn without shadows, such as outlines.
   if(m.toon!==undefined){
@@ -112,9 +116,18 @@ export function spatialMeshPlan(figure,ids){
   if(mesh.viewVertices)mesh.viewVertices.forEach((v,i)=>{viewSlot[v]=i;});
   const plan={mesh,vertices,triangles,positions:new Float64Array(mesh.positions),slots,weights,counts,bones:Int32Array.from(bones),
     indices:Uint32Array.from(mesh.indices),materials:Uint16Array.from(mesh.materials),palette:mesh.colors,basis:mesh.basis,base:Number(mesh.z??0),
-    views:mesh.views??0,viewSlot,viewPoints:mesh.viewPoints?new Float64Array(mesh.viewPoints):null,toon:toonPlan(mesh,triangles)};
+    views:mesh.views??0,viewSlot,viewPoints:mesh.viewPoints?new Float64Array(mesh.viewPoints):null,toon:toonPlan(mesh,triangles),
+    normals:customNormals(mesh,vertices)};
   plans.set(mesh,{ids,plan});
   return plan;
+}
+
+// Unit custom normals, or null when the mesh has none (zero entries are skipped).
+function customNormals(mesh,vertices){
+  if(!mesh.normals||!mesh.toon)return null;
+  const out=new Float64Array(vertices*3),has=new Uint8Array(vertices);let any=false;
+  for(let v=0;v<vertices;v++){const x=mesh.normals[v*3],y=mesh.normals[v*3+1],z=mesh.normals[v*3+2],l=Math.hypot(x,y,z);if(l>1e-6){out[v*3]=x/l;out[v*3+1]=y/l;out[v*3+2]=z/l;has[v]=1;any=true;}}
+  return any?{values:out,has}:null;
 }
 
 function toonPlan(mesh,triangles){
@@ -212,6 +225,8 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
   const nearZ=camera?(1-NEAR)/camera.k:Infinity,P=plan.positions,counts=plan.counts,slots=plan.slots,viewSlot=plan.viewSlot,views=plan.viewPoints,stride=plan.views*3;
   let positions=new Float32Array(n*2),depth=new Float32Array(n),extra=0;
   const raw=camera?new Float64Array(n*3):null,point=new Float64Array(3),view=toon?new Float64Array(n*3):null;
+  // Custom normals turn with each vertex's (blended) bone rotation, then the figure's.
+  const custom=toon&&plan.normals?plan.normals:null,customView=custom?new Float64Array(n*3):null,rotation=new Float64Array(4);
   const dx=bx&&o?bx.x-o.x:0,dy=bx&&o?bx.y-o.y:0,den=dx*dx+dy*dy,flat=o&&den>=1e-16;
   // Bounds and the depth range cover the vertices of visible faces only, as
   // native surfaces do; the range sets depth-buffer quantization.
@@ -227,7 +242,13 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
         px=px+(F[b+7]+x*cos-z*sin-px)*k;py=py+(F[b+8]+y-py)*k;pz=pz+(F[b+9]+x*sin+z*cos-pz)*k;
       }
       framePoint(F,b,px,py,pz,point,0);
-    }else blendedVertex(plan,F,v,px,py,pz,point);
+      if(custom?.has[v]){rotation[0]=F[b];rotation[1]=F[b+1];rotation[2]=F[b+2];rotation[3]=F[b+3];}
+    }else blendedVertex(plan,F,v,px,py,pz,point,custom?.has[v]?rotation:null);
+    if(custom?.has[v]){
+      const N=custom.values,a=N[v*3],c=N[v*3+1],e=N[v*3+2],qx=rotation[0],qy=rotation[1],qz=rotation[2],qw=rotation[3];
+      const tx=2*(qy*e-qz*c),ty=2*(qz*a-qx*e),tz=2*(qx*c-qy*a),nx=a+qw*tx+qy*tz-qz*ty,ny=c+qw*ty+qz*tx-qx*tz,nz=e+qw*tz+qx*ty-qy*tx;
+      customView[v*3]=nx*cs-ny*sign*sn;customView[v*3+1]=nx*sn+ny*sign*cs;customView[v*3+2]=nz;
+    }
     const X=root.x+(point[0]*cs-point[1]*sign*sn)*scale,Y=root.y+(point[0]*sn+point[1]*sign*cs)*scale;
     if(view){view[v*3]=point[0]*cs-point[1]*sign*sn;view[v*3+1]=point[0]*sn+point[1]*sign*cs;view[v*3+2]=point[2];}
     let sx,sy,d;
@@ -253,6 +274,11 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
       const nx=(uy*vz-uz*vy)*parity,ny=(uz*vx-ux*vz)*parity,nz=(ux*vy-uy*vx)*parity;
       for(const v of [a,b,c]){normals[v]+=nx;normals[v+1]+=ny;normals[v+2]+=nz;}
     }
+    // Custom normals replace the smooth ones. They are turned like the points
+    // (a rotation, or a reflection when mirrored), so they stay outward as they
+    // are; the face normals above need the parity only because a reflection
+    // reverses the winding of the cross product.
+    if(customView)for(let v=0;v<n;v++)if(custom.has[v]){normals[v*3]=customView[v*3];normals[v*3+1]=customView[v*3+1];normals[v*3+2]=customView[v*3+2];}
   }
   const material=!normals?t=>M[t]:t=>{
     if(toon.flat[t])return M[t];

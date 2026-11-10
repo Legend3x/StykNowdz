@@ -18,6 +18,7 @@ whatever the density of its surface.
 | `z` | Optional depth-order offset of every face. |
 | `views`, `viewVertices`, `viewPoints` | Optional four- or eight-view targets for single-bone vertices, with the semantics of view-corrected skin. |
 | `groups` | Optional named, ordered triangle ranges, such as "Mask" or "Left boot". |
+| `normals` | Optional bind-space XYZ shading normal per vertex for toon shadows; all zero = the smooth normal of its faces. Each is turned by its vertex's (blended) bone rotation and the figure's rotation or reflection, and replaces the smooth normal in the lit/shadow test. |
 
 Validation bounds vertices (200,000), triangles (400,000), palette size and
 coordinates, requires every binding to name an articulated spatial bone and

@@ -1,7 +1,7 @@
 /** 3D Nowdz model document: parts (mesh objects), a skeleton, a color
  * palette and reference images. Plain JSON, stored on exported figures as
  * `_styk.modelSource` so a 3D figure can be reopened and edited. */
-import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale} from './mesh.mjs';
+import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, VDATA_KEYS} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
 
@@ -36,9 +36,22 @@ export function readModel(value) {
     if (part.outline !== undefined) {
       const o = part.outline;
       if (!o || typeof o !== 'object') delete part.outline;
-      else part.outline = {on: Boolean(o.on), thickness: Number.isFinite(o.thickness) ? Math.max(.001, Math.min(.2, o.thickness)) : .012, color: Number.isInteger(o.color) && o.color >= 0 ? o.color : 9};
+      else part.outline = {on: Boolean(o.on), thickness: Number.isFinite(o.thickness) ? Math.max(.001, Math.min(.2, o.thickness)) : .012, color: Number.isInteger(o.color) && o.color >= 0 ? o.color : 9,
+        ...(o.fromPart === true ? {fromPart: true} : {}), ...(Number.isFinite(o.darken) ? {darken: Math.max(0, Math.min(1, o.darken))} : {})};
     }
     if (part.shadows !== undefined) part.shadows = part.shadows !== false;
+    // Per-point data: line weights 0..4 and unit custom normals, on existing points only.
+    if (part.mesh.vdata !== undefined) {
+      const raw = part.mesh.vdata, n = part.mesh.verts.length, clean = {};
+      if (raw && typeof raw === 'object') {
+        const line = {}, normal = {};
+        for (const [i, w] of Object.entries(raw.line ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Number.isFinite(w)) line[i] = Math.max(0, Math.min(4, w));
+        for (const [i, v] of Object.entries(raw.normal ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) && Math.hypot(...v) > 1e-9) normal[i] = normalize(v);
+        if (Object.keys(line).length) clean.line = line;
+        if (Object.keys(normal).length) clean.normal = normal;
+      }
+      if (Object.keys(clean).length) part.mesh.vdata = clean; else delete part.mesh.vdata;
+    }
     if (part.clip !== undefined) part.clip = part.clip !== false;
   }
   if (model.toon !== undefined && (!model.toon || typeof model.toon !== 'object')) delete model.toon;
@@ -96,6 +109,25 @@ export function catmullClark(mesh) {
       out.faces.push({v: [a, next, faceBase + fi, prev], c: f.c});
     }
   });
+  // Per-point data follows: original points keep theirs; new points take the mean
+  // of the points they come from (a custom normal only where all of them have one).
+  if (mesh.vdata) {
+    out.vdata = {};
+    const blend = (key, sources) => {
+      const src = mesh.vdata[key]; if (!src) return undefined;
+      if (key === 'line') return sources.some(i => src[i] !== undefined) ? sources.reduce((sum, i) => sum + (src[i] ?? 1), 0) / sources.length : undefined;
+      if (!sources.every(i => src[i])) return undefined;
+      return normalize(sources.reduce((sum, i) => add(sum, src[i]), [0, 0, 0]));
+    };
+    for (const key of VDATA_KEYS) {
+      if (!mesh.vdata[key]) continue;
+      const data = {...mesh.vdata[key]};
+      faces.forEach((f, fi) => { const value = blend(key, f.v); if (value !== undefined) data[faceBase + fi] = value; });
+      for (const [k, e] of edges) { const value = blend(key, [e.a, e.b]); if (value !== undefined) data[edgeIndex.get(k)] = value; }
+      if (Object.keys(data).length) out.vdata[key] = data;
+    }
+    if (!Object.keys(out.vdata).length) delete out.vdata;
+  }
   return out;
 }
 

@@ -8,34 +8,32 @@
 // a thin rim around the silhouette (and along deep creases), which reads as an
 // ink line. It uses the same skin as the part, so it bends with the bones.
 
-import {add, sub, cross, scale, normalize} from './mesh.mjs';
+import {add, sub, scale, lineWeightOf, vertexNormals} from './mesh.mjs';
 import {assertValidMesh} from './topology.mjs';
 import {TOON_DEFAULTS} from '../toon-shading.mjs';
 
-export const OUTLINE_DEFAULTS = Object.freeze({thickness: .012, color: 9});
+export const OUTLINE_DEFAULTS = Object.freeze({thickness: .012, color: 9, fromPart: false, darken: .6});
 export const OUTLINE_MAX = .2;
+/** Most a point's line weight can scale the outline (Edit mode, Line weight). */
+export const LINE_WEIGHT_MAX = 4;
 
-/** Area-weighted vertex normals of a mesh (faces wind counter-clockwise seen from outside). */
-export function vertexNormals(mesh) {
-  const sums = mesh.verts.map(() => [0, 0, 0]);
-  for (const face of mesh.faces) {
-    const p = face.v.map(i => mesh.verts[i]);
-    // Newell's method: a polygon's normal with length = twice its area.
-    let n = [0, 0, 0];
-    for (let i = 0; i < p.length; i++) n = add(n, cross(p[i], p[(i + 1) % p.length]));
-    for (const i of face.v) sums[i] = add(sums[i], n);
-  }
-  return sums.map(normalize);
-}
+/** Area-weighted vertex normals (shape only; custom normals don't move outlines). */
+export {vertexNormals};
 
-/** The outline shell of `mesh`: every vertex pushed out by `thickness` along
- * its normal, every face reversed and given `color`. Vertex i of the shell is
- * vertex i of the mesh, so the shell can share the mesh's skin weights. */
-export function outlineHull(mesh, thickness = OUTLINE_DEFAULTS.thickness, color = OUTLINE_DEFAULTS.color) {
+/** The outline shell of `mesh`: every vertex pushed out along its (geometric)
+ * normal by `thickness` × its line weight (mesh.vdata.line, 1 by default; 0
+ * means no line there, so lines taper to sharp tips), every face reversed.
+ * Ink colour: palette index `color`, or with `fromPart` each face keeps its own
+ * colour and carries `ink: darken`, drawn as a darker shade of it (inkColor in
+ * toon-shading.mjs), for coloured line art. Vertex i of the shell is vertex i
+ * of the mesh, so the shell can share the mesh's skin weights. */
+export function outlineHull(mesh, thickness = OUTLINE_DEFAULTS.thickness, color = OUTLINE_DEFAULTS.color, {fromPart = false, darken = OUTLINE_DEFAULTS.darken} = {}) {
   const normals = vertexNormals(mesh), t = Math.max(0, Math.min(OUTLINE_MAX, Number(thickness) || 0));
+  const weight = i => Math.max(0, Math.min(LINE_WEIGHT_MAX, lineWeightOf(mesh, i)));
+  const ink = Math.max(0, Math.min(1, Number(darken) || 0));
   const hull = {
-    verts: mesh.verts.map((p, i) => add(p, scale(normals[i], t))),
-    faces: mesh.faces.map(f => ({v: f.v.slice().reverse(), c: color})),
+    verts: mesh.verts.map((p, i) => add(p, scale(normals[i], t * weight(i)))),
+    faces: mesh.faces.map(f => fromPart ? {v: f.v.slice().reverse(), c: f.c ?? 0, ink} : {v: f.v.slice().reverse(), c: color}),
   };
   assertValidMesh(hull, 'Outline', {});
   return hull;
@@ -58,9 +56,10 @@ export function toonSettings(model) {
 export function partOutline(part, paletteSize = Infinity) {
   const o = part?.outline;
   if (!o || !o.on) return null;
-  const thickness = Number(o.thickness);
+  const thickness = Number(o.thickness), darken = Number(o.darken);
   const color = Number.isInteger(o.color) && o.color >= 0 && o.color < paletteSize ? o.color : Math.min(OUTLINE_DEFAULTS.color, paletteSize - 1);
-  return {thickness: Number.isFinite(thickness) ? Math.max(.001, Math.min(OUTLINE_MAX, thickness)) : OUTLINE_DEFAULTS.thickness, color};
+  return {thickness: Number.isFinite(thickness) ? Math.max(.001, Math.min(OUTLINE_MAX, thickness)) : OUTLINE_DEFAULTS.thickness, color,
+    fromPart: o.fromPart === true, darken: Number.isFinite(darken) ? Math.max(0, Math.min(1, darken)) : OUTLINE_DEFAULTS.darken};
 }
 
 /** Distance between two points (for tests and the UI). */

@@ -33,6 +33,14 @@ export function shadowColor(rgb, strength = TOON_DEFAULTS.strength) {
   return [0, 1, 2].map(k => clamp(Math.round(rgb[k] * keep[k]), 0, 255));
 }
 
+/** Coloured line art: the ink colour for a part coloured `rgb`, `darken` 0..1
+ * (0 = the part's own colour, 1 = black). Darker and a little richer, as anime
+ * line art drawn in a deeper shade of each area's colour. */
+export function inkColor(rgb, darken = .6) {
+  const d = clamp(Number(darken) || 0, 0, 1), mean = (rgb[0] + rgb[1] + rgb[2]) / 3;
+  return [0, 1, 2].map(k => clamp(Math.round((rgb[k] + (rgb[k] - mean) * .25 * d) * (1 - d)), 0, 255));
+}
+
 /** True when a surface with outward unit-ish normal `n` (view space) is lit. */
 export const toonLit = (n, light, threshold) => {
   const len = Math.hypot(n[0], n[1], n[2]);

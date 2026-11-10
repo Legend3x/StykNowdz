@@ -62,9 +62,34 @@ The anime look from Blender tutorials, built in:
   (`src/toon-shading.mjs`), so recolouring a figure recolours its shadows.
   Parts with **Takes shadows** off, and all outlines, stay flat.
 - **Toon preview** (View) shows 3D Nowdz's viewport the same way.
+- **Line weight** (Edit mode, *Toon look of selected points*): each point's
+  outline thickness factor (0–4; 0 = no line, 1 = the part's thickness).
+  **Taper** thins it from the selection's root (where it joins the rest of the
+  mesh) to 0 at the far end, for sharp hair tips and lashes (`taperWeights`).
+- **Colour from the part** (Look): instead of one ink colour, each outline face
+  takes a darker shade of its own face's colour (`inkColor` in
+  toon-shading.mjs, *Darken* 0–1), for coloured line art. Shell faces carry
+  `ink`; on export each (colour, darken) pair becomes one stage colour.
+- **Shading normals** (Edit mode, same section): custom normals for toon
+  shadows, like Blender's Normal Edit / Data Transfer tricks for anime faces:
+  *Face front* (the model's front), *Face view* (the current view), *Like a
+  sphere* (away from the part's middle: soft shadows without nose and cheek
+  bumps), *Flatten* (one shared normal), *Reset*; *Strength* blends from the
+  shape's own normal (`shadingNormals`). They change only shading: outlines
+  still follow the shape.
+
+Per-point data lives in `mesh.vdata = {line: {[point]: weight}, normal:
+{[point]: [x, y, z]}}` (sparse; missing = default). `cleanup` renumbers it with
+the points, `atomic` restores it when an edit is refused, transforms turn
+normals with the inverse transpose, the mirror modifier and Symmetrize mirror
+it, and Catmull-Clark gives new points the mean of their sources (a normal
+only where all sources have one). Points added by an edit start at the
+default. `readModel` keeps line weights in 0..4 and unit normals on existing
+points, and drops the rest.
 
 Stored on the figure as `_styk.spatialMesh.toon = {light, threshold,
-strength, flat}` (`flat` lists part groups drawn without shadows); a model
+strength, flat}` (`flat` lists part groups drawn without shadows), plus
+`normals` when any point has a custom shading normal; a model
 keeps `toon` and each part's `outline` / `shadows` for re-editing.
 
 ### Soft select, shear, clipping, circle

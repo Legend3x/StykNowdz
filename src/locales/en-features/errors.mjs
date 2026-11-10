@@ -1753,6 +1753,7 @@ export default Object.freeze({
   "errors.spatialMesh.failure3dMeshViewPositionsMustBeFinite": "3D mesh view positions must be finite.",
   "errors.spatialMesh.invalid3dMeshParts": "Invalid 3D mesh parts.",
   "errors.spatialMesh.invalid3dMeshToon": "Invalid 3D mesh toon shading settings.",
+  "errors.spatialMesh.invalid3dMeshNormals": "Invalid 3D mesh shading normals.",
   "errors.spatialMesh.failure3dMeshPartsNeedNamesAndOrderedTriangle": "3D mesh parts need names and ordered triangle ranges.",
   "errors.editorLayerMigration.useBackgroundMigration": "This layer move needs more than 10,000 sampled frames. Use the background layer migration command.",
   "errors.editorLayerMigration.timeRange": "Layer migration exceeds the supported animation time range.",

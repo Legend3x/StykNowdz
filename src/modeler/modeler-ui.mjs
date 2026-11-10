@@ -11,7 +11,7 @@ import {exportObj, importObj} from './obj-format.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import * as X from './matrix.mjs';
 import {TopologyError, assertValidMesh} from './topology.mjs';
-import {outlineHull, partOutline, toonSettings, OUTLINE_DEFAULTS, OUTLINE_MAX} from './toon.mjs';
+import {outlineHull, partOutline, toonSettings, OUTLINE_DEFAULTS, OUTLINE_MAX, LINE_WEIGHT_MAX} from './toon.mjs';
 import {TOON_DEFAULTS} from '../toon-shading.mjs';
 import {icon as iconMarkup} from '../icons.mjs';
 
@@ -87,8 +87,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const outline = partOutline(p, model.palette.length);
     if (!outline) return null;
     const mesh = evaluated(p), key = `hull:${p.id}`, hit = S.cache.get(key);
-    if (hit?.mesh === mesh && hit.thickness === outline.thickness && hit.color === outline.color) return hit.hull;
-    const hull = outlineHull(mesh, outline.thickness, outline.color);
+    if (hit?.mesh === mesh && ['thickness', 'color', 'fromPart', 'darken'].every(k => hit[k] === outline[k])) return hit.hull;
+    const hull = outlineHull(mesh, outline.thickness, outline.color, outline);
     S.cache.set(key, {mesh, ...outline, hull}); return hull;
   };
 
@@ -183,13 +183,44 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** The darkest palette colour, for new outlines. */
   const inkColor = () => model.palette.reduce((best, c, i) => c[0] + c[1] + c[2] < model.palette[best].reduce((a, v) => a + v, 0) ? i : best, 0);
   const setOutline = (targets, on) => { if (on) S.toonPreview = true; commit(() => { for (const q of targets) q.outline = {...(q.outline ?? {thickness: OUTLINE_DEFAULTS.thickness, color: inkColor()}), on}; }); };
+  /** Edit mode: per-point toon settings of the selection. Line weight tapers the
+   * outline (0 = no line); shading normals bend toon shadows (anime faces). */
+  function toonPointTools(p) {
+    const mesh = p.mesh, sel = [...S.verts];
+    if (!sel.length) return [el('p', {class: 'modeler-hint', text: t("modeler.toonPointsHint")})];
+    const weight = sel.reduce((sum, v) => sum + M.lineWeightOf(mesh, v), 0) / sel.length;
+    const custom = sel.filter(v => M.customNormalOf(mesh, v)).length;
+    const setNormals = (how, extra = {}) => commit(() => {
+      const normals = M.shadingNormals(mesh, S.verts, how, {strength: S.normalStrength ?? 1, ...extra});
+      M.setVData(mesh, 'normal', Object.keys(normals).map(Number), v => normals[v]); S.cache.delete(p.id); S.toonPreview = true;
+    });
+    // A world direction in the part's own space (normals turn with the transpose).
+    const local = ([x, y, z]) => { const m = M.objectMatrix(p); return M.normalize([m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z, m[2] * x + m[6] * y + m[10] * z]); };
+    const box = M.bounds(mesh.verts), centre = M.scale(M.add(box.min, box.max), .5);
+    return [
+      field(t("modeler.lineWeight"), +weight.toFixed(3), v => commit(() => { const w = Math.max(0, Math.min(LINE_WEIGHT_MAX, v)); M.setVData(mesh, 'line', sel, Math.abs(w - 1) < 1e-9 ? null : w); S.cache.delete(p.id); }), {step: .05, min: 0, max: LINE_WEIGHT_MAX}),
+      actions([[t("modeler.taperLine"), () => commit(() => { const w = M.taperWeights(mesh, S.verts); M.setVData(mesh, 'line', Object.keys(w).map(Number), v => w[v]); S.cache.delete(p.id); }), t("modeler.taperLineHint")],
+        [t("modeler.resetLine"), () => commit(() => { M.setVData(mesh, 'line', sel, null); S.cache.delete(p.id); })]]),
+      el('span', {class: 'modeler-label', text: t("modeler.shadingNormals", {count: custom, total: sel.length})}),
+      slider(t("modeler.normalStrength"), S.normalStrength ?? 1, 0, 1, .05, v => { S.normalStrength = v; }),
+      actions([[t("modeler.normalsFront"), () => setNormals('direction', {direction: local([0, 0, 1])}), t("modeler.normalsFrontHint")],
+        [t("modeler.normalsView"), () => setNormals('direction', {direction: local(frame.back)}), t("modeler.normalsViewHint")],
+        [t("modeler.normalsSphere"), () => setNormals('sphere', {center: centre}), t("modeler.normalsSphereHint")],
+        [t("modeler.normalsFlatten"), () => setNormals('flatten'), t("modeler.normalsFlattenHint")],
+        [t("modeler.normalsReset"), () => commit(() => { M.setVData(mesh, 'normal', sel, null); S.cache.delete(p.id); })]]),
+    ];
+  }
   function partLook(p) {
     const outline = p.outline ?? {on: false, thickness: OUTLINE_DEFAULTS.thickness, color: inkColor()}, toon = toonSettings(model);
     return [
       el('label', {class: 'modeler-check', title: t("modeler.outlineHint")}, [el('input', {type: 'checkbox', checked: Boolean(outline.on), onchange: e => setOutline([p], e.target.checked)}), t("modeler.outline")]),
       outline.on ? slider(t("modeler.outlineThickness"), outline.thickness, .002, .06, .001, v => commit(() => { p.outline = {...outline, thickness: Math.max(.001, Math.min(OUTLINE_MAX, v))}; })) : null,
       outline.on ? el('span', {class: 'modeler-label', text: t("modeler.outlineColor")}) : null,
-      outline.on ? colorRow(outline.color, i => commit(() => { p.outline = {...outline, color: i}; })) : null,
+      // Coloured line art: a darker shade of each face's own colour instead of one ink.
+      outline.on ? el('label', {class: 'modeler-check', title: t("modeler.outlineFromPartHint")}, [el('input', {type: 'checkbox', checked: outline.fromPart === true,
+        onchange: e => commit(() => { p.outline = {...outline, fromPart: e.target.checked}; if (!e.target.checked) delete p.outline.fromPart; })}), t("modeler.outlineFromPart")]) : null,
+      outline.on && outline.fromPart ? slider(t("modeler.outlineDarken"), outline.darken ?? OUTLINE_DEFAULTS.darken, 0, 1, .05, v => commit(() => { p.outline = {...outline, darken: Math.max(0, Math.min(1, v))}; })) : null,
+      outline.on && !outline.fromPart ? colorRow(outline.color, i => commit(() => { p.outline = {...outline, color: i}; })) : null,
       toon.shadows ? el('label', {class: 'modeler-check', title: t("modeler.partShadowsHint")}, [el('input', {type: 'checkbox', checked: p.shadows !== false,
         onchange: e => commit(() => { if (e.target.checked) delete p.shadows; else p.shadows = false; })}), t("modeler.partShadows")]) : null,
     ];
@@ -262,6 +293,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           [t("modeler.symmetrize"), () => symmetrizePart(p), t("modeler.symmetrizeHint")],
           [t("modeler.mergeByDistance"), () => mergeAt('distance')]]),
         el('p', {class: 'modeler-hint', text: t("modeler.editHint")})]));
+      blocks.push(section(t("modeler.toonPoints"), toonPointTools(p)));
     } else if (S.mode === 'bones') {
       const bone = model.bones.find(b => S.bones.has(b.id) && S.bones.size === 1);
       blocks.push(section(t("modeler.skeleton"), [
