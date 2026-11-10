@@ -21590,7 +21590,7 @@
   },
   "errors.spatialMesh.a3dMeshBoneWasNotEvaluated": {
     "locations": [
-      "src/spatial-mesh.mjs:203"
+      "src/spatial-mesh.mjs:196"
     ],
     "context": "const f=frames[plan.bones[i]];if(!f)throw messageError(new Error(''), \"errors.spatialMesh.a3dMeshBoneWasNotEvaluated\", {});"
   },

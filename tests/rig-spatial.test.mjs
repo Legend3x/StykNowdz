@@ -32,7 +32,7 @@ test('dual quaternion skin retains radius at a half-weight 180 degree twist',()=
  near(p.x,200);near(p.y,300);near(Math.abs(p.depthOffset.x),10);
 });
 
-test('skin projection agrees with dual-quaternion reference blending across rotations, reflection and stretch',()=>{
+test('skin projection agrees with dual-quaternion reference blending across rotations, reflection and stretch (stretch blended in bind space)',()=>{
  let seed=417;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/2**32),dot=(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0);
  for(let sample=0;sample<400;sample++){
   const count=1+sample%4,frames=Array.from({length:count},()=>{
@@ -41,16 +41,29 @@ test('skin projection agrees with dual-quaternion reference blending across rota
   }),weights=frames.map(()=>.01+random()),total=weights.reduce((a,b)=>a+b),bindings=weights.map((w,i)=>({joint:i+1,weight:w/total})),point=[random()*70,random()*80,random()*90];
   let expected;
   if(count===1)expected=spatialPoint(frames[0],point);
-  else if(frames.some(f=>f.stretch!==1))expected=bindings.reduce((p,b)=>{const v=spatialPoint(frames[b.joint-1],point);return p.map((n,i)=>n+v[i]*b.weight);},[0,0,0]);
   else{
+   // Stretch is applied in bind space and blended by weight, then the blended
+   // dual quaternion moves the point (scale-separated DQS: no linear-blend pinch).
+   const offset=[0,0,0];for(const b of bindings){const f=frames[b.joint-1],d=(point[1]-f.origin[1]);offset[1]+=d*(f.stretch-1)*b.weight;}
+   const moved=point.map((n,i)=>n+offset[i]);
    const sum=Array(8).fill(0);for(const b of bindings){const f=frames[b.joint-1],w=b.weight*(dot(f.q,frames[0].q)<0?-1:1);[...f.q,...f.dual].forEach((v,i)=>sum[i]+=v*w);}
    const norm=Math.hypot(...sum.slice(0,4)),q=sum.slice(0,4).map(v=>v/norm),d=sum.slice(4).map(v=>v/norm),translation=quatMultiply(d,[-q[0],-q[1],-q[2],q[3]]);
-   expected=quatRotate(q,point).map((v,i)=>v+2*translation[i]);
+   expected=quatRotate(q,moved).map((v,i)=>v+2*translation[i]);
   }
   const mirror=sample%2===0,sign=mirror?-1:1,angle=.7,scale=1.5,cs=Math.cos(angle),sn=Math.sin(angle);
   const result=evaluateSpatial({point,bindings},{segment:{angle_rad:0},input:{start:{x:0,y:0},angle:0},get:id=>({spatial:frames[id-1]}),root:{x:30,y:50},scale,figureAngle:angle,mirror});
   near(result.handle.x,30+(expected[0]*cs-expected[1]*sign*sn)*scale,1e-9);near(result.handle.y,50+(expected[0]*sn+expected[1]*sign*cs)*scale,1e-9);near(result.depthOffset.x,expected[2]*scale*cs,1e-9);
  }
+});
+test('a stretched limb twisted between two bones keeps its thickness (no candy-wrapper pinch)',()=>{
+ // Two bones along Y, both stretched 1.5x; the second twisted 170 degrees about the
+ // limb. A point shared half and half sits 10 units off the axis. A linear blend
+ // would pull it almost onto the axis; dual quaternions keep it 10 units away.
+ const twist=170*Math.PI/180,frame=(q,stretch)=>({q,t:[0,0,0],dual:quatMultiply([0,0,0,0],q).map(v=>v/2),axis:[0,1,0],origin:[0,0,0],stretch});
+ const frames=[frame([0,0,0,1],1.5),frame([0,Math.sin(twist/2),0,Math.cos(twist/2)],1.5)],point=[10,20,0];
+ const result=evaluateSpatial({point,bindings:[{joint:1,weight:.5},{joint:2,weight:.5}]},{segment:{angle_rad:0},input:{start:{x:0,y:0},angle:0},get:id=>({spatial:frames[id-1]}),root:{x:0,y:0},scale:1,figureAngle:0,mirror:false});
+ near(Math.hypot(result.handle.x,result.depthOffset.x),10,1e-6);
+ near(result.handle.y,30,1e-6);
 });
 test('spatial dependencies remap, invalidate and reject invalid bindings and cycles',()=>{
  const{figure,a,b,skin}=spatialFixture(),plan=rigConstraintPlan(figure);

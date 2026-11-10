@@ -133,6 +133,13 @@ function boneValues(f,F,b){
 }
 // spatialPoint(frame,[x,y,z]) from cached values, in the same operation order.
 function framePoint(F,b,x0,y0,z0,out,at){
+  bindPoint(F,b,x0,y0,z0,out,at);
+  const x=out[at],y=out[at+1],z=out[at+2];
+  const qx=F[b],qy=F[b+1],qz=F[b+2],qw=F[b+3],tx=2*(qy*z-qz*y),ty=2*(qz*x-qx*z),tz=2*(qx*y-qy*x);
+  out[at]=x+qw*tx+qy*tz-qz*ty+F[b+4];out[at+1]=y+qw*ty+qz*tx-qx*tz+F[b+5];out[at+2]=z+qw*tz+qx*ty-qy*tx+F[b+6];
+}
+// A bone's shape, choice scale and stretch, still in bind space (before its rotation and move).
+function bindPoint(F,b,x0,y0,z0,out,at){
   let x=x0,y=y0,z=z0;
   const ox=F[b+7],oy=F[b+8],oz=F[b+9],width=F[b+15],choice=F[b+14];
   if(width===width){
@@ -145,44 +152,30 @@ function framePoint(F,b,x0,y0,z0,out,at){
     const ax=F[b+10],ay=F[b+11],az=F[b+12],s=F[b+13],d=(x0-ox)*ax+(y0-oy)*ay+(z0-oz)*az;
     x=x+d*(s-1)*ax;y=y+d*(s-1)*ay;z=z+d*(s-1)*az;
   }
-  const qx=F[b],qy=F[b+1],qz=F[b+2],qw=F[b+3],tx=2*(qy*z-qz*y),ty=2*(qz*x-qx*z),tz=2*(qx*y-qy*x);
-  out[at]=x+qw*tx+qy*tz-qz*ty+F[b+4];out[at+1]=y+qw*ty+qz*tx-qx*tz+F[b+5];out[at+2]=z+qw*tz+qx*ty-qy*tx+F[b+6];
+  out[at]=x;out[at+1]=y;out[at+2]=z;
 }
 const scratch=new Float64Array(3);
 
-/** A vertex bound to several bones: dual-quaternion blend, or a linear blend
- * of bone positions while any bone stretches (rig-spatial skinPoint). */
-function blendedVertex(plan,F,v,px,py,pz,out){
+/** A vertex bound to several bones: dual-quaternion skinning. Each bone's
+ * shape, choice scale and stretch are applied in bind space first and blended
+ * by weight, then the blended rigid motion moves the point (scale-separated
+ * DQS), so stretched and twisted limbs keep their volume instead of pinching
+ * like a linear blend ("candy wrapper"). Same as rig-spatial skinPoint. */
+function blendedVertex(plan,F,v,px,py,pz,out,rotation){
   const count=plan.counts[v],base=v*4,first=plan.slots[base]*STRIDE;
-  let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,stretch=false,shaped=false;
+  let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,ox=0,oy=0,oz=0;
   for(let k=0;k<count;k++){
-    const b=plan.slots[base+k]*STRIDE;stretch||=F[b+22]===1;shaped||=F[b+15]===F[b+15];
-    const weight=plan.weights[base+k]*(F[b]*F[first]+F[b+1]*F[first+1]+F[b+2]*F[first+2]+F[b+3]*F[first+3]<0?-1:1);
+    const b=plan.slots[base+k]*STRIDE,own=plan.weights[base+k];
+    const weight=own*(F[b]*F[first]+F[b+1]*F[first+1]+F[b+2]*F[first+2]+F[b+3]*F[first+3]<0?-1:1);
     x+=F[b]*weight;y+=F[b+1]*weight;z+=F[b+2]*weight;w+=F[b+3]*weight;dx+=F[b+18]*weight;dy+=F[b+19]*weight;dz+=F[b+20]*weight;dw+=F[b+21]*weight;
-  }
-  if(stretch){
-    let sx=0,sy=0,sz=0;
-    for(let k=0;k<count;k++){framePoint(F,plan.slots[base+k]*STRIDE,px,py,pz,scratch,0);const weight=plan.weights[base+k];sx+=scratch[0]*weight;sy+=scratch[1]*weight;sz+=scratch[2]*weight;}
-    out[0]=sx;out[1]=sy;out[2]=sz;return;
+    if(F[b+15]===F[b+15]||F[b+14]===F[b+14]||F[b+22]===1){bindPoint(F,b,px,py,pz,scratch,0);ox+=(scratch[0]-px)*own;oy+=(scratch[1]-py)*own;oz+=(scratch[2]-pz)*own;}
   }
   const norm=Math.hypot(x,y,z,w);x/=norm;y/=norm;z/=norm;w/=norm;dx/=norm;dy/=norm;dz/=norm;dw/=norm;
-  const tx=2*(y*pz-z*py),ty=2*(z*px-x*pz),tz=2*(x*py-y*px);
-  let rx=px+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y),
-    ry=py+w*ty+z*tx-x*tz+2*(-dw*y+dx*z+dy*w-dz*x),
-    rz=pz+w*tz+x*ty-y*tx+2*(-dw*z-dx*y+dy*x+dz*w);
-  if(shaped){
-    // Blend radial offsets in bind space, then rotate with the blended frame.
-    let ox=0,oy=0,oz=0;
-    for(let k=0;k<count;k++){
-      const b=plan.slots[base+k]*STRIDE,width=F[b+15];if(width!==width)continue;
-      const ax=F[b+10],ay=F[b+11],az=F[b+12],rx0=px-F[b+7],ry0=py-F[b+8],rz0=pz-F[b+9],d=rx0*ax+ry0*ay+rz0*az;
-      const u=Math.max(0,Math.min(1,d/F[b+17])),amount=width*(1+F[b+16]*u*u*(3-2*u))-1,weight=plan.weights[base+k];
-      ox+=(rx0-d*ax)*amount*weight;oy+=(ry0-d*ay)*amount*weight;oz+=(rz0-d*az)*amount*weight;
-    }
-    const ux=2*(y*oz-z*oy),uy=2*(z*ox-x*oz),uz=2*(x*oy-y*ox);
-    rx+=ox+w*ux+y*uz-z*uy;ry+=oy+w*uy+z*ux-x*uz;rz+=oz+w*uz+x*uy-y*ux;
-  }
-  out[0]=rx;out[1]=ry;out[2]=rz;
+  const ax=px+ox,ay=py+oy,az=pz+oz,tx=2*(y*az-z*ay),ty=2*(z*ax-x*az),tz=2*(x*ay-y*ax);
+  out[0]=ax+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y);
+  out[1]=ay+w*ty+z*tx-x*tz+2*(-dw*y+dx*z+dy*w-dz*x);
+  out[2]=az+w*tz+x*ty-y*tx+2*(-dw*z-dx*y+dy*x+dz*w);
+  if(rotation){rotation[0]=x;rotation[1]=y;rotation[2]=z;rotation[3]=w;}
 }
 
 const FRAME_VALUES=14;

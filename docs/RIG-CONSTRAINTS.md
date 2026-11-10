@@ -75,8 +75,8 @@ rotation. Parent transforms, rest origins, rest tips and up to four skin weights
 are definition data in `_stykRig.spatial`. Individual skin vertices are native
 joints; a dense surface is a figure mesh bound to the same bones, whose vertices
 are definition data rather than joints (docs/SPATIAL-MESHES.md). Dual-quaternion
-blending preserves volume through twists;
-axial stretching uses weighted transformed positions. Derived depth participates
+skinning preserves volume through twists; shape, pose-choice scale and axial
+stretch are blended in bind space before it, so stretched limbs keep it too. Derived depth participates
 in the existing surface evaluator and renderer. There is no additional animation
 clock, pose store or renderer scene graph.
 

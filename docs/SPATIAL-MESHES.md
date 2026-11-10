@@ -27,8 +27,12 @@ the flat numeric arrays in their binary sections.
 A pose evaluates the mesh once, after its bones, in `src/spatial-mesh.mjs`.
 Skinning follows rig-spatial skin points operation for operation: single-bone
 vertices use the bone frame, including stretch, part proportions and pose
-choices; several bones use dual-quaternion blending, or a linear blend while any
-bone stretches; view targets blend around the bone heading. Vertices then take
+choices; several bones use dual-quaternion skinning, scale separated: each
+bone's part proportions, pose-choice scale and stretch are applied in bind space
+and blended by weight, then the blended dual quaternion moves the point. A
+stretched limb twisted between two bones keeps its thickness (no linear-blend
+"candy wrapper"); with one bone it is exactly the bone frame. View targets
+blend around the bone heading. Vertices then take
 the figure rotation, scale, reflection and optional perspective. Faces are
 culled by the reference parity with the native edge-on tolerance and clipped
 against the perspective near plane. Positions and depth are typed arrays with

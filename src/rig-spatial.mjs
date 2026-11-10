@@ -63,12 +63,17 @@ export function spatialQuaternion(bend,turn,pitch){
   return[sx*cy*cz-cx*sy*sz,cx*sy*cz+sx*cy*sz,cx*cy*sz-sx*sy*cz,cx*cy*cz+sx*sy*sz];
 }
 export function spatialPoint(frame,point){
+  const rotated=quatRotate(frame.q,bindSpacePoint(frame,point));for(let i=0;i<3;i++)rotated[i]+=frame.t[i];return rotated;
+}
+/** A frame's shape, choice scale and stretch, before its rotation and move. */
+function bindSpacePoint(frame,point){
   let p=point;
   if(frame.shape){const offset=shapeOffset(frame,point);p=point.map((n,i)=>n+offset[i]);}
   if(frame.choiceScale!==undefined){p=p.map((n,i)=>frame.origin[i]+(n-frame.origin[i])*frame.choiceScale);}
   else if(Math.abs(frame.stretch-1)>EPS){const v=frame.axis,d=(point[0]-frame.origin[0])*v[0]+(point[1]-frame.origin[1])*v[1]+(point[2]-frame.origin[2])*v[2];p=p.map((n,i)=>n+d*(frame.stretch-1)*v[i]);}
-  const rotated=quatRotate(frame.q,p);for(let i=0;i<3;i++)rotated[i]+=frame.t[i];return rotated;
+  return p;
 }
+const bindDeforms=f=>Boolean(f.shape)||f.choiceScale!==undefined||Math.abs(f.stretch-1)>EPS;
 function shapeOffset(frame,point){
   const r=point.map((n,i)=>n-frame.origin[i]),d=r.reduce((sum,n,i)=>sum+n*frame.axis[i],0);
   const u=Math.max(0,Math.min(1,d/frame.restLength)),amount=frame.shape.width*(1+frame.shape.taper*u*u*(3-2*u))-1;
@@ -76,27 +81,22 @@ function shapeOffset(frame,point){
 }
 function skinPoint(s,get){
   if(s.bindings.length===1){const f=get(s.bindings[0].joint).spatial;return spatialPoint(f,s.viewPoints?viewCorrectedPoint(s,f):s.point);}
-  const first=get(s.bindings[0].joint).spatial.q;let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,stretch=false,shaped=false;
-  // Skin is evaluated for every mesh vertex. Accumulate the dual quaternion
-  // in scalars so the hot path allocates only its final point.
-  for(const b of s.bindings){const f=get(b.joint).spatial,q=f.q,d=f.dual;stretch||=Math.abs(f.stretch-1)>EPS;shaped||=Boolean(f.shape);
+  const first=get(s.bindings[0].joint).spatial.q;let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0;
+  // Dual-quaternion skinning, accumulated in scalars so the hot path allocates
+  // only its final point. Shape, choice scale and stretch are applied in bind
+  // space and blended by weight first (scale-separated DQS), so a stretched,
+  // twisted limb keeps its volume instead of pinching like a linear blend.
+  const offset=[0,0,0];
+  for(const b of s.bindings){const f=get(b.joint).spatial,q=f.q,d=f.dual;
     const weight=b.weight*(q[0]*first[0]+q[1]*first[1]+q[2]*first[2]+q[3]*first[3]<0?-1:1);
     x+=q[0]*weight;y+=q[1]*weight;z+=q[2]*weight;w+=q[3]*weight;dx+=d[0]*weight;dy+=d[1]*weight;dz+=d[2]*weight;dw+=d[3]*weight;
+    if(bindDeforms(f)){const p=bindSpacePoint(f,s.point);for(let i=0;i<3;i++)offset[i]+=(p[i]-s.point[i])*b.weight;}
   }
-  if(stretch){const p=[0,0,0];for(const b of s.bindings){const v=spatialPoint(get(b.joint).spatial,s.point);for(let i=0;i<3;i++)p[i]+=v[i]*b.weight;}return p;}
   const norm=Math.hypot(x,y,z,w);x/=norm;y/=norm;z/=norm;w/=norm;dx/=norm;dy/=norm;dz/=norm;dw/=norm;
-  const[a,b,c]=s.point,tx=2*(y*c-z*b),ty=2*(z*a-x*c),tz=2*(x*b-y*a);
-  const result=[a+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y),
+  const a=s.point[0]+offset[0],b=s.point[1]+offset[1],c=s.point[2]+offset[2],tx=2*(y*c-z*b),ty=2*(z*a-x*c),tz=2*(x*b-y*a);
+  return [a+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y),
     b+w*ty+z*tx-x*tz+2*(-dw*y+dx*z+dy*w-dz*x),
     c+w*tz+x*ty-y*tx+2*(-dw*z-dx*y+dy*x+dz*w)];
-  // Blend radial offsets in bind space and rotate with the same normalized
-  // quaternion. Uniform width must retain its radius through a 180-degree twist.
-  if(shaped){
-    const offset=[0,0,0];
-    for(const binding of s.bindings){const f=get(binding.joint).spatial;if(f.shape){const d=shapeOffset(f,s.point);for(let i=0;i<3;i++)offset[i]+=d[i]*binding.weight;}}
-    const rotated=quatRotate([x,y,z,w],offset);for(let i=0;i<3;i++)result[i]+=rotated[i];
-  }
-  return result;
 }
 // Evenly spaced turn targets are expressed relative to the binding origin, in the
 // frontal coordinate axes of each view. A pose owns one interpolation frame;

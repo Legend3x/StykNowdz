@@ -20,6 +20,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed stretched or resized 3D limbs pinching thin where two bones meet when they twist.
 - Fixed being unable to leave the Model tab without closing the app.
 - Fixed traced points looking greyed out and not editable after coming back to the Model tab.
 - Fixed half of an extruded eye ring or other open surface disappearing in 3D Nowdz: both sides now show and can be edited, as in Blender.
