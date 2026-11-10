@@ -35,6 +35,11 @@ export function outlineHull(mesh, thickness = OUTLINE_DEFAULTS.thickness, color 
     verts: mesh.verts.map((p, i) => add(p, scale(normals[i], t * weight(i)))),
     faces: mesh.faces.map(f => fromPart ? {v: f.v.slice().reverse(), c: f.c ?? 0, ink} : {v: f.v.slice().reverse(), c: color}),
   };
+  // Points on no face (traced lines and loose points, if a caller passes an
+  // unevaluated mesh) have no normal and get no line; they stay in the shell as
+  // loose points so its point numbers still match the mesh and its skin.
+  const onFaces = new Set(mesh.faces.flatMap(f => f.v)), stray = mesh.verts.map((_, i) => i).filter(i => !onFaces.has(i));
+  if (stray.length) hull.loose = stray;
   assertValidMesh(hull, 'Outline', {});
   return hull;
 }

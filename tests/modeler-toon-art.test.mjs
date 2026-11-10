@@ -33,6 +33,11 @@ test('outlines taper with per-point line weights and can take each face\'s own c
   assert.deepEqual(inkColor([200, 100, 50], 1), [0, 0, 0]);
   const half = inkColor([200, 100, 50], .5);
   assert.ok(half.every((v, k) => v < [200, 100, 50][k]) && half[0] > half[1] && half[1] > half[2], 'darker, same hue order');
+  // A mesh with traced lines and loose points (not yet evaluated) still gets a valid shell, point for point.
+  const traced = cube(1); traced.verts.push([3, 0, 0], [4, 0, 0], [5, 5, 5]); traced.edges = [[8, 9]]; traced.loose = [10];
+  const shell = outlineHull(traced, .05, 9, {fromPart: true});
+  assert.ok(validateMesh(shell).ok); assert.equal(shell.verts.length, traced.verts.length);
+  assert.deepEqual(shell.verts.slice(8), traced.verts.slice(8), 'points on no face get no line');
   assert.deepEqual(partOutline({outline: {on: true, thickness: .02, color: 2, fromPart: true, darken: 2}}, 10), {thickness: .02, color: 2, fromPart: true, darken: 1});
   // A strand tapers from its root (where it joins the rest) to a sharp tip.
   const g = {verts: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 2, 0], [1, 2, 0], [0, 3, 0], [1, 3, 0]], faces: [{v: [0, 1, 3, 2], c: 0}, {v: [2, 3, 5, 4], c: 0}, {v: [4, 5, 7, 6], c: 0}]};
