@@ -174,10 +174,26 @@ pointer. X, Y or Z locks to an axis (again to unlock), Ctrl snaps (0.05 units,
 15°, tenths), click or Enter finishes, right-click or Esc cancels. Extrude moves
 the new faces along their normal; when that points at you, drag up to push it out.
 
+### Depth buffer
+
+The viewport works out every face's colour on the CPU (lighting, toon shadows
+cut along the exact shadow line, outline shells), then draws the coloured
+triangles through a hardware depth buffer (`depth-pass.mjs`, WebGL with
+antialiasing) onto a scratch canvas laid over the background, grid and
+reference images. Each pixel shows the nearest surface, so parts that pass
+through each other (hair through a head, a collar through a neck) meet along
+the right line, and outline shells show only at silhouettes, as in Blender.
+Projected points carry `d`, the depth value (1 − near/distance in perspective,
+affine in screen space, so plain interpolation is exact; toon shadow splits
+interpolate it too). Wire view draws edges with the same depth test, so hidden
+edges stay hidden. Picking takes the nearest face at the clicked pixel.
+X-ray, and setups without WebGL or after a lost context, fall back to filling
+faces sorted back to front on the 2D canvas.
+
 ### Both sides of open meshes
 
-Blender draws both sides of every face. The viewport here sorts faces back to
-front instead of using a depth buffer, so a closed mesh still skips its far
+Blender draws both sides of every face. Back-to-front sorting can't hide a
+closed mesh's far side reliably and the depth buffer doesn't need to draw it, so a closed mesh still skips its far
 side (it's hidden anyway), but an open one (a traced band, half a face, a
 plane) is drawn and edited from both sides (`isOpenMesh`, `openOf` in
 viewport.mjs, cached per face list). Before, a band folded over itself, such

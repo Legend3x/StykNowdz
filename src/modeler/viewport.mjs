@@ -4,6 +4,7 @@
 import {sub, dot, cross, normalize, add, scale, length, isOpenMesh} from './mesh.mjs';
 import {about, rotationAxis, transformPoint} from './matrix.mjs';
 import {toonLight, toonThreshold, shadowColor, inkColor} from '../toon-shading.mjs';
+import {vertexBatch} from './depth-pass.mjs';
 
 export const VIEW_COLORS = Object.freeze({
   background: '#e8eaee', grid: 'rgba(40,48,60,.10)', gridStrong: 'rgba(40,48,60,.22)', axisX: 'rgba(214,72,72,.75)', axisZ: 'rgba(60,110,214,.75)',
@@ -14,18 +15,21 @@ export const VIEW_COLORS = Object.freeze({
 export function defaultCamera() { return {yaw: .5, pitch: .25, dist: 4.2, target: [0, 1, 0], ortho: false, fov: .7}; }
 
 /** Camera axes and projection for a canvas of size w×h. */
+const NEAR = .02;
 export function cameraFrame(camera, w, h) {
   const {yaw, pitch, dist, target} = camera;
   const back = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
   const right = [Math.cos(yaw), 0, -Math.sin(yaw)], up = cross(back, right), eye = add(target, scale(back, dist));
   const focal = h / (2 * Math.tan(camera.fov / 2)), orthoScale = focal / dist;
   const toCamera = p => { const d = sub(p, target); return [dot(d, right), dot(d, up), dot(d, back)]; };
+  // `d` is the depth-buffer value: 0 near … 1 far, affine in screen space (so
+  // it interpolates exactly across a face): 1 − near/distance in perspective.
   const project = p => {
     const c = toCamera(p);
-    if (camera.ortho) return {x: w / 2 + c[0] * orthoScale, y: h / 2 - c[1] * orthoScale, z: c[2], ok: true};
+    if (camera.ortho) return {x: w / 2 + c[0] * orthoScale, y: h / 2 - c[1] * orthoScale, z: c[2], d: Math.max(0, Math.min(1, .5 - c[2] / (4 * dist + 200))), ok: true};
     const depth = dist - c[2];
-    if (depth < .02) return {x: NaN, y: NaN, z: c[2], ok: false};
-    return {x: w / 2 + c[0] * focal / depth, y: h / 2 - c[1] * focal / depth, z: c[2], ok: true};
+    if (depth < NEAR) return {x: NaN, y: NaN, z: c[2], ok: false};
+    return {x: w / 2 + c[0] * focal / depth, y: h / 2 - c[1] * focal / depth, z: c[2], d: 1 - NEAR / depth, ok: true};
   };
   /** World units per screen pixel at the depth of point p. */
   const unitsPerPixel = p => camera.ortho ? 1 / orthoScale : Math.max(.02, dist - toCamera(p)[2]) / focal;
@@ -92,7 +96,9 @@ function drawImagePlane(ctx, frame, img, {tl, tr, bl}, opacity) {
   ctx.save(); ctx.globalAlpha = opacity; ctx.drawImage(scratch, 0, 0, w, h); ctx.restore();
 }
 
-const shade = (rgb, k) => `rgb(${rgb.map(v => Math.max(0, Math.min(255, Math.round(v * k)))).join(',')})`;
+const shadeRgb = (rgb, k) => rgb.map(v => Math.max(0, Math.min(255, Math.round(v * k))));
+const css = rgb => `rgb(${rgb.join(',')})`;
+const WIRE_RGBA = (([r, g, b, a]) => [[+r, +g, +b], Math.round(+a * 255)])(VIEW_COLORS.wire.match(/[\d.]+/g));
 
 /**
  * Paint the scene. `items` are {mesh, palette, partId, highlight, weights?}
@@ -126,7 +132,7 @@ export function splitByShadow(pts, side) {
     const j = (i + 1) % pts.length, a = side[i], b = side[j];
     (a >= 0 ? lit : dark).push(pts[i]);
     if ((a >= 0) !== (b >= 0)) {
-      const t = a / (a - b), p = {x: pts[i].x + (pts[j].x - pts[i].x) * t, y: pts[i].y + (pts[j].y - pts[i].y) * t};
+      const t = a / (a - b), p = {x: pts[i].x + (pts[j].x - pts[i].x) * t, y: pts[i].y + (pts[j].y - pts[i].y) * t, d: pts[i].d + (pts[j].d - pts[i].d) * t};
       lit.push(p); dark.push(p);
     }
   }
@@ -136,7 +142,7 @@ export function splitByShadow(pts, side) {
 /** Draw the model. With `toon` (the toon preview) faces are flat colours as on
  * the stage: lit or, when `toon.shadows`, in shadow (toon-shading.mjs), and
  * items marked `hull` are outline shells drawn with their far side only. */
-export function paint(ctx, frame, items, {xray = false, wire = false, references = [], showGrid = true, refImages = new Map(), toon = null} = {}) {
+export function paint(ctx, frame, items, {xray = false, wire = false, references = [], showGrid = true, refImages = new Map(), toon = null, depth = null} = {}) {
   const {w, h} = frame;
   ctx.fillStyle = VIEW_COLORS.background; ctx.fillRect(0, 0, w, h);
   // Reference images stand in the scene behind everything, as in Blender: both are
@@ -173,19 +179,30 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     });
   }
   polys.sort((a, b) => a.z - b.z);
+  // Opaque views go through the depth buffer, so surfaces passing through each
+  // other (hair through a head) meet along the right line; X-ray (see-through)
+  // and setups without WebGL fill sorted faces on the canvas instead.
+  const zbuffer = depth && !xray && !depth.unavailable, tris = zbuffer ? vertexBatch() : null, lines = zbuffer && wire ? vertexBatch() : null;
+  const sx = x => x / w * 2 - 1, sy = y => 1 - y / h * 2;
   ctx.lineJoin = 'round';
   for (const poly of polys) {
     const {item, face} = poly;
     let rgb = item.palette[face.c] ?? item.palette[0] ?? [200, 200, 200];
     if (face.ink !== undefined) rgb = inkColor(rgb, face.ink);
     if (item.weights) rgb = weightColor(item.weights[poly.fi] ?? 0);
-    ctx.globalAlpha = xray ? .55 : 1;
     // Toon: flat lit colour, cut along the exact shadow line (as the stage does).
     const pieces = toon && !item.weights
-      ? (toonDir && !item.flat && poly.side ? splitByShadow(poly.pts, poly.side) : [[poly.pts, true]]).map(([pts, lit]) => [pts, shade(lit ? rgb : shadowColor(rgb, toon.strength), 1)])
-      : [[poly.pts, shade(rgb, .42 + .62 * Math.abs(dot(poly.n, light)))]];
-    for (const [pts, fill] of pieces) {
+      ? (toonDir && !item.flat && poly.side ? splitByShadow(poly.pts, poly.side) : [[poly.pts, true]]).map(([pts, lit]) => [pts, shadeRgb(lit ? rgb : shadowColor(rgb, toon.strength), 1)])
+      : [[poly.pts, shadeRgb(rgb, .42 + .62 * Math.abs(dot(poly.n, light)))]];
+    if (zbuffer) {
+      for (const [pts, fill] of pieces) for (let i = 1; i + 1 < pts.length; i++) for (const p of [pts[0], pts[i], pts[i + 1]]) tris.push(sx(p.x), sy(p.y), p.d, fill);
+      if (lines) poly.pts.forEach((p, i) => { const q = poly.pts[(i + 1) % poly.pts.length]; lines.push(sx(p.x), sy(p.y), p.d, WIRE_RGBA[0], WIRE_RGBA[1]); lines.push(sx(q.x), sy(q.y), q.d, WIRE_RGBA[0], WIRE_RGBA[1]); });
+      continue;
+    }
+    ctx.globalAlpha = xray ? .55 : 1;
+    for (const [pts, rgbFill] of pieces) {
       if (pts.length < 3) continue;
+      const fill = css(rgbFill);
       ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
       ctx.fillStyle = fill; ctx.fill();
       // Hairline seams in the face colour hide gaps between neighbouring faces.
@@ -193,6 +210,11 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     }
     if (wire) { ctx.beginPath(); poly.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.strokeStyle = VIEW_COLORS.wire; ctx.lineWidth = 1; ctx.stroke(); }
     ctx.globalAlpha = 1;
+  }
+  if (zbuffer) {
+    const image = depth.draw(ctx.canvas.width, ctx.canvas.height, tris.done(), lines?.done());
+    if (image) ctx.drawImage(image, 0, 0, w, h);
+    else return paint(ctx, frame, items, {xray, wire, references, showGrid, refImages, toon, depth: null});
   }
   return polys;
 }
@@ -230,9 +252,29 @@ function drawGrid(ctx, frame) {
 }
 
 /** Topmost painted polygon under (x, y). */
+/** The face under (x, y): the nearest at that pixel (so a strand of hair in
+ * front of a cheek wins even where their whole faces overlap the other way). */
 export function pickPolygon(polys, x, y) {
-  for (let i = polys.length - 1; i >= 0; i--) if (insidePolygon(polys[i].pts, x, y)) return polys[i];
-  return null;
+  let best = null, nearest = Infinity;
+  for (let i = polys.length - 1; i >= 0; i--) {
+    const pts = polys[i].pts;
+    if (!insidePolygon(pts, x, y)) continue;
+    const d = depthAt(pts, x, y);
+    if (d === null) return best ?? polys[i];
+    if (d < nearest - 1e-9) { nearest = d; best = polys[i]; }
+  }
+  return best;
+}
+/** Depth (0 near … 1 far) of a projected polygon at (x, y), or null if unknown. */
+function depthAt(pts, x, y) {
+  if (pts.some(p => p.d === undefined)) return null;
+  for (let i = 1; i + 1 < pts.length; i++) {
+    const a = pts[0], b = pts[i], c = pts[i + 1], den = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+    if (Math.abs(den) < 1e-12) continue;
+    const u = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / den, v = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / den;
+    if (u >= -1e-6 && v >= -1e-6 && u + v <= 1 + 1e-6) return u * a.d + v * b.d + (1 - u - v) * c.d;
+  }
+  return pts.reduce((s, p) => s + p.d, 0) / pts.length;
 }
 export function insidePolygon(pts, x, y) {
   let inside = false;

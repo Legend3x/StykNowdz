@@ -9,6 +9,7 @@ import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX}
 import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, autoWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
+import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
 import {TopologyError, assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings, OUTLINE_DEFAULTS, OUTLINE_MAX, LINE_WEIGHT_MAX} from './toon.mjs';
@@ -47,7 +48,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
   const S = {mode: 'object', selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
-    camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
+    depth: createDepthPass(), camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
 
   // ---------- history ----------
@@ -395,7 +396,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     const look = toonSettings(model);
     const toon = S.toonPreview && !showWeights ? {shadows: look.shadows, turn: look.turn, height: look.height, size: look.size, strength: look.strength} : null;
-    S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon}).filter(poly => !poly.item.hull);
+    S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth}).filter(poly => !poly.item.hull);
     drawAllWires(ctx);
     if (S.mode === 'object') drawObjectOutline(ctx);
     if (S.mode === 'edit') drawCage(ctx);

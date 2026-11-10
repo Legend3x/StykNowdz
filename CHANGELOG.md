@@ -22,6 +22,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed 3D Nowdz drawing parts that pass through each other wrongly, such as hair through a head: each spot now shows the nearest surface.
 - Fixed stretched or resized 3D limbs pinching thin where two bones meet when they twist.
 - Fixed being unable to leave the Model tab without closing the app.
 - Fixed traced points looking greyed out and not editable after coming back to the Model tab.
