@@ -29525,7 +29525,7 @@
   },
   "modeler.addAPartFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1608"
+      "src/modeler/modeler-ui.mjs:1609"
     ],
     "context": "if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t(\"modeler.addAPartFirst\")); return; }"
   },
@@ -29791,7 +29791,7 @@
   },
   "modeler.couldNotAdd": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1610"
+      "src/modeler/modeler-ui.mjs:1611"
     ],
     "context": "catch (error) { toast(error.modelerMessage ? error.message : (error.message || t(\"modeler.couldNotAdd\"))); }"
   },
@@ -31187,13 +31187,13 @@
   },
   "modeler.softConnectedOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1569"
+      "src/modeler/modeler-ui.mjs:1570"
     ],
     "context": "else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? \"mo"
   },
   "modeler.softConnectedOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1569"
+      "src/modeler/modeler-ui.mjs:1570"
     ],
     "context": "else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? \"mo"
   },
@@ -31217,13 +31217,13 @@
   },
   "modeler.softOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1570"
+      "src/modeler/modeler-ui.mjs:1571"
     ],
     "context": "else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? \"modeler.softOn\" : \"modeler.softOff\")); renderProps(); }"
   },
   "modeler.softOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1570"
+      "src/modeler/modeler-ui.mjs:1571"
     ],
     "context": "else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? \"modeler.softOn\" : \"modeler.softOff\")); renderProps(); }"
   },

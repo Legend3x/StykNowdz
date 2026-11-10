@@ -1513,11 +1513,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('contextmenu', e => e.preventDefault(), {signal});
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    // While moving with soft select, the wheel grows or shrinks its circle (as in Blender).
+    // Bevel: the wheel adds or removes segments.
     if (S.modal?.kind === 'bevel') { if (!S.modal.points) { S.modal.segments = Math.max(1, Math.min(12, S.modal.segments + (e.deltaY < 0 ? 1 : -1))); applyBevel(); } return; }
     if (S.modal?.kind === 'loopcut') {
       S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (e.deltaY < 0 ? 1 : -1))); setStatus(); draw(); return;
     }
+    // While moving with soft select, the wheel grows or shrinks its circle (as in Blender).
     const target = S.modal?.target;
     if (target?.soft && TRANSFORMS.includes(S.modal.kind)) {
       S.softRadius = Math.max(.01, Math.min(10, S.softRadius * Math.exp(-Math.max(-1, Math.min(1, e.deltaY * .002)))));
