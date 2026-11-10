@@ -285,6 +285,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('p', {class: 'modeler-hint', text: t("modeler.traceHint")}),
         el('label', {class: 'modeler-check', title: t("modeler.softHint")}, [el('input', {type: 'checkbox', checked: S.soft, onchange: e => { S.soft = e.target.checked; renderProps(); }}), t("modeler.softSelect")]),
         S.soft ? field(t("modeler.softRadius"), S.softRadius, v => { S.softRadius = Math.max(.01, Math.min(10, v)); }, {step: .05, min: .01}) : null,
+        S.soft ? el('label', {class: 'modeler-check', title: t("modeler.softConnectedHint")}, [el('input', {type: 'checkbox', checked: Boolean(S.softConnected), onchange: e => { S.softConnected = e.target.checked; }}), t("modeler.softConnected")]) : null,
         S.soft ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.softFalloffHint")}, [el('span', {text: t("modeler.softFalloff")}), el('select', {onchange: e => { S.softFalloff = e.target.value; }},
           Object.keys(M.SOFT_FALLOFFS).map(k => el('option', {value: k, text: t(`modeler.falloff.${k}`), selected: S.softFalloff === k})))]) : null,
         actions([[t("modeler.selectAll"), selectAll, 'A'], [t("modeler.selectLinked"), () => { S.verts = M.linkedVerts(mesh, S.verts); refresh(); }, 'Ctrl+L'],
@@ -678,7 +679,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       const transform = M.objectTransform(p), verts = [...S.verts], world = verts.map(v => transform(p.mesh.verts[v]));
       const target = {kind: 'verts', part: p, verts, startMesh: p.mesh, objectMatrix: M.objectMatrix(p), pivot: M.scale(world.reduce((s, q) => M.add(s, q), [0, 0, 0]), 1 / world.length)};
       // Soft select: nearby points follow part of the way (measured in world space).
-      if (S.soft) { target.points = p.mesh.verts.map(transform); target.selected = new Set(verts); target.soft = M.softWeights(target.points, target.selected, S.softRadius, S.softFalloff); }
+      if (S.soft) { target.points = p.mesh.verts.map(transform); target.selected = new Set(verts); target.soft = softOf(target); }
       return target;
     }
     // Bones: a picked end moves alone; whole bones move both ends. Joints shared with
@@ -1070,6 +1071,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     S.modal = {kind: 'loopcut', ring: null, cuts: 1}; setStatus(); draw();
   }
   function subdivide() { const p = editPart(); if (!p) return; const faces = selectedFaces(p); if (!faces.size) { toast(t("modeler.selectFacesFirst")); return; } commit(() => { S.verts = M.subdivideFaces(p.mesh, faces); S.cache.delete(p.id); }); }
+  /** Soft-select weights for a move: by straight distance, or along the mesh (Connected only). */
+  const softOf = target => M.softWeights(target.points, target.selected, S.softRadius, S.softFalloff, {connected: S.softConnected ? target.startMesh : null});
   /** Blender's M menu: At Center, At First, At Last, Collapse, By Distance. */
   function merge(anchor = null) {
     const p = editPart(); if (!p) return;
@@ -1518,7 +1521,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const target = S.modal?.target;
     if (target?.soft && TRANSFORMS.includes(S.modal.kind)) {
       S.softRadius = Math.max(.01, Math.min(10, S.softRadius * Math.exp(-Math.max(-1, Math.min(1, e.deltaY * .002)))));
-      target.soft = M.softWeights(target.points, target.selected, S.softRadius, S.softFalloff); applyTransform(); setStatus(); return;
+      target.soft = softOf(target); applyTransform(); setStatus(); return;
     }
     const k = Math.exp(Math.max(-1, Math.min(1, e.deltaY * (e.ctrlKey ? .01 : .0015))));
     S.camera.dist = Math.max(.15, Math.min(60, S.camera.dist * k)); draw();
@@ -1563,6 +1566,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (key === 's') startTransform('scale');
     else if (key === 'e') extrude();
     else if (key === 'i' && S.mode === 'edit') startInset();
+    else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? "modeler.softConnectedOn" : "modeler.softConnectedOff")); renderProps(); }
     else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? "modeler.softOn" : "modeler.softOff")); renderProps(); }
     else if (key === 'm' && S.mode === 'edit') merge();
     else if (ctrl && key === 'x' && S.mode === 'edit') dissolve();

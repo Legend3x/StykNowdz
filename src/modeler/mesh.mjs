@@ -336,9 +336,10 @@ export const SOFT_FALLOFFS = Object.freeze({
  * within `radius` of the nearest selected point, a weight from 1 (touching) to
  * 0 (at the radius) on a smooth curve. `points` are positions to measure in
  * (world space, so the part's size doesn't matter). Returns Map vertex → weight. */
-export function softWeights(points, selected, radius, falloff = 'smooth') {
+export function softWeights(points, selected, radius, falloff = 'smooth', {connected = null} = {}) {
   const out = new Map(), r = Number(radius), curve = SOFT_FALLOFFS[falloff] ?? SOFT_FALLOFFS.smooth;
   if (!(r > 0) || !selected.size) return out;
+  if (connected) return connectedWeights(connected, points, selected, r, curve);
   const chosen = [...selected].map(i => points[i]).filter(Boolean);
   points.forEach((p, i) => {
     if (selected.has(i)) return;
@@ -347,6 +348,28 @@ export function softWeights(points, selected, radius, falloff = 'smooth') {
     if (d >= r) return;
     out.set(i, curve(1 - d / r));
   });
+  return out;
+}
+
+/** Blender's "Connected Only" (Alt+O): distance measured along the mesh's edges
+ * from the nearest selected point, so only points joined to the selection
+ * follow: pulling an upper eyelid leaves the lower lid alone even where it
+ * passes close by, and a lip moves without the other lip. */
+function connectedWeights(mesh, points, selected, r, curve) {
+  const next = new Map(), link = (a, b) => { if (!next.has(a)) next.set(a, new Set()); next.get(a).add(b); };
+  for (const [a, b] of allEdges(mesh)) { link(a, b); link(b, a); }
+  const dist = new Map([...selected].map(v => [v, 0])), queue = [...selected];
+  // Dijkstra with a simple array queue: selections and radii are small.
+  while (queue.length) {
+    let k = 0; for (let i = 1; i < queue.length; i++) if (dist.get(queue[i]) < dist.get(queue[k])) k = i;
+    const v = queue.splice(k, 1)[0], d = dist.get(v);
+    for (const w of next.get(v) ?? []) {
+      const nd = d + Math.hypot(points[v][0] - points[w][0], points[v][1] - points[w][1], points[v][2] - points[w][2]);
+      if (nd < r && nd < (dist.get(w) ?? Infinity)) { if (!dist.has(w)) queue.push(w); dist.set(w, nd); }
+    }
+  }
+  const out = new Map();
+  for (const [v, d] of dist) if (!selected.has(v)) out.set(v, curve(1 - d / r));
   return out;
 }
 

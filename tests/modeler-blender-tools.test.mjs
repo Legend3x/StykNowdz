@@ -100,6 +100,20 @@ test('open meshes are drawn and edited from both sides, as in Blender', () => {
   assert.equal(M.isOpenMesh(ring), true);
 });
 
+test('soft select "Connected only" follows the mesh, not straight-line distance', () => {
+  // Two lids: an upper strip (y = 0.1) and a lower strip (y = -0.1), close but not joined.
+  const verts = [], edges = [];
+  for (let i = 0; i < 5; i++) verts.push([i * .1, .1, 0]);
+  for (let i = 0; i < 5; i++) verts.push([i * .1, -.1, 0]);
+  for (let i = 0; i < 4; i++) { edges.push([i, i + 1]); edges.push([5 + i, 6 + i]); }
+  const lids = {verts, faces: [], edges}, chosen = new Set([2]);
+  const plain = M.softWeights(lids.verts, chosen, .35), along = M.softWeights(lids.verts, chosen, .35, 'smooth', {connected: lids});
+  assert.ok(plain.has(7), 'by distance the lower lid follows');
+  assert.ok(!along.has(7) && !along.has(5), 'connected only: the lower lid stays');
+  assert.ok(along.get(1) > along.get(0) && along.get(3) > 0, 'the upper lid follows, less with distance along it');
+  near(along.get(1), plain.get(1), 1e-12);
+});
+
 test('random runs of the Blender tools never leave a broken mesh', () => {
   quiet3(() => {
     for (let seedN = 1; seedN <= 8; seedN++) {

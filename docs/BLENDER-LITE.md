@@ -101,7 +101,11 @@ keeps `toon` and each part's `outline` / `shadows` for re-editing.
   the jaw-and-chin choice in anime-face tutorials), Linear or Constant
   (`SOFT_FALLOFFS`). Scroll while moving to change the radius;
   a dashed circle shows it. Each point gets its own matrix (`softWeights`,
-  `transformMeshEach`).
+  `transformMeshEach`). **Connected only (Alt+O)**, as Blender's: distance is
+  measured along the mesh's edges and lines from the nearest selected point
+  (Dijkstra over faces' edges and traced lines), so only points joined to the
+  selection follow: an upper eyelid moves without the lower one passing close
+  by.
 - **Shear** (Ctrl+Alt+Shift+S or the Edit panel): slants the selection along
   the view's right (or a locked X/Y/Z) by its height in the view
   (`matrix.shearing`).
