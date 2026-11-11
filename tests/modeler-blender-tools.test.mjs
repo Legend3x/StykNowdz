@@ -141,6 +141,19 @@ test('batch 2: smooth vertices, triangulate, tris to quads, poke, fill holes, sh
   const ball = uvSphere(.5, 24, 18);
   for (const p of M.shrinkwrapPoints([[0, 0, 2], [1, 1, 1], [0, .1, 0]], [ball], .01)) near(M.length(p), .51, .02);
   assert.throws(() => M.shrinkwrapPoints([[0, 0, 0]], []), /no other part/);
+  // Along view (Blender's Project mode): a point drawn inside the head, seen from
+  // the front, lands on the front of the ball where it is seen, not on the side
+  // nearest to it. A ray that misses leaves the point alone.
+  const eye = [0, 0, 3], ray = p => ({origin: eye, direction: M.sub(p, eye)});
+  const [front] = M.shrinkwrapPoints([[.4, 0, 0]], [ball], 0, {ray});
+  assert.ok(front[2] > .2, `on the front, z ${front[2]}`); near(M.length(front), .5, .02);
+  const [side] = M.shrinkwrapPoints([[.4, 0, 0]], [ball], 0);
+  assert.ok(side[2] < .05 && side[0] > .45, 'nearest goes to the side');
+  assert.deepEqual(M.shrinkwrapPoints([[3, 0, 0]], [ball], .01, {ray}), [[3, 0, 0]]);
+  // The offset points back toward the eye even on a face wound away from it.
+  const [lifted] = M.shrinkwrapPoints([[0, 0, 0]], [ball], .05, {ray}); near(lifted[2], .55, .02);
+  assert.equal(M.rayTriangle([0, 0, 1], [0, 0, -1], [-1, -1, 0], [1, -1, 0], [0, 1, 0]), 1);
+  assert.equal(M.rayTriangle([0, 0, 1], [0, 0, 1], [-1, -1, 0], [1, -1, 0], [0, 1, 0]), Infinity);
 });
 
 test('batch 3: edge crease keeps Smooth sharp, solidify adds thickness, hidden points follow edits', () => {

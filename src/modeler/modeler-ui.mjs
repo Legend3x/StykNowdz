@@ -965,13 +965,14 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     smooth: () => [['factor', t("modeler.smoothFactor"), {step: .05, min: -1, max: 1}], ['repeat', t("modeler.smoothRepeat"), {step: 1, min: 1, max: 100, whole: true}]],
     holes: () => [['sides', t("modeler.holeSides"), {step: 1, min: 0, max: 1000, whole: true}]],
     quads: () => [['faceAngle', t("modeler.quadFaceAngle"), {step: 5, min: 0, max: 180}], ['shapeAngle', t("modeler.quadShapeAngle"), {step: 5, min: 0, max: 180}]],
-    wrap: () => [['offset', t("modeler.wrapOffset"), {step: .005, min: -1, max: 1}]],
+    wrap: () => [['offset', t("modeler.wrapOffset"), {step: .005, min: -1, max: 1}], ['project', t("modeler.wrapMode"), {choices: [['nearest', t("modeler.wrapNearest")], ['view', t("modeler.wrapView")]]}]],
   };
   const LAST_OP_NAMES = {grid: "modeler.gridFill", smooth: "modeler.smoothVerts", holes: "modeler.fillHoles", quads: "modeler.trisToQuads", wrap: "modeler.shrinkwrap"};
   function lastOpPanel(p) {
     const g = S.lastOp; if (!g || g.part !== p.id || !LAST_OP_FIELDS[g.kind]) return null;
     return el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: t(LAST_OP_NAMES[g.kind])}),
-      ...LAST_OP_FIELDS[g.kind](g).map(([key, label, spec]) => field(label, g.params[key], v => {
+      ...LAST_OP_FIELDS[g.kind](g).map(([key, label, spec]) => spec.choices ? el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: label}),
+        el('select', {onchange: e => redoLast(key, e.target.value)}, spec.choices.map(([value, text]) => el('option', {value, text, selected: g.params[key] === value})))]) : field(label, g.params[key], v => {
         let value = Math.max(spec.min ?? -Infinity, Math.min(spec.max ?? Infinity, v)); if (spec.whole) value = Math.round(value);
         redoLast(key, value);
       }, spec))]);
@@ -990,16 +991,23 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const triangulateSelected = () => { const p = editPart(); if (!p || S.mode !== 'edit') return; commit(() => { S.verts = M.triangulateFaces(p.mesh, M.facesFromVerts(p.mesh, S.verts)); S.cache.delete(p.id); }); };
   /** Face > Poke Faces. */
   const pokeSelected = () => { const p = editPart(); if (!p || S.mode !== 'edit') return; commit(() => { S.verts = M.pokeFaces(p.mesh, M.facesFromVerts(p.mesh, S.verts)); S.cache.delete(p.id); }); };
-  /** Shrinkwrap, applied once: press the selected points onto the nearest surface
-   * of the other visible parts (hair or clothes onto a head or body), Offset out. */
-  const shrinkwrapSelected = () => adjustable('wrap', {offset: .005}, (p, sel, {offset}) => {
-    const others = model.parts.filter(q => q.id !== p.id && q.visible !== false && q.mesh.faces.length).map(q => evaluatePart(q));
-    const to = M.objectTransform(p), back = X.invert(M.objectMatrix(p)), pick = [...sel];
-    const moved = M.shrinkwrapPoints(pick.map(v => to(p.mesh.verts[v])), others, offset);
-    const mesh = M.cloneMesh(p.mesh); pick.forEach((v, i) => { mesh.verts[v] = [...X.transformPoint(back, moved[i])]; });
-    assertValidMesh(mesh, 'Shrinkwrap'); p.mesh = mesh;
-    return new Set(pick);
-  });
+  /** Shrinkwrap, applied once: press the selected points onto the other visible
+   * parts (hair or clothes onto a head or body), Offset out. Nearest takes the
+   * closest surface point; Along view casts from the eye through each point as
+   * the view stood when the tool ran, so a shape drawn in Front view lands
+   * where it is seen (Blender's Project mode). */
+  const shrinkwrapSelected = () => {
+    const f = frame ?? cameraFrame(S.camera, 1, 1), eye = f.eye.slice(), back = f.back.slice(), ortho = f.ortho;
+    const ray = p => ortho ? {origin: M.add(p, M.scale(back, 1e3)), direction: M.scale(back, -1)} : {origin: eye, direction: M.sub(p, eye)};
+    adjustable('wrap', {offset: .005, project: 'nearest'}, (p, sel, {offset, project}) => {
+      const others = model.parts.filter(q => q.id !== p.id && q.visible !== false && q.mesh.faces.length).map(q => evaluatePart(q));
+      const to = M.objectTransform(p), inverse = X.invert(M.objectMatrix(p)), pick = [...sel];
+      const moved = M.shrinkwrapPoints(pick.map(v => to(p.mesh.verts[v])), others, offset, {ray: project === 'view' ? ray : null});
+      const mesh = M.cloneMesh(p.mesh); pick.forEach((v, i) => { mesh.verts[v] = [...X.transformPoint(inverse, moved[i])]; });
+      assertValidMesh(mesh, 'Shrinkwrap'); p.mesh = mesh;
+      return new Set(pick);
+    });
+  };
   function bridgeSelected() {
     const p = editPart(); if (!p || S.mode !== 'edit') return;
     commit(() => { const made = M.bridge(p.mesh, S.verts, {color: paintColor(p), facing: localFacing(p)}); S.cache.delete(p.id); toast(t("modeler.bridged", {count: made.size})); });

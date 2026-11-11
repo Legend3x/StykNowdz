@@ -972,7 +972,8 @@ export function gridFillLayout(mesh, verts, {span = 0, offset = 0, start = null}
   if (!span) {
     a = Math.max(1, Math.min(Math.floor(n / 4), n / 2 - 1));
     const angles = order.map((_, i) => i === 0 || i === n / 2 ? 0 : cornerAngle(mesh, order, i)), sorted = [...angles].sort((x, y) => y - x);
-    if (sorted[0] - sorted[n - 3] > .1) a = angles.indexOf(sorted[0]);
+    // Blender treats angle differences under 1e-3 as even (no clear corners).
+    if (sorted[0] - sorted[n - 3] > 1e-3) a = angles.indexOf(sorted[0]);
     if (a > n / 2) { a = n - a; s = n / 2 - a; }
     a = Math.max(1, Math.min(n / 2 - 1, a));
   }
@@ -1425,13 +1426,35 @@ export function closestOnTriangle(p, a, b, c) {
 /** Shrinkwrap (Blender's modifier, Nearest Surface Point), applied once: each of
  * `points` (world space) moves to the closest point on `surfaces` (world-space
  * meshes), then `offset` out along that face's normal. Returns the new points. */
-export function shrinkwrapPoints(points, surfaces, offset = 0) {
+/** Where a ray (origin o, direction d) first meets triangle a b c: the distance
+ * along d, or Infinity (Möller–Trumbore; both sides of the triangle count). */
+export function rayTriangle(o, d, a, b, c) {
+  const e1 = sub(b, a), e2 = sub(c, a), h = cross(d, e2), det = dot(e1, h);
+  if (Math.abs(det) < 1e-12) return Infinity;
+  const s = sub(o, a), u = dot(s, h) / det; if (u < -1e-9 || u > 1 + 1e-9) return Infinity;
+  const q = cross(s, e1), v = dot(d, q) / det; if (v < -1e-9 || u + v > 1 + 1e-9) return Infinity;
+  const t = dot(e2, q) / det; return t > 1e-9 ? t : Infinity;
+}
+
+/** Shrinkwrap targets: points pressed onto the other parts' surfaces.
+ * Nearest (default) moves each point to the closest surface point, like
+ * Blender's Nearest Surface Point mode. With `ray(p) → {origin, direction}`
+ * each point moves to where its ray first meets a surface (Blender's Project
+ * mode; the modeler casts from the eye through the point, so a point lands
+ * where it is seen). Points whose ray misses everything stay where they are. */
+export function shrinkwrapPoints(points, surfaces, offset = 0, {ray = null} = {}) {
   const tris = [];
   for (const s of surfaces) for (const [a, b, c] of triangulate(s)) { const A = s.verts[a], B = s.verts[b], C = s.verts[c], n = normalize(cross(sub(B, A), sub(C, A))); if (length(n) > 0) tris.push([A, B, C, n]); }
   if (!tris.length) throw refused('There is no other part to wrap onto. Add or show the part to press these points against.');
   return points.map(p => {
     let best = null, d = Infinity, normal = null;
-    for (const [A, B, C, n] of tris) { const q = closestOnTriangle(p, A, B, C), e = length(sub(q, p)); if (e < d) { d = e; best = q; normal = n; } }
+    if (ray) {
+      const {origin, direction} = ray(p), dir = normalize(direction);
+      for (const [A, B, C, n] of tris) { const e = rayTriangle(origin, dir, A, B, C); if (e < d) { d = e; best = add(origin, scale(dir, e)); normal = n; } }
+      if (!best) return p.slice();
+      // Offset toward the side the ray came from, whichever way the face winds.
+      if (dot(normal, dir) > 0) normal = scale(normal, -1);
+    } else for (const [A, B, C, n] of tris) { const q = closestOnTriangle(p, A, B, C), e = length(sub(q, p)); if (e < d) { d = e; best = q; normal = n; } }
     return add(best, scale(normal, offset));
   });
 }
