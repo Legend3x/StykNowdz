@@ -70,9 +70,11 @@ export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces:
 // `mesh.vdata` holds optional sparse per-point values keyed by point index:
 //   line:   {[i]: weight}    outline thickness factor (1 = the part's thickness, 0 = no line)
 //   normal: {[i]: [x, y, z]} a custom shading normal (unit, in the mesh's space)
+//   skin:   {[i]: [[boneId, weight], …]} skin weights kept from an imported rig
+//           (points without them get automatic weights)
 // Points without an entry use the default. Edits that renumber points remap it
 // (cleanup); edits that only add points leave the new points at the default.
-export const VDATA_KEYS = Object.freeze(['line', 'normal']);
+export const VDATA_KEYS = Object.freeze(['line', 'normal', 'skin']);
 const hasVData = mesh => Boolean(mesh.vdata && VDATA_KEYS.some(k => mesh.vdata[k] && Object.keys(mesh.vdata[k]).length));
 /** A copy of a mesh's per-point data (spread into new meshes). `matrix` turns custom normals with the points. */
 export function copyVData(mesh, matrix = null) {
@@ -81,7 +83,7 @@ export function copyVData(mesh, matrix = null) {
   for (const key of VDATA_KEYS) {
     const src = mesh.vdata[key]; if (!src || !Object.keys(src).length) continue;
     out[key] = {};
-    for (const [i, value] of Object.entries(src)) out[key][i] = key === 'normal' ? (matrix ? normalize([...transformDirection(matrix, value)]) : value.slice()) : value;
+    for (const [i, value] of Object.entries(src)) out[key][i] = key === 'normal' ? (matrix ? normalize([...transformDirection(matrix, value)]) : value.slice()) : key === 'skin' ? value.map(pair => pair.slice()) : value;
   }
   return {vdata: out};
 }
@@ -100,7 +102,8 @@ function remapVData(mesh, map) {
 function mirrorVData(mesh, map) {
   if (!hasVData(mesh)) return;
   for (const key of VDATA_KEYS) {
-    const src = mesh.vdata[key]; if (!src) continue;
+    // Skin weights name one side's bones; the mirrored copy gets automatic weights.
+    const src = mesh.vdata[key]; if (!src || key === 'skin') continue;
     for (const [i, value] of Object.entries({...src})) { const j = map[Number(i)]; if (j === undefined || j === Number(i)) continue; src[j] = key === 'normal' ? [-value[0], value[1], value[2]] : value; }
   }
 }

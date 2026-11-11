@@ -10,7 +10,7 @@ import {assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings} from './toon.mjs';
 import {toonLight, toonThreshold, inkColor} from '../toon-shading.mjs';
 import {evaluateModel, readModel} from './model.mjs';
-import {boneOrder, autoWeights, addBone} from './armature.mjs';
+import {boneOrder, partWeights, addBone} from './armature.mjs';
 import {MESH_LIMITS} from '../spatial-mesh.mjs';
 import {createObject, createFrame} from '../demo.mjs';
 
@@ -103,7 +103,7 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   for (const {part, mesh} of parts) {
     // The final, modified surface must be valid too (mirror and smooth included).
     assertValidMesh(mesh, `Adding part “${part.name}”`, {paletteSize: model.palette.length});
-    const skin = autoWeights(model, mesh, part), name = part.name || 'Part';
+    const skin = partWeights(model, mesh, part), name = part.name || 'Part';
     addSurface(mesh, skin, name, part.shadows === false);
     // Its ink outline: an inverted hull sharing the part's skin, never shaded.
     const outline = partOutline(part, model.palette.length);

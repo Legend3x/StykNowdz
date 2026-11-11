@@ -44,7 +44,13 @@ export function readModel(value) {
     if (part.mesh.vdata !== undefined) {
       const raw = part.mesh.vdata, n = part.mesh.verts.length, clean = {};
       if (raw && typeof raw === 'object') {
-        const line = {}, normal = {};
+        const line = {}, normal = {}, skin = {}, boneIds = new Set((value.bones ?? []).map(b => b.id));
+        for (const [i, list] of Object.entries(raw.skin ?? {})) {
+          if (!(Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n) || !Array.isArray(list)) continue;
+          const pairs = list.filter(pair => Array.isArray(pair) && boneIds.has(pair[0]) && Number.isFinite(pair[1]) && pair[1] > 0).slice(0, 4), sum = pairs.reduce((t, pair) => t + pair[1], 0);
+          if (sum > 0) skin[i] = pairs.map(([b, w]) => [b, w / sum]);
+        }
+        if (Object.keys(skin).length) clean.skin = skin;
         for (const [i, w] of Object.entries(raw.line ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Number.isFinite(w)) line[i] = Math.max(0, Math.min(4, w));
         for (const [i, v] of Object.entries(raw.normal ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) && Math.hypot(...v) > 1e-9) normal[i] = normalize(v);
         if (Object.keys(line).length) clean.line = line;

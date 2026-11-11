@@ -6,8 +6,9 @@ import {t} from '../localization.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, autoWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS} from './armature.mjs';
+import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
+import {exportGlb, importGltf} from './gltf-format.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
@@ -137,7 +138,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       quiet(t("modeler.file"), e => popover(e.currentTarget, [
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); importObjFile(); }}, t("modeler.importObj")),
         editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t("modeler.startOver")),
-        el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportObjFile(); }}, t("modeler.exportObj"))])),
+        el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportObjFile(); }}, t("modeler.exportObj")),
+        el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportGlbFile(); }}, t("modeler.exportGlb"))])),
       iconButton('keyboard', t("modeler.controls"), () => showControls()),
       button(t("modeler.close"), requestClose),
       el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: done}, editing ? t("modeler.updateFigure") : t("modeler.addToAnimation"))].filter(Boolean));
@@ -384,7 +386,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         const key = `w${p.id}:${bone}`;
         weights = S.cache.get(key);
         if (!weights) {
-          const skin = autoWeights(model, mesh, p);
+          const skin = partWeights(model, mesh, p);
           const vw = mesh.verts.map((_, v) => { let w = 0; for (let k = 0; k < 4; k++) if (skin.bones[v * 4 + k] === bone) w += skin.weights[v * 4 + k]; return w; });
           weights = mesh.faces.map(f => f.v.reduce((s, v) => s + vw[v], 0) / f.v.length);
           S.cache.set(key, weights);
@@ -1352,10 +1354,36 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const name = (model.name || 'model').replace(/[^\w-]+/g, '_'), {obj, mtl} = exportObj(model, {name});
     download(`${name}.obj`, obj, 'text/plain'); download(`${name}.mtl`, mtl, 'text/plain');
   }
+  /** File > Export GLB: the model with its skeleton and weights, for Blender, game tools and back. */
+  function exportGlbFile() {
+    if (!model.parts.length) { toast(t("modeler.nothingToExport")); return; }
+    const name = (model.name || 'model').replace(/[^\w-]+/g, '_');
+    try { download(`${name}.glb`, exportGlb(model, {name: model.name || name}), 'model/gltf-binary'); } catch (error) { toast(error.message); }
+  }
+  /** glTF (.glb, or .gltf with its .bin): parts, colours, and the skeleton with its
+   * weights. Imported bones join the model's; points keep the file's weights. */
+  async function importGltfFiles(files) {
+    const main = files.find(f => /\.glb$/i.test(f.name)) ?? files.find(f => /\.gltf$/i.test(f.name));
+    const others = new Map(await Promise.all(files.filter(f => f !== main).map(async f => [f.name, await f.arrayBuffer()])));
+    const source = /\.glb$/i.test(main.name) ? await main.arrayBuffer() : JSON.parse(await main.text());
+    commit(() => {
+      const result = importGltf(source, {palette: model.palette, files: others}), ids = new Map();
+      for (const b of result.bones) { const made = addBone(model, {name: b.name, head: b.head, tail: b.tail, parent: b.parent === null ? 0 : ids.get(b.parent) ?? 0}); ids.set(b.key, made.id); }
+      for (const p of result.parts) {
+        const skin = p.mesh.vdata?.skin;
+        if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([key, w]) => [ids.get(key), w]).filter(([id]) => id !== undefined);
+        addPart(model, {name: p.name, mesh: p.mesh});
+      }
+      S.parts = new Set();
+      toast(t("modeler.importedGltf", {parts: result.parts.length, bones: result.bones.length}));
+    });
+    frameSelected();
+  }
   function importObjFile() {
-    const input = el('input', {type: 'file', accept: '.obj,.mtl', multiple: true});
+    const input = el('input', {type: 'file', accept: '.obj,.mtl,.glb,.gltf,.bin', multiple: true});
     input.addEventListener('change', async () => {
       const files = [...input.files], objFile = files.find(f => /\.obj$/i.test(f.name)), mtlFile = files.find(f => /\.mtl$/i.test(f.name));
+      if (files.some(f => /\.(glb|gltf)$/i.test(f.name))) { try { await importGltfFiles(files); } catch (error) { toast(error.message); } return; }
       if (!objFile) { toast(t("modeler.chooseAnObjFile")); return; }
       try {
         const [text, mtl] = await Promise.all([objFile.text(), mtlFile ? mtlFile.text() : '']);

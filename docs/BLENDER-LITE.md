@@ -17,7 +17,7 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
 
 | Area | What's there |
 | --- | --- |
-| Top bar | Object / Edit / Bones modes; Points / Edges / Faces in Edit; Move, Rotate, Scale (keys only on narrow windows); Undo, Redo; Front, Side, Top; perspective or flat view; Frame; File (Import OBJ, Export OBJ, Start over); the keyboard button (the controls card); Close (or any other workspace tab: the unfinished model is kept as a draft, see below); **Add to animation** (or **Update figure**) |
+| Top bar | Object / Edit / Bones modes; Points / Edges / Faces in Edit; Move, Rotate, Scale (keys only on narrow windows); Undo, Redo; Front, Side, Top; perspective or flat view; Frame; File (Import OBJ or glTF, Export OBJ, Export GLB, Start over); the keyboard button (the controls card); Close (or any other workspace tab: the unfinished model is kept as a draft, see below); **Add to animation** (or **Update figure**) |
 | Left | Parts list (click, Shift-click, double-click to rename, ● to hide), Add (Base character and primitives), Duplicate, Delete; the color palette (click to paint, right-click to change a color, + to add one) |
 | Right | Properties for the mode: part position, rotation, size, Mirror left and right, Smooth 0–3, Moves with (a rigid bone or automatic); Edit tools; Skeleton tools and the selected bone; View toggles; reference images |
 | Controls card | Shown over the viewport when 3D Nowdz opens: the main keys in four groups (Look around, Select, Shape, Bones). "Don't show this when 3D Nowdz opens" remembers the choice on this computer (`localStorage` key `stykNowdz.modeler.hideControls`); the keyboard button in the bar opens it again. Esc, Got it or a click outside closes it |
@@ -177,6 +177,36 @@ G, R and S (or the buttons) start a move, rotate or scale that follows the
 pointer. X, Y or Z locks to an axis (again to unlock), Ctrl snaps (0.05 units,
 15°, tenths), click or Enter finishes, right-click or Esc cancels. Extrude moves
 the new faces along their normal; when that points at you, drag up to push it out.
+
+### glTF (.glb / .gltf) with bones
+
+**File > Import OBJ or glTF** reads glTF 2.0: a `.glb`, or a `.gltf` chosen
+together with its `.bin` files (data-URI buffers work too). Written from the
+glTF 2.0 specification:
+
+- Each mesh becomes a part. Triangles of all its primitives come in at the rest
+  pose: a skinned mesh is placed with the file's own joint matrices and inverse
+  bind matrices (the skinning sum), others by their node's world matrix. Points
+  the file split along UV or normal seams are welded back (merge by distance
+  1e-6), winding is made consistent, and the result is checked like any edit.
+  Triangles stay triangles (Tris to quads, Alt+J, joins them).
+- Base colour factors become palette colours (sRGB). Textures, morph targets,
+  animations and compressed files (Draco, meshopt) aren't read; a file that
+  requires an extension says so.
+- Every skin joint becomes a bone (parent = nearest joint ancestor). Head at the
+  joint; tail from `extras.tail` (3D Nowdz's own exports), else the middle of
+  its child joints, else along the joint's Y axis for half its parent's length.
+  Imported bones join any the model already has.
+- The file's weights stay on the points (`mesh.vdata.skin`, bone ids). The
+  animation and **Export GLB** use them (`partWeights`); points without them
+  (new points from edits, a mirror modifier's other half) get automatic weights.
+
+**File > Export GLB (with bones)** writes the visible parts, evaluated (mirror,
+smooth), as triangles with smooth or custom normals, one material per palette
+colour (linear factors), and with a skeleton a skin named Armature: one joint per
+bone, +Y along the bone like Blender's exporter, inverse bind matrices, up to
+four weights per point (normalised). Bone tails ride along in `extras.tail`, so
+a model exported and imported again keeps its exact skeleton.
 
 ### Depth buffer
 
@@ -443,6 +473,7 @@ undo step.
 | src/modeler/armature.mjs | Bones, humanoid templates, automatic weights |
 | src/modeler/export-figure.mjs | Model → figure |
 | src/modeler/obj-format.mjs | OBJ/MTL import and export |
+| src/modeler/gltf-format.mjs | glTF 2.0 (.glb, .gltf + .bin) import and export, with skeleton and skin weights |
 | src/modeler/viewport.mjs | Camera, projection and drawing |
 | src/modeler/modeler-ui.mjs | The workspace |
 | src/styles/features/modeler.css | Its styles |

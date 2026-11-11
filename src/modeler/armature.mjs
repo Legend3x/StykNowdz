@@ -100,6 +100,20 @@ export function segmentDistance(p, a, b) {
  * beside it. Weights fall off with distance, skip bones on the other side of
  * the middle, and are smoothed over the surface so joints bend softly.
  */
+/** A part's skin weights: automatic (autoWeights), except points that kept
+ * weights from an imported rig (mesh.vdata.skin), which use those. */
+export function partWeights(model, mesh, part, options = {}) {
+  const skin = autoWeights(model, mesh, part, options), kept = mesh.vdata?.skin;
+  if (!kept) return skin;
+  const ids = new Set(model.bones.map(b => b.id));
+  for (const [i, list] of Object.entries(kept)) {
+    const v = Number(i), pairs = list.filter(([b, w]) => ids.has(b) && w > 0).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = pairs.reduce((t, [, w]) => t + w, 0);
+    if (!(v < mesh.verts.length) || !(sum > 0)) continue;
+    for (let k = 0; k < 4; k++) { skin.bones[v * 4 + k] = pairs[k]?.[0] ?? 0; skin.weights[v * 4 + k] = pairs[k] ? pairs[k][1] / sum : 0; }
+  }
+  return skin;
+}
+
 export function autoWeights(model, mesh, part, options = {}) {
   const face = model.bones.filter(b => b.face);
   if (!face.length) return bodyWeights(model, mesh, part, options);
