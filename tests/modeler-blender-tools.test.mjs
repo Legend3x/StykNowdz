@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import * as M from '../src/modeler/mesh.mjs';
 import {validateMesh, TopologyError} from '../src/modeler/topology.mjs';
 import {cube, uvSphere} from '../src/modeler/primitives.mjs';
+import {catmullClark, solidify, emptyModel, addPart, evaluatePart, readModel} from '../src/modeler/model.mjs';
 
 const quiet = {print: false};
 const valid = (mesh, label) => assert.ok(validateMesh(mesh, quiet).ok, label);
@@ -140,6 +141,32 @@ test('batch 2: smooth vertices, triangulate, tris to quads, poke, fill holes, sh
   const ball = uvSphere(.5, 24, 18);
   for (const p of M.shrinkwrapPoints([[0, 0, 2], [1, 1, 1], [0, .1, 0]], [ball], .01)) near(M.length(p), .51, .02);
   assert.throws(() => M.shrinkwrapPoints([[0, 0, 0]], []), /no other part/);
+});
+
+test('batch 3: edge crease keeps Smooth sharp, solidify adds thickness, hidden points follow edits', () => {
+  // Every edge of a cube creased: two levels of Smooth keep the box; uncreased it rounds off.
+  const sharp = cube(); M.setVData(sharp, 'crease', M.meshEdges(sharp).map(([a, b]) => M.edgeKey(a, b)), 1);
+  const s2 = catmullClark(catmullClark(sharp)), box = M.bounds(s2.verts);
+  near(box.max[0], .5, 1e-9); near(box.min[1], -.5, 1e-9); valid(s2);
+  assert.ok(M.bounds(catmullClark(catmullClark(cube())).verts).max[0] < .45);
+  // Half a crease sits between the two.
+  const half = cube(); M.setVData(half, 'crease', M.meshEdges(half).map(([a, b]) => M.edgeKey(a, b)), .5);
+  // (Corner 0 is the first new point: its distance from the middle shows how much it rounded.)
+  const corner = mesh => M.length(catmullClark(mesh).verts[0]), soft = corner(cube()), full = corner(sharp), mid = corner(half);
+  near(full, Math.sqrt(.75), 1e-9); assert.ok(mid > soft && mid < full, `${soft} < ${mid} < ${full}`);
+  // Creases follow renumbering.
+  const c = cube(), [a, b] = M.meshEdges(c)[5]; M.setVData(c, 'crease', [M.edgeKey(a, b)], 1);
+  const pa = c.verts[a].slice(), pb = c.verts[b].slice(); M.deleteFaces(c, new Set([0]));
+  const [k] = Object.keys(c.vdata.crease), [x, y] = M.keyVerts(k);
+  assert.deepEqual([c.verts[x], c.verts[y]].sort(), [pa, pb].sort());
+  // Solidify: a plane becomes a closed slab; a cube gets an inner shell.
+  const slab = solidify(grid(2), .1); valid(slab); assert.equal(slab.verts.length, 18); assert.equal(M.isOpenMesh(slab), false);
+  const shell = solidify(cube(), .1); valid(shell); assert.equal(shell.faces.length, 12);
+  const model = emptyModel(), skirt = addPart(model, {name: 'Skirt', mesh: grid(3)}); skirt.solidify = .02; skirt.smooth = 1; skirt.mirror = true;
+  valid(evaluatePart(skirt));
+  // Hidden points survive edits and saving; broken entries are dropped.
+  M.setVData(skirt.mesh, 'hide', [0, 1, 999], 1);
+  assert.deepEqual(Object.keys(readModel(model).parts[0].mesh.vdata.hide), ['0', '1']);
 });
 
 test('random runs of the Blender tools never leave a broken mesh', () => {

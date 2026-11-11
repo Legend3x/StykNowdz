@@ -72,9 +72,16 @@ export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces:
 //   normal: {[i]: [x, y, z]} a custom shading normal (unit, in the mesh's space)
 //   skin:   {[i]: [[boneId, weight], …]} skin weights kept from an imported rig
 //           (points without them get automatic weights)
+//   hide:   {[i]: 1} points hidden in Edit mode (H): faces using them aren't shown
+//           or picked there, and the points can't be selected
+//   crease: {['a,b']: c} edge crease 0..1 for Smooth (Shift+E): 1 keeps the edge
+//           sharp, as Blender's Edge Crease; keyed by edge, not by point
 // Points without an entry use the default. Edits that renumber points remap it
 // (cleanup); edits that only add points leave the new points at the default.
-export const VDATA_KEYS = Object.freeze(['line', 'normal', 'skin']);
+export const VDATA_KEYS = Object.freeze(['line', 'normal', 'skin', 'hide', 'crease']);
+const EDGE_KEYED = new Set(['crease']);
+/** Renumber an edge key ('a,b'), or undefined when either end is gone. */
+const remapKey = (key, f) => { const [a, b] = keyVerts(key), x = f(a), y = f(b); return x === undefined || y === undefined || x === y ? undefined : edgeKey(x, y); };
 const hasVData = mesh => Boolean(mesh.vdata && VDATA_KEYS.some(k => mesh.vdata[k] && Object.keys(mesh.vdata[k]).length));
 /** A copy of a mesh's per-point data (spread into new meshes). `matrix` turns custom normals with the points. */
 export function copyVData(mesh, matrix = null) {
@@ -93,7 +100,10 @@ function remapVData(mesh, map) {
   for (const key of VDATA_KEYS) {
     const src = mesh.vdata[key]; if (!src) continue;
     const next = {};
-    for (const [i, value] of Object.entries(src)) { const j = map.get(Number(i)); if (j !== undefined) next[j] = value; }
+    for (const [i, value] of Object.entries(src)) {
+      const j = EDGE_KEYED.has(key) ? remapKey(i, v => map.get(v)) : map.get(Number(i));
+      if (j !== undefined) next[j] = value;
+    }
     if (Object.keys(next).length) mesh.vdata[key] = next; else delete mesh.vdata[key];
   }
   if (!hasVData(mesh)) delete mesh.vdata;
@@ -104,6 +114,7 @@ function mirrorVData(mesh, map) {
   for (const key of VDATA_KEYS) {
     // Skin weights name one side's bones; the mirrored copy gets automatic weights.
     const src = mesh.vdata[key]; if (!src || key === 'skin') continue;
+    if (EDGE_KEYED.has(key)) { for (const [k, value] of Object.entries({...src})) { const j = remapKey(k, v => map[v] ?? v); if (j !== undefined) src[j] = value; } continue; }
     for (const [i, value] of Object.entries({...src})) { const j = map[Number(i)]; if (j === undefined || j === Number(i)) continue; src[j] = key === 'normal' ? [-value[0], value[1], value[2]] : value; }
   }
 }

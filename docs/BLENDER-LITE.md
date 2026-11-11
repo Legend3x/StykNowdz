@@ -259,6 +259,10 @@ and validated like the rest.
 | Fill holes | Edit panel | Every hole touching the selection with at most Sides corners (0 = any) gets one face |
 | Shrinkwrap | Edit panel | Applied once, like the modifier's Nearest Surface Point: selected points move to the closest point on the other visible parts (world space, `shrinkwrapPoints`), then Offset out along that face's normal |
 
+| Hide / Reveal | H, Shift+H, Alt+H | Edit mode: hide the selected points (or all others); faces using a hidden point aren't shown or picked in Edit mode, hidden points can't be selected (refresh drops them), Alt+H shows all and selects what comes back. Stored as point data (`vdata.hide`), so it survives edits, undo and saving; Object mode and the animation show the whole part |
+| Edge crease | Shift+E | Selected edges between faces get crease 1 (again: 0). Catmull-Clark (Smooth) blends toward the sharp rules by the crease: edge points toward the edge's middle, a point on two creased edges uses the crease-vertex rule (6p + n1 + n2)/8, on three or more stays put. Each half of a creased edge keeps its crease at the next level, so 1 stays sharp at every level (fractional creases stay a little sharper than Blender's, which decay per level). Stored per edge (`vdata.crease`, 'a,b' keys renumbered with the points) |
+| Solidify | Object panel | Like the modifier with Offset −1: after Mirror and before Smooth, a second layer Solidify units inside along the point normals, faces reversed, joined along open edges by a rim (closed surfaces get an inner shell only). Point data copies to the inner layer (custom normals turned inward) |
+
 Smooth, Fill holes, Tris to quads, Shrinkwrap and Grid fill can be adjusted
 after the fact in the Edit panel, like Blender's Adjust Last Operation:
 `adjustable()` keeps the state from before the edit, and each change redoes

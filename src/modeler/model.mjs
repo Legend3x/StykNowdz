@@ -1,7 +1,7 @@
 /** 3D Nowdz model document: parts (mesh objects), a skeleton, a color
  * palette and reference images. Plain JSON, stored on exported figures as
  * `_styk.modelSource` so a 3D figure can be reopened and edited. */
-import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, VDATA_KEYS} from './mesh.mjs';
+import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, vertexNormals, VDATA_KEYS} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
 
@@ -40,6 +40,7 @@ export function readModel(value) {
         ...(o.fromPart === true ? {fromPart: true} : {}), ...(Number.isFinite(o.darken) ? {darken: Math.max(0, Math.min(1, o.darken))} : {})};
     }
     if (part.shadows !== undefined) part.shadows = part.shadows !== false;
+    if (part.solidify !== undefined) { const t = Number(part.solidify); if (Number.isFinite(t) && t !== 0) part.solidify = Math.max(-1, Math.min(1, t)); else delete part.solidify; }
     // Per-point data: line weights 0..4 and unit custom normals, on existing points only.
     if (part.mesh.vdata !== undefined) {
       const raw = part.mesh.vdata, n = part.mesh.verts.length, clean = {};
@@ -53,6 +54,11 @@ export function readModel(value) {
         if (Object.keys(skin).length) clean.skin = skin;
         for (const [i, w] of Object.entries(raw.line ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Number.isFinite(w)) line[i] = Math.max(0, Math.min(4, w));
         for (const [i, v] of Object.entries(raw.normal ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) && Math.hypot(...v) > 1e-9) normal[i] = normalize(v);
+        const hide = {}, crease = {};
+        for (const i of Object.keys(raw.hide ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n) hide[i] = 1;
+        for (const [k, c] of Object.entries(raw.crease ?? {})) { const [a, b] = k.split(',').map(Number); if (Number.isInteger(a) && Number.isInteger(b) && a !== b && a >= 0 && b >= 0 && a < n && b < n && Number.isFinite(c) && c > 0) crease[a < b ? `${a},${b}` : `${b},${a}`] = Math.min(1, c); }
+        if (Object.keys(hide).length) clean.hide = hide;
+        if (Object.keys(crease).length) clean.crease = crease;
         if (Object.keys(line).length) clean.line = line;
         if (Object.keys(normal).length) clean.normal = normal;
       }
@@ -87,6 +93,8 @@ export function catmullClark(mesh) {
   const vertexFaces = verts.map(() => []), vertexEdges = verts.map(() => []);
   faces.forEach((f, fi) => f.v.forEach(i => vertexFaces[i].push(fi)));
   for (const e of edges.values()) { vertexEdges[e.a].push(e); vertexEdges[e.b].push(e); }
+  // Edge creases (Blender's Edge Crease): 1 = sharp, between = blended toward sharp.
+  const creases = mesh.vdata?.crease, creaseOf = e => e.faces.length === 2 ? Math.max(0, Math.min(1, creases?.[edgeKey(e.a, e.b)] ?? 0)) : 0;
   // New vertex points.
   verts.forEach((p, i) => {
     const border = vertexEdges[i].filter(e => e.faces.length === 1);
@@ -97,7 +105,14 @@ export function catmullClark(mesh) {
     else {
       const n = vertexFaces[i].length, F = scale(vertexFaces[i].reduce((s, fi) => add(s, facePoints[fi]), [0, 0, 0]), 1 / n);
       const R = scale(vertexEdges[i].reduce((s, e) => add(s, scale(add(verts[e.a], verts[e.b]), .5)), [0, 0, 0]), 1 / vertexEdges[i].length);
-      out.verts.push(scale(add(add(F, scale(R, 2)), scale(p, n - 3)), 1 / n));
+      const smoothPoint = scale(add(add(F, scale(R, 2)), scale(p, n - 3)), 1 / n);
+      // Creased edges at this point: two make a sharp line through it, three or more a corner.
+      const sharp = vertexEdges[i].filter(e => creaseOf(e) > 0);
+      if (sharp.length < 2) { out.verts.push(smoothPoint); return; }
+      const strongest = sharp.sort((x, y) => creaseOf(y) - creaseOf(x)), weight = strongest.slice(0, sharp.length >= 3 ? sharp.length : 2).reduce((t, e) => t + creaseOf(e), 0) / (sharp.length >= 3 ? sharp.length : 2);
+      const other = e => verts[e.a === i ? e.b : e.a];
+      const target = sharp.length >= 3 ? p : scale(add(add(scale(p, 6), other(strongest[0])), other(strongest[1])), 1 / 8);
+      out.verts.push(add(scale(smoothPoint, 1 - weight), scale(target, weight)));
     }
   });
   const faceBase = out.verts.length;
@@ -106,7 +121,8 @@ export function catmullClark(mesh) {
   for (const [key, e] of edges) {
     edgeIndex.set(key, out.verts.length);
     const mid = scale(add(verts[e.a], verts[e.b]), .5);
-    out.verts.push(e.faces.length === 2 ? scale(add(add(verts[e.a], verts[e.b]), add(facePoints[e.faces[0]], facePoints[e.faces[1]])), .25) : mid);
+    const smoothPoint = e.faces.length === 2 ? scale(add(add(verts[e.a], verts[e.b]), add(facePoints[e.faces[0]], facePoints[e.faces[1]])), .25) : mid, c = creaseOf(e);
+    out.verts.push(c > 0 ? add(scale(smoothPoint, 1 - c), scale(mid, c)) : smoothPoint);
   }
   faces.forEach((f, fi) => {
     const n = f.v.length;
@@ -123,10 +139,24 @@ export function catmullClark(mesh) {
       const src = mesh.vdata[key]; if (!src) return undefined;
       if (key === 'line') return sources.some(i => src[i] !== undefined) ? sources.reduce((sum, i) => sum + (src[i] ?? 1), 0) / sources.length : undefined;
       if (!sources.every(i => src[i])) return undefined;
+      if (key === 'skin') {
+        // Mean of the sources' weights per bone, the four largest kept.
+        const sum = new Map(); for (const i of sources) for (const [b, w] of src[i]) sum.set(b, (sum.get(b) ?? 0) + w / sources.length);
+        const pairs = [...sum].sort((x, y) => y[1] - x[1]).slice(0, 4), total = pairs.reduce((t, [, w]) => t + w, 0);
+        return total > 0 ? pairs.map(([b, w]) => [b, w / total]) : undefined;
+      }
+      if (key === 'hide') return 1;
       return normalize(sources.reduce((sum, i) => add(sum, src[i]), [0, 0, 0]));
     };
     for (const key of VDATA_KEYS) {
       if (!mesh.vdata[key]) continue;
+      if (key === 'crease') {
+        // Each creased edge's two halves keep its crease.
+        const data = {};
+        for (const [k, e] of edges) { const c = creaseOf(e); if (c > 0) { const m = edgeIndex.get(k); data[edgeKey(e.a, m)] = c; data[edgeKey(m, e.b)] = c; } }
+        if (Object.keys(data).length) out.vdata.crease = data;
+        continue;
+      }
       const data = {...mesh.vdata[key]};
       faces.forEach((f, fi) => { const value = blend(key, f.v); if (value !== undefined) data[faceBase + fi] = value; });
       for (const [k, e] of edges) { const value = blend(key, [e.a, e.b]); if (value !== undefined) data[edgeIndex.get(k)] = value; }
@@ -137,7 +167,33 @@ export function catmullClark(mesh) {
   return out;
 }
 
-/** A part's final world-space mesh: transform, then mirror, then smooth. */
+/** Solidify (Blender's modifier, default Offset −1): the surface gets a second
+ * layer `thickness` inside it along the point normals, faces reversed, joined
+ * to the first along every open edge by a rim, so clothes and hair cards get
+ * real thickness. A closed surface gets an inner shell and no rim. */
+export function solidify(mesh, thickness) {
+  const t = Number(thickness);
+  if (!t || !mesh.faces.length) return mesh;
+  const n = mesh.verts.length, normals = vertexNormals(mesh), out = {verts: mesh.verts.map(p => p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c}))};
+  mesh.verts.forEach((p, i) => out.verts.push(add(p, scale(normals[i], -t))));
+  for (const f of mesh.faces) out.faces.push({v: f.v.map(i => i + n).reverse(), c: f.c});
+  const half = new Set(); mesh.faces.forEach(f => f.v.forEach((a, i) => half.add(`${a}>${f.v[(i + 1) % f.v.length]}`)));
+  for (const f of mesh.faces) f.v.forEach((a, i) => { const b = f.v[(i + 1) % f.v.length]; if (!half.has(`${b}>${a}`)) out.faces.push({v: [b, a, a + n, b + n], c: f.c}); });
+  // Point data: the inner layer copies its outer point's (its custom normal turned inward).
+  if (mesh.vdata) {
+    out.vdata = {};
+    for (const key of VDATA_KEYS) {
+      const src = mesh.vdata[key]; if (!src) continue;
+      if (key === 'crease') { out.vdata.crease = {...src}; continue; }
+      const data = {...src};
+      for (const [i, value] of Object.entries(src)) data[Number(i) + n] = key === 'normal' ? value.map(v => -v) : value;
+      out.vdata[key] = data;
+    }
+  }
+  return out;
+}
+
+/** A part's final world-space mesh: transform, then mirror, then solidify, then smooth. */
 export function evaluatePart(part, {smooth = true} = {}) {
   // Pure matrix transform into world space (a new mesh; the part is not touched).
   // Only the surface: traced wires and loose points are editing aids, never shown or exported.
@@ -145,6 +201,7 @@ export function evaluatePart(part, {smooth = true} = {}) {
   // A negative scale turns faces inside out; flip them back.
   if (objectMirrors(part)) mesh.faces.forEach(f => f.v.reverse());
   if (part.mirror) mesh = mirrored(mesh);
+  if (part.solidify) mesh = solidify(mesh, part.solidify * (Math.abs(part.scale?.[0] ?? 1) + Math.abs(part.scale?.[1] ?? 1) + Math.abs(part.scale?.[2] ?? 1)) / 3);
   if (smooth) for (let k = 0; k < (part.smooth ?? 0); k++) mesh = catmullClark(mesh);
   cleanup(mesh);
   return mesh;

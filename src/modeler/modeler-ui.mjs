@@ -79,10 +79,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
 
   const part = id => model.parts.find(p => p.id === id);
   const activePart = () => part(S.active);
+  // Faces hidden in Edit mode (H) leave the part being edited; elsewhere it shows whole.
+  const hidingIn = p => S.mode === 'edit' && p.id === S.active && Boolean(p.mesh.vdata?.hide);
+  const shownFaces = mesh => { const hide = mesh.vdata?.hide; return hide ? mesh.faces.filter(f => !f.v.some(v => hide[v])) : mesh.faces; };
   const evaluated = p => {
-    const key = p.id, hit = S.cache.get(key);
-    if (hit) return hit;
-    const mesh = evaluatePart(p); S.cache.set(key, mesh); return mesh;
+    const key = p.id, hit = S.cache.get(key), hiding = hidingIn(p);
+    if (hit && hit.hiding === hiding) return hit.mesh;
+    const mesh = evaluatePart(hiding ? {...p, mesh: {...p.mesh, faces: shownFaces(p.mesh)}} : p); S.cache.set(key, {mesh, hiding}); return mesh;
   };
   // A part's outline shell, rebuilt when its surface or outline settings change.
   const hullOf = p => {
@@ -261,6 +264,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           el('p', {class: 'modeler-hint', text: t("modeler.mirrorHint")}),
           el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.smooth")}), el('input', {type: 'range', min: '0', max: String(SMOOTH_MAX), step: '1', value: String(p.smooth),
             onchange: e => commit(() => { p.smooth = Number(e.target.value); S.cache.delete(p.id); })})]),
+          field(t("modeler.solidify"), p.solidify ?? 0, v => commit(() => { const t0 = Math.max(-1, Math.min(1, v)); if (t0) p.solidify = t0; else delete p.solidify; S.cache.delete(p.id); }), {step: .005, title: t("modeler.solidifyHint")}),
           el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.followsBone")}), el('select', {onchange: e => commit(() => { const v = Number(e.target.value); if (v) p.bone = v; else delete p.bone; })},
             [el('option', {value: '0', text: t("modeler.automaticWeights")}), ...boneOrder(model).map(b => el('option', {value: String(b.id), text: b.name, selected: p.bone === b.id}))])]),
           el('p', {class: 'modeler-hint', text: t("modeler.followsBoneHint")}),
@@ -284,6 +288,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.dissolve"), dissolve, 'Ctrl+X'], [t("modeler.duplicateSelected"), duplicateSelected, 'Shift+D'], [t("modeler.separate"), separate, 'P'], [t("modeler.rip"), ripSelected, 'V'],
           [t("modeler.shear"), startShear, t("modeler.shearHint")], [t("modeler.bridge"), bridgeSelected, t("modeler.bridgeHint")]]),
         lastOpPanel(p),
+        p.mesh.vdata?.hide ? el('p', {class: 'modeler-hint', text: t("modeler.hidden", {count: Object.keys(p.mesh.vdata.hide).length})}) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.traceHint")}),
         el('label', {class: 'modeler-check', title: t("modeler.softHint")}, [el('input', {type: 'checkbox', checked: S.soft, onchange: e => { S.soft = e.target.checked; renderProps(); }}), t("modeler.softSelect")]),
         S.soft ? field(t("modeler.softRadius"), S.softRadius, v => { S.softRadius = Math.max(.01, Math.min(10, v)); }, {step: .05, min: .01}) : null,
@@ -361,7 +366,30 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
 
   let frameRequest = 0;
   function refresh() {
+    // Hidden points can't stay selected.
+    const hide = S.mode === 'edit' ? activePart()?.mesh.vdata?.hide : null;
+    if (hide && S.verts.size) for (const v of S.verts) if (hide[v]) S.verts.delete(v);
     renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); draw();
+  }
+  /** Edit mode H / Shift+H / Alt+H, as Blender: hide the selection, hide everything
+   * else, or show all again (selecting what comes back). Only shape is unaffected. */
+  function hideSelected(others = false) {
+    const p = editPart(); if (!p) return;
+    const pick = others ? p.mesh.verts.map((_, i) => i).filter(i => !S.verts.has(i)) : [...S.verts];
+    if (!pick.length) { toast(t("modeler.selectSomethingToHide")); return; }
+    commit(() => { M.setVData(p.mesh, 'hide', pick, 1); S.verts = others ? S.verts : new Set(); S.cache.delete(p.id); });
+  }
+  function revealHidden() {
+    const p = editPart(); const hide = p?.mesh.vdata?.hide; if (!hide) return;
+    commit(() => { const back = Object.keys(hide).map(Number); M.setVData(p.mesh, 'hide', back, null); S.verts = new Set([...S.verts, ...back]); S.cache.delete(p.id); });
+  }
+  /** Shift+E (Edge Crease): selected edges keep Smooth from rounding them (1 sharp, 0 off). */
+  function setCrease(value) {
+    const p = editPart(); if (!p) return;
+    const edges = M.edgesFromVerts(p.mesh, S.verts).filter(([a, b]) => p.mesh.faces.some(f => f.v.includes(a) && f.v.includes(b)));
+    if (!edges.length) { toast(t("modeler.selectEdgesToCrease")); return; }
+    commit(() => { M.setVData(p.mesh, 'crease', edges.map(([a, b]) => M.edgeKey(a, b)), value > 0 ? Math.min(1, value) : null); S.cache.delete(p.id); });
+    if (!p.smooth) toast(t("modeler.creaseNeedsSmooth"));
   }
   function draw() {
     if (frameRequest) return;
@@ -444,10 +472,14 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       const det = M.objectMirrors(p) ? -1 : 1;
       return M.dot(n, frame.toEye(world[f.v[0]])) * det > 0;
     });
+    // Hidden points (H) and the faces using them are left out entirely.
+    const hide = p.mesh.vdata?.hide;
+    if (hide) p.mesh.faces.forEach((f, i) => { if (f.v.some(v => hide[v])) front[i] = false; });
     p.mesh.faces.forEach((f, i) => { if (front[i]) f.v.forEach(v => { visible[v] = true; }); });
     // Traced points (on wires or loose) are always shown: they have no face to hide behind.
     const onFaces = new Set(p.mesh.faces.flatMap(f => f.v));
     p.mesh.verts.forEach((_, v) => { if (!onFaces.has(v)) visible[v] = true; });
+    if (hide) for (const v of Object.keys(hide)) visible[Number(v)] = false;
     return {p, world, pts, visible, front};
   }
   function drawCage(ctx) {
@@ -1635,6 +1667,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (key === 'g') startTransform('grab');
     else if (key === 'r') startTransform('rotate');
     else if (key === 's') startTransform('scale');
+    else if (key === 'e' && e.shiftKey && !ctrl && S.mode === 'edit') { const p = editPart(), edges = p ? M.edgesFromVerts(p.mesh, S.verts) : []; setCrease(edges.length && edges.every(([a, b]) => p.mesh.vdata?.crease?.[M.edgeKey(a, b)]) ? 0 : 1); }
     else if (key === 'e') extrude();
     else if (key === 'i' && S.mode === 'edit') startInset();
     else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? "modeler.softConnectedOn" : "modeler.softConnectedOff")); renderProps(); }
@@ -1649,6 +1682,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (key === 'a' && e.altKey) { S.verts = new Set(); S.parts = new Set(); S.bones = new Set(); refresh(); }
     else if (key === 'a') selectAll();
     else if (key === 'l' && S.mode === 'edit' && S.pointer) { const hit = pick(S.pointer.x, S.pointer.y); if (hit?.verts) { S.verts = new Set([...S.verts, ...M.linkedVerts(activePart().mesh, new Set(hit.verts))]); refresh(); } }
+    else if (key === 'h' && S.mode === 'edit' && e.altKey) revealHidden();
+    else if (key === 'h' && S.mode === 'edit') hideSelected(e.shiftKey);
     else if (key === 'h' && S.mode === 'object') { if (S.parts.size) commit(() => { for (const id of S.parts) part(id).visible = false; }); else commit(() => model.parts.forEach(p => { p.visible = true; })); }
     else if (key === 'n' && e.shiftKey && S.mode === 'edit' && activePart()) commit(() => { M.recalculateNormals(activePart().mesh); S.cache.delete(S.active); });
     else if (['1', '2', '3'].includes(key) && S.mode === 'edit' && e.code?.startsWith('Digit')) { S.selectMode = {1: 'vert', 2: 'edge', 3: 'face'}[key]; refresh(); }
