@@ -276,12 +276,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('label', {class: 'modeler-check modeler-mirror-toggle', title: t("modeler.mirrorHint")}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => setMirror(p, e.target.checked)}), t("modeler.mirrorX")]),
         p.mirror ? el('label', {class: 'modeler-check', title: t("modeler.clippingHint")}, [el('input', {type: 'checkbox', checked: p.clip !== false, onchange: e => commit(() => { if (e.target.checked) delete p.clip; else p.clip = false; })}), t("modeler.clipping")]) : null,
         actions([[t("modeler.extrude"), extrude, 'E'], [t("modeler.inset"), startInset, 'I'], [t("modeler.bevel"), () => startBevel(S.selectMode === 'vert' && !M.edgesFromVerts(activePart().mesh, S.verts).length), 'Ctrl+B'], [t("modeler.loopCut"), startLoopCut, 'Ctrl+R'], [t("modeler.knife"), startKnife, 'K'],
-          [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge") + ' ▾', e => merge(e?.currentTarget), 'M'], [t("modeler.fill"), fill, 'F'], [t("modeler.gridFill"), gridFillSelected, t("modeler.gridFillHint")],
+          [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge") + ' ▾', e => merge(e?.currentTarget), 'M'], [t("modeler.fill"), fill, 'F'], [t("modeler.gridFill"), gridFillSelected, t("modeler.gridFillHint")], [t("modeler.fillHoles"), fillHolesSelected, t("modeler.fillHolesHint")],
+          [t("modeler.smoothVerts"), smoothSelected, t("modeler.smoothVertsHint")], [t("modeler.triangulate"), triangulateSelected, 'Ctrl+T'], [t("modeler.trisToQuads"), trisToQuadsSelected, 'Alt+J'],
+          [t("modeler.poke"), pokeSelected, t("modeler.pokeHint")], [t("modeler.shrinkwrap"), shrinkwrapSelected, t("modeler.shrinkwrapHint")],
           [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.dissolve"), dissolve, 'Ctrl+X'], [t("modeler.duplicateSelected"), duplicateSelected, 'Shift+D'], [t("modeler.separate"), separate, 'P'], [t("modeler.rip"), ripSelected, 'V'],
           [t("modeler.shear"), startShear, t("modeler.shearHint")], [t("modeler.bridge"), bridgeSelected, t("modeler.bridgeHint")]]),
-        S.lastOp?.kind === 'grid' && S.lastOp.part === p.id ? el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: t("modeler.gridFill")}),
-          field(t("modeler.gridSpan"), S.lastOp.span, v => redoGridFill(Math.max(1, Math.min(S.lastOp.max, Math.round(v))), S.lastOp.offset), {step: 1, min: 1, max: S.lastOp.max}),
-          field(t("modeler.gridOffset"), S.lastOp.offset, v => redoGridFill(S.lastOp.span, Math.round(v)), {step: 1})]) : null,
+        lastOpPanel(p),
         el('p', {class: 'modeler-hint', text: t("modeler.traceHint")}),
         el('label', {class: 'modeler-check', title: t("modeler.softHint")}, [el('input', {type: 'checkbox', checked: S.soft, onchange: e => { S.soft = e.target.checked; renderProps(); }}), t("modeler.softSelect")]),
         S.soft ? field(t("modeler.softRadius"), S.softRadius, v => { S.softRadius = Math.max(.01, Math.min(10, v)); }, {step: .05, min: .01}) : null,
@@ -906,26 +906,66 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     });
   }
   /** Bridge: fill between two selected lines of edges. */
-  /** Grid Fill (Blender's Face > Grid Fill): fill the selected closed ring with
-   * quads. Span and Offset can be changed afterwards in the Edit panel, which
-   * redoes the fill (Blender's "adjust last operation"). */
-  function gridFillSelected() {
+  /** Blender's "Adjust Last Operation": an edit whose settings can still be
+   * changed in the Edit panel; each change redoes it from the state before it.
+   * `run(part, selection, params)` makes the edit and returns the new selection,
+   * or {verts, params} when it settles a setting itself (Grid fill's span). */
+  function adjustable(kind, params, run) {
     const p = editPart(); if (!p || S.mode !== 'edit') return;
     const sel = [...S.verts], before = snapshot();
-    const done = commit(() => { const r = M.gridFill(p.mesh, new Set(sel), {color: paintColor(p), facing: localFacing(p)}); S.verts = r.verts; S.cache.delete(p.id); return r; });
-    if (done) S.lastOp = {kind: 'grid', part: p.id, sel, before, span: done.span, offset: 0, max: Math.max(1, sel.length / 2 - 1)};
+    const done = commit(() => { const r = run(p, new Set(sel), params); S.verts = r.verts ?? r; S.cache.delete(p.id); return r.params ?? params; });
+    if (done) S.lastOp = {kind, part: p.id, sel, before, params: {...done}, run};
     renderProps();
   }
-  function redoGridFill(span, offset) {
-    const g = S.lastOp; if (g?.kind !== 'grid') return;
+  function redoLast(key, value) {
+    const g = S.lastOp; if (!g) return;
     const after = snapshot(); restore(g.before);
-    const p = part(g.part);
-    try {
-      const r = M.gridFill(p.mesh, new Set(g.sel), {span, offset, color: paintColor(p), facing: localFacing(p)});
-      S.verts = r.verts; g.span = r.span; g.offset = offset; S.cache.delete(p.id); S.redo = []; touch(p.id);
-    } catch (error) { restore(after); refuse(error); }
+    const p = part(g.part), params = {...g.params, [key]: value};
+    try { const r = g.run(p, new Set(g.sel), params); S.verts = r.verts ?? r; g.params = r.params ?? params; S.cache.delete(p.id); S.redo = []; touch(p.id); }
+    catch (error) { restore(after); refuse(error); }
     S.lastOp = g; renderProps();
   }
+  // The settings each adjustable edit shows, as Blender's Adjust Last Operation panel does.
+  const LAST_OP_FIELDS = {
+    grid: g => [['span', t("modeler.gridSpan"), {step: 1, min: 1, max: Math.max(1, g.sel.length / 2 - 1), whole: true}], ['offset', t("modeler.gridOffset"), {step: 1, whole: true}]],
+    smooth: () => [['factor', t("modeler.smoothFactor"), {step: .05, min: -1, max: 1}], ['repeat', t("modeler.smoothRepeat"), {step: 1, min: 1, max: 100, whole: true}]],
+    holes: () => [['sides', t("modeler.holeSides"), {step: 1, min: 0, max: 1000, whole: true}]],
+    quads: () => [['faceAngle', t("modeler.quadFaceAngle"), {step: 5, min: 0, max: 180}], ['shapeAngle', t("modeler.quadShapeAngle"), {step: 5, min: 0, max: 180}]],
+    wrap: () => [['offset', t("modeler.wrapOffset"), {step: .005, min: -1, max: 1}]],
+  };
+  const LAST_OP_NAMES = {grid: "modeler.gridFill", smooth: "modeler.smoothVerts", holes: "modeler.fillHoles", quads: "modeler.trisToQuads", wrap: "modeler.shrinkwrap"};
+  function lastOpPanel(p) {
+    const g = S.lastOp; if (!g || g.part !== p.id || !LAST_OP_FIELDS[g.kind]) return null;
+    return el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: t(LAST_OP_NAMES[g.kind])}),
+      ...LAST_OP_FIELDS[g.kind](g).map(([key, label, spec]) => field(label, g.params[key], v => {
+        let value = Math.max(spec.min ?? -Infinity, Math.min(spec.max ?? Infinity, v)); if (spec.whole) value = Math.round(value);
+        redoLast(key, value);
+      }, spec))]);
+  }
+  /** Grid Fill (Blender's Face > Grid Fill): fill the selected closed ring with quads. */
+  function gridFillSelected() {
+    adjustable('grid', {span: 0, offset: 0}, (p, sel, {span, offset}) => { const r = M.gridFill(p.mesh, sel, {span, offset, color: paintColor(p), facing: localFacing(p)}); return {verts: r.verts, params: {span: r.span, offset}}; });
+  }
+  /** Vertex > Smooth Vertices: relax the selection (Factor and Repeat adjustable after). */
+  const smoothSelected = () => adjustable('smooth', {factor: .5, repeat: 1}, (p, sel, params) => M.smoothVerts(p.mesh, sel, params));
+  /** Face > Fill Holes: close holes touching the selection with up to Sides corners. */
+  const fillHolesSelected = () => adjustable('holes', {sides: 4}, (p, sel, params) => M.fillHoles(p.mesh, sel, params));
+  /** Face > Tris to Quads (Alt+J). */
+  const trisToQuadsSelected = () => adjustable('quads', {faceAngle: 40, shapeAngle: 40}, (p, sel, params) => M.trisToQuads(p.mesh, M.facesFromVerts(p.mesh, sel), params));
+  /** Face > Triangulate Faces (Ctrl+T). */
+  const triangulateSelected = () => { const p = editPart(); if (!p || S.mode !== 'edit') return; commit(() => { S.verts = M.triangulateFaces(p.mesh, M.facesFromVerts(p.mesh, S.verts)); S.cache.delete(p.id); }); };
+  /** Face > Poke Faces. */
+  const pokeSelected = () => { const p = editPart(); if (!p || S.mode !== 'edit') return; commit(() => { S.verts = M.pokeFaces(p.mesh, M.facesFromVerts(p.mesh, S.verts)); S.cache.delete(p.id); }); };
+  /** Shrinkwrap, applied once: press the selected points onto the nearest surface
+   * of the other visible parts (hair or clothes onto a head or body), Offset out. */
+  const shrinkwrapSelected = () => adjustable('wrap', {offset: .005}, (p, sel, {offset}) => {
+    const others = model.parts.filter(q => q.id !== p.id && q.visible !== false && q.mesh.faces.length).map(q => evaluatePart(q));
+    const to = M.objectTransform(p), back = X.invert(M.objectMatrix(p)), pick = [...sel];
+    const moved = M.shrinkwrapPoints(pick.map(v => to(p.mesh.verts[v])), others, offset);
+    const mesh = M.cloneMesh(p.mesh); pick.forEach((v, i) => { mesh.verts[v] = [...X.transformPoint(back, moved[i])]; });
+    assertValidMesh(mesh, 'Shrinkwrap'); p.mesh = mesh;
+    return new Set(pick);
+  });
   function bridgeSelected() {
     const p = editPart(); if (!p || S.mode !== 'edit') return;
     commit(() => { const made = M.bridge(p.mesh, S.verts, {color: paintColor(p), facing: localFacing(p)}); S.cache.delete(p.id); toast(t("modeler.bridged", {count: made.size})); });
@@ -1556,6 +1596,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (ctrl && key === 'e' && S.mode === 'edit') bridgeSelected();
     else if (ctrl && key === 'r') startLoopCut();
     else if (ctrl && key === 'b' && S.mode === 'edit') startBevel(e.shiftKey);
+    else if (ctrl && key === 't' && S.mode === 'edit') triangulateSelected();
+    else if ((key === 'j' || e.code === 'KeyJ') && e.altKey && S.mode === 'edit') trisToQuadsSelected();
     else if (S.modal?.kind === 'knife' && key === 'Backspace') { S.modal.path.pop(); setStatus(); draw(); }
     else if (key === 'k' && !ctrl && S.mode === 'edit' && !S.modal) startKnife();
     else if (ctrl && key === 'l') { if (S.mode === 'edit' && activePart()) { S.verts = M.linkedVerts(activePart().mesh, S.verts); refresh(); } }

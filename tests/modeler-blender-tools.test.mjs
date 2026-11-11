@@ -114,6 +114,34 @@ test('soft select "Connected only" follows the mesh, not straight-line distance'
   near(along.get(1), plain.get(1), 1e-12);
 });
 
+test('batch 2: smooth vertices, triangulate, tris to quads, poke, fill holes, shrinkwrap', () => {
+  // Triangulate a cube and join it back into the same six quads.
+  let c = cube(); M.triangulateFaces(c, new Set(c.faces.keys())); valid(c); assert.equal(sizes(c), '333333333333');
+  M.trisToQuads(c, new Set(c.faces.keys())); valid(c); assert.equal(sizes(c), '444444');
+  // A concave L-shaped face: every triangle stays inside it (same winding, positive area).
+  const L = {verts: [[0, 0, 0], [2, 0, 0], [2, 1, 0], [1, 1, 0], [1, 2, 0], [0, 2, 0]], faces: [{v: [0, 1, 2, 3, 4, 5], c: 0}]};
+  M.triangulateFaces(L, new Set([0])); valid(L); assert.equal(L.faces.length, 4);
+  for (const f of L.faces) assert.ok(M.faceNormal(L, f)[2] > 0, 'no flipped or outside triangle');
+  near(L.faces.reduce((sum, f) => { const [a, b, d] = f.v.map(v => L.verts[v]); return sum + M.length(M.cross(M.sub(b, a), M.sub(d, a))) / 2; }, 0), 3);
+  // Two triangles bent 90 degrees stay triangles.
+  const bent = {verts: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], faces: [{v: [0, 1, 2], c: 0}, {v: [1, 0, 3], c: 0}]};
+  assert.throws(() => M.trisToQuads(bent, new Set([0, 1])), /bend too much/);
+  c = cube(); M.pokeFaces(c, new Set([0])); valid(c); assert.equal(sizes(c), '333344444');
+  // Fill holes: the cap of a sphere (8 sides) needs Sides 0 or 8+.
+  const s = uvSphere(.5, 8, 6); M.deleteFaces(s, new Set(s.faces.flatMap((f, i) => f.v.some(v => s.verts[v][1] > .4) ? [i] : [])));
+  assert.throws(() => M.fillHoles(s, new Set(s.verts.keys()), {sides: 4}), /4 corners or fewer/);
+  M.fillHoles(s, new Set(s.verts.keys()), {sides: 8}); valid(s); assert.ok([...M.edgeFaces(s).values()].every(fs => fs.length === 2));
+  // Smooth: a zig-zag traced line flattens between its fixed ends.
+  const line = {verts: [[0, 0, 0], [1, .5, 0], [2, 0, 0], [3, .5, 0], [4, 0, 0]], faces: [], edges: [[0, 1], [1, 2], [2, 3], [3, 4]]};
+  M.smoothVerts(line, new Set([0, 1, 2, 3, 4]), {factor: .5, repeat: 20}); valid(line);
+  assert.deepEqual(line.verts[0], [0, 0, 0]); assert.deepEqual(line.verts[4], [4, 0, 0]);
+  assert.ok(line.verts.every(p => Math.abs(p[1]) < .02), 'flattened');
+  // Shrinkwrap onto a ball of radius 0.5: points land on it, plus the offset.
+  const ball = uvSphere(.5, 24, 18);
+  for (const p of M.shrinkwrapPoints([[0, 0, 2], [1, 1, 1], [0, .1, 0]], [ball], .01)) near(M.length(p), .51, .02);
+  assert.throws(() => M.shrinkwrapPoints([[0, 0, 0]], []), /no other part/);
+});
+
 test('random runs of the Blender tools never leave a broken mesh', () => {
   quiet3(() => {
     for (let seedN = 1; seedN <= 8; seedN++) {
@@ -126,7 +154,9 @@ test('random runs of the Blender tools never leave a broken mesh', () => {
           () => M.rip(mesh, edges, random() < .5 ? 'left' : 'right'), () => M.bevelEdges(mesh, edges, {width: random() * .3, segments: 1 + Math.floor(random() * 3)}),
           () => M.bevelVerts(mesh, verts, {width: random() * .3}), () => all.length > 1 && M.knife(mesh, [pick(), pick()], p => ({x: (p[0] + p[2] * .4) * 200, y: -p[1] * 200})),
           () => { const uses = M.edgeFaces(mesh); M.gridFill(mesh, new Set(all.filter(([a, b]) => uses.get(M.edgeKey(a, b)).length === 1).flat())); },
-          () => M.extrudeFaces(mesh, faces), () => M.subdivideFaces(mesh, faces), () => M.deleteFaces(mesh, faces)];
+          () => M.extrudeFaces(mesh, faces), () => M.subdivideFaces(mesh, faces), () => M.deleteFaces(mesh, faces),
+          () => M.smoothVerts(mesh, verts, {factor: random() * 2 - 1, repeat: 1 + Math.floor(random() * 3)}), () => M.triangulateFaces(mesh, faces), () => M.trisToQuads(mesh, faces),
+          () => M.pokeFaces(mesh, faces), () => M.fillHoles(mesh, verts, {sides: Math.floor(random() * 10)})];
         try { ops[Math.floor(random() * ops.length)](); } catch (error) { if (!(error instanceof TopologyError || error?.modelerMessage)) throw error; }
         assert.ok(validateMesh(mesh, quiet).ok, `seed ${seedN} step ${step}`);
         if (!mesh.faces.length || mesh.verts.length > 3000) break;

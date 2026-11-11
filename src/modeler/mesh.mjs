@@ -1251,6 +1251,177 @@ function knifeEdit(mesh, path, project) {
   return cut;
 }
 
+// ---------- batch 2 of Blender's mesh tools ----------
+
+/** Smooth Vertices (Blender's Vertex > Smooth Vertices): each selected point
+ * moves `factor` of the way toward the mean of its neighbours, `repeat` times.
+ * Points on an open border only follow the border, and the two ends of a
+ * traced line stay put, so outlines keep their shape while bumps relax. */
+function smoothVertsEdit(mesh, verts, {factor = .5, repeat = 1} = {}) {
+  const pick = [...verts].filter(v => mesh.verts[v]);
+  if (!pick.length) throw refused('Select points to smooth.');
+  const uses = edgeFaces(mesh), open = new Set([...uses].filter(([, fs]) => fs.length === 1).map(([k]) => k));
+  const near = new Map(), border = new Map();
+  for (const [a, b] of allEdges(mesh)) {
+    for (const [x, y] of [[a, b], [b, a]]) { if (!near.has(x)) near.set(x, new Set()); near.get(x).add(y); }
+    if (open.has(edgeKey(a, b))) for (const [x, y] of [[a, b], [b, a]]) { if (!border.has(x)) border.set(x, new Set()); border.get(x).add(y); }
+  }
+  const k = Math.max(-1, Math.min(1, Number(factor) || 0)), times = Math.max(1, Math.min(100, Math.round(repeat)));
+  for (let r = 0; r < times; r++) {
+    const next = new Map();
+    for (const v of pick) {
+      const around = [...(border.get(v) ?? near.get(v) ?? [])];
+      if (around.length < 2) continue;
+      const mean = scale(around.reduce((s, w) => add(s, mesh.verts[w]), [0, 0, 0]), 1 / around.length);
+      next.set(v, add(mesh.verts[v], scale(sub(mean, mesh.verts[v]), k)));
+    }
+    for (const [v, p] of next) mesh.verts[v] = p;
+  }
+  return new Set(pick);
+}
+
+/** Triangulate Faces (Ctrl+T): quads split along their shorter diagonal (as
+ * Blender's Beauty does for most quads), larger faces by ear clipping in their
+ * own plane, so concave faces come out right. */
+function triangulateFacesEdit(mesh, faces) {
+  const pick = [...faces].filter(i => mesh.faces[i]?.v.length > 3);
+  if (!pick.length) throw refused('Select faces with four or more corners to triangulate.');
+  const out = [], keep = new Set(pick.flatMap(i => mesh.faces[i].v));
+  mesh.faces.forEach((f, i) => {
+    if (!pick.includes(i)) { out.push(f); return; }
+    for (const tri of earClip(mesh, f.v)) out.push({v: tri, c: f.c});
+  });
+  mesh.faces = out;
+  return keep;
+}
+/** Triangles covering a polygon, keeping its winding. */
+function earClip(mesh, loop) {
+  if (loop.length === 4) {
+    const [a, b, c, d] = loop, P = i => mesh.verts[i];
+    return length(sub(P(a), P(c))) <= length(sub(P(b), P(d))) ? [[a, b, c], [a, c, d]] : [[a, b, d], [b, c, d]];
+  }
+  const n = faceNormalOf(mesh, loop), axis = Math.abs(n[0]) > Math.abs(n[1]) ? (Math.abs(n[0]) > Math.abs(n[2]) ? 0 : 2) : (Math.abs(n[1]) > Math.abs(n[2]) ? 1 : 2);
+  const [u, w] = [[1, 2], [2, 0], [0, 1]][axis], flip = n[axis] < 0 ? -1 : 1;
+  const P2 = i => [mesh.verts[i][u], mesh.verts[i][w]];
+  const area = (a, b, c) => ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * flip;
+  const inside = (p, a, b, c) => area(a, b, p) >= -1e-12 && area(b, c, p) >= -1e-12 && area(c, a, p) >= -1e-12;
+  const rest = loop.slice(), tris = [];
+  for (let guard = 0; rest.length > 3 && guard < 10000; guard++) {
+    let cut = false;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[(i + rest.length - 1) % rest.length], b = rest[i], c = rest[(i + 1) % rest.length];
+      if (area(P2(a), P2(b), P2(c)) <= 1e-14) continue;
+      if (rest.some(x => x !== a && x !== b && x !== c && inside(P2(x), P2(a), P2(b), P2(c)))) continue;
+      tris.push([a, b, c]); rest.splice(i, 1); cut = true; break;
+    }
+    if (!cut) { for (let i = 1; i + 1 < rest.length; i++) tris.push([rest[0], rest[i], rest[i + 1]]); rest.length = 0; }
+  }
+  if (rest.length === 3) tris.push(rest);
+  return tris;
+}
+const faceNormalOf = (mesh, loop) => { let n = [0, 0, 0]; for (let i = 0; i < loop.length; i++) n = add(n, cross(mesh.verts[loop[i]], mesh.verts[loop[(i + 1) % loop.length]])); return normalize(n); };
+
+/** Tris to Quads (Alt+J): join pairs of selected triangles across their shared
+ * edge where the two lie nearly flat (`faceAngle`) and make a well-shaped,
+ * convex quad (`shapeAngle`); the best pairs first, as Blender does. */
+function trisToQuadsEdit(mesh, faces, {faceAngle = 40, shapeAngle = 40} = {}) {
+  const tris = new Set([...faces].filter(i => mesh.faces[i]?.v.length === 3));
+  if (tris.size < 2) throw refused('Select two or more triangles that share edges to join them into quads.');
+  const P = i => mesh.verts[i], angle = (a, b) => Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180 / Math.PI;
+  const pairs = [];
+  for (const [key, list] of edgeFaces(mesh)) {
+    if (list.length !== 2 || !tris.has(list[0]) || !tris.has(list[1])) continue;
+    const [p, q] = keyVerts(key), t1 = mesh.faces[list[0]].v, t2 = mesh.faces[list[1]].v;
+    // Order: t1 runs x→y along the shared edge; the quad is y, r, x, s.
+    const i1 = t1.indexOf(p), forward = t1[(i1 + 1) % 3] === q, x = forward ? p : q, y = forward ? q : p;
+    const r = t1.find(v => v !== p && v !== q), s2 = t2.find(v => v !== p && v !== q), quad = [y, r, x, s2];
+    const bend = angle(faceNormalOf(mesh, t1), faceNormalOf(mesh, t2));
+    if (bend > faceAngle) continue;
+    // Shape: every corner of the quad near a right angle, and convex (same-side turns).
+    const n = faceNormalOf(mesh, quad); let worst = 0, convex = true;
+    for (let i = 0; i < 4; i++) {
+      const a = P(quad[(i + 3) % 4]), b = P(quad[i]), c = P(quad[(i + 1) % 4]);
+      worst = Math.max(worst, Math.abs(90 - angle(normalize(sub(a, b)), normalize(sub(c, b)))));
+      if (dot(cross(sub(b, a), sub(c, b)), n) <= 0) convex = false;
+    }
+    if (!convex || worst > 45 + shapeAngle) continue;
+    pairs.push({score: bend + worst, a: list[0], b: list[1], quad});
+  }
+  pairs.sort((u, v) => u.score - v.score);
+  const used = new Set(), made = [];
+  for (const pair of pairs) { if (used.has(pair.a) || used.has(pair.b)) continue; used.add(pair.a); used.add(pair.b); made.push({v: pair.quad, c: mesh.faces[pair.a].c}); }
+  if (!made.length) throw refused('No pair of these triangles makes a good quad (they bend too much or would make a twisted shape).');
+  mesh.faces = [...mesh.faces.filter((_, i) => !used.has(i)), ...made];
+  return new Set(made.flatMap(f => f.v));
+}
+
+/** Poke Faces: a new point in the middle of each selected face, joined to its corners. */
+function pokeFacesEdit(mesh, faces) {
+  const pick = new Set([...faces].filter(i => mesh.faces[i]));
+  if (!pick.size) throw refused('Select faces to poke.');
+  const out = [], centres = new Set();
+  mesh.faces.forEach((f, i) => {
+    if (!pick.has(i)) { out.push(f); return; }
+    const c = mesh.verts.length; mesh.verts.push(scale(f.v.reduce((s, v) => add(s, mesh.verts[v]), [0, 0, 0]), 1 / f.v.length)); centres.add(c);
+    f.v.forEach((v, k) => out.push({v: [v, f.v[(k + 1) % f.v.length], c], c: f.c}));
+  });
+  mesh.faces = out;
+  return centres;
+}
+
+/** Fill Holes: close every hole (loop of open edges) touching the selection
+ * with `sides` corners or fewer (0 = any size) with one face. */
+function fillHolesEdit(mesh, verts, {sides = 4} = {}) {
+  const half = new Set(); mesh.faces.forEach(f => f.v.forEach((a, i) => half.add(`${a}>${f.v[(i + 1) % f.v.length]}`)));
+  const next = new Map();
+  mesh.faces.forEach(f => f.v.forEach((a, i) => { const b = f.v[(i + 1) % f.v.length]; if (!half.has(`${b}>${a}`)) next.set(b, next.has(b) ? null : a); }));
+  const made = [], seen = new Set(), limit = Math.max(0, Math.round(sides));
+  for (const start of next.keys()) {
+    if (seen.has(start) || next.get(start) === null) continue;
+    const loop = []; let at = start, closed = false;
+    while (at !== undefined && at !== null && !seen.has(at)) { seen.add(at); loop.push(at); at = next.get(at); if (at === start) { closed = true; break; } }
+    if (!closed || loop.length < 3 || (limit && loop.length > limit) || !loop.some(v => verts.has(v))) continue;
+    const color = mesh.faces.find(f => f.v.includes(loop[0]))?.c ?? 0;
+    made.push({v: loop, c: color});
+  }
+  if (!made.length) throw refused(limit ? `No hole with ${limit} corners or fewer touches the selection. Raise Sides, or set it to 0 for any size.` : 'No hole touches the selection.');
+  mesh.faces.push(...made);
+  if (mesh.edges) { const keys = new Set(made.flatMap(f => f.v.map((v, i) => edgeKey(v, f.v[(i + 1) % f.v.length])))); mesh.edges = mesh.edges.filter(([a, b]) => !keys.has(edgeKey(a, b))); }
+  return new Set(made.flatMap(f => f.v));
+}
+
+/** The closest point to `p` on a triangle (Ericson, Real-Time Collision Detection). */
+export function closestOnTriangle(p, a, b, c) {
+  const ab = sub(b, a), ac = sub(c, a), ap = sub(p, a), d1 = dot(ab, ap), d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return a;
+  const bp = sub(p, b), d3 = dot(ab, bp), d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return b;
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return add(a, scale(ab, d1 / (d1 - d3)));
+  const cp = sub(p, c), d5 = dot(ab, cp), d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return c;
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return add(a, scale(ac, d2 / (d2 - d6)));
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return add(b, scale(sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6))));
+  const den = 1 / (va + vb + vc);
+  return add(a, add(scale(ab, vb * den), scale(ac, vc * den)));
+}
+
+/** Shrinkwrap (Blender's modifier, Nearest Surface Point), applied once: each of
+ * `points` (world space) moves to the closest point on `surfaces` (world-space
+ * meshes), then `offset` out along that face's normal. Returns the new points. */
+export function shrinkwrapPoints(points, surfaces, offset = 0) {
+  const tris = [];
+  for (const s of surfaces) for (const [a, b, c] of triangulate(s)) { const A = s.verts[a], B = s.verts[b], C = s.verts[c], n = normalize(cross(sub(B, A), sub(C, A))); if (length(n) > 0) tris.push([A, B, C, n]); }
+  if (!tris.length) throw refused('There is no other part to wrap onto. Add or show the part to press these points against.');
+  return points.map(p => {
+    let best = null, d = Infinity, normal = null;
+    for (const [A, B, C, n] of tris) { const q = closestOnTriangle(p, A, B, C), e = length(sub(q, p)); if (e < d) { d = e; best = q; normal = n; } }
+    return add(best, scale(normal, offset));
+  });
+}
+
 // ---------- dissolve (Blender's Ctrl+X) ----------
 
 /** The outline loops of a set of faces: each loop follows the faces' winding.
@@ -1517,3 +1688,8 @@ export const rip = atomic('Rip', ripEdit);
 export const bevelEdges = atomic('Bevel', bevelEdgesEdit);
 export const bevelVerts = atomic('Bevel points', bevelVertsEdit);
 export const knife = atomic('Knife', knifeEdit);
+export const smoothVerts = atomic('Smooth vertices', smoothVertsEdit);
+export const triangulateFaces = atomic('Triangulate', triangulateFacesEdit);
+export const trisToQuads = atomic('Tris to quads', trisToQuadsEdit);
+export const pokeFaces = atomic('Poke faces', pokeFacesEdit);
+export const fillHoles = atomic('Fill holes', fillHolesEdit);

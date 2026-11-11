@@ -11,7 +11,8 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - 3D Nowdz outlines can taper to sharp tips and use a darker shade of each part's colour for coloured line art.
 - 3D Nowdz can set shading normals, so faces shade smoothly like a 2D drawing instead of showing every nose and cheek bump.
 - 3D Nowdz soft select has Connected only (Alt+O), so pulling an upper eyelid or lip leaves the one next to it alone.
-- 3D Nowdz has Blender's modeling tools: Bevel (Ctrl+B), Knife (K), Dissolve (Ctrl+X), Rip (V), Grid fill, and a Merge menu (M) with At First, At Last and Collapse.
+- 3D Nowdz has Blender's modeling tools: Bevel (Ctrl+B), Knife (K), Dissolve (Ctrl+X), Rip (V), Grid fill, Smooth, Triangulate (Ctrl+T), Tris to quads (Alt+J), Poke, Fill holes, and a Merge menu (M) with At First, At Last and Collapse.
+- 3D Nowdz Shrinkwrap presses points onto another part's surface, for hair or clothes on a head or body.
 - 3D Nowdz: Mirror mode is now a checkbox at the top of the Edit panel, so you can trace one side of a face and see the other side follow.
 - 3D Nowdz: File > Start over clears the model in one step, and Undo brings it back.
 

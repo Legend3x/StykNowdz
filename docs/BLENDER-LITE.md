@@ -222,6 +222,18 @@ and validated like the rest.
 | Bevel | Ctrl+B, Ctrl+Shift+B | Edges: a strip at right angles `width` from the edge (Offset mode, slide clamped at 95% of the edge), rounded by Segments (scroll; quadratic profile toward the old corner). Faces between two bevelled edges get the meeting point of the offset lines; corners left open are closed with one face; a corner left joining two edges is dissolved (the cube-corner pentagons). Points: each selected point is cut off by a face |
 | Knife | K | Click points on edges or corners (Ctrl: edge middle); between points the cut follows the straight screen line across faces. Backspace removes the last point, Enter/Space cuts, Esc or right-click cancels. Clicks inside a face (away from edges) aren't supported yet |
 
+| Smooth | Edit panel | Each selected point moves Factor of the way to the mean of its neighbours, Repeat times (Vertex > Smooth Vertices). Border points use border neighbours only; a traced line's ends stay put |
+| Triangulate | Ctrl+T | Quads split along the shorter diagonal; larger faces by ear clipping in their own plane (concave faces come out right) |
+| Tris to quads | Alt+J | Pairs of selected triangles sharing an edge join when they bend less than Max bend and the quad is convex with corners within 45° + Max shape of square; best pairs first |
+| Poke | Edit panel | A point in the middle of each selected face, fanned to its corners |
+| Fill holes | Edit panel | Every hole touching the selection with at most Sides corners (0 = any) gets one face |
+| Shrinkwrap | Edit panel | Applied once, like the modifier's Nearest Surface Point: selected points move to the closest point on the other visible parts (world space, `shrinkwrapPoints`), then Offset out along that face's normal |
+
+Smooth, Fill holes, Tris to quads, Shrinkwrap and Grid fill can be adjusted
+after the fact in the Edit panel, like Blender's Adjust Last Operation:
+`adjustable()` keeps the state from before the edit, and each change redoes
+the edit from it with the new settings (one undo step in all).
+
 Vertex slide is GG on points (the existing edge slide). Not ported yet: Bevel
 profile shapes and vertex-only corner patches with several segments (an
 n-gon closes them), Knife cuts starting inside a face, Rip of a single point,
