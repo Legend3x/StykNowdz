@@ -411,6 +411,91 @@ export function splitBowTies(mesh) {
   return made;
 }
 
+/** Make a mesh from another program follow the topology rules, the way
+ * Blender's importers accept anything and leave the oddities in place: here
+ * the oddities are split apart instead of refused. Game and rip exports often
+ * have doubled faces, an edge shared by three or more faces (a fin or a
+ * doubled layer), neighbours wound against each other on a Möbius-like strip,
+ * and bow-tie points. Doubled faces are dropped; a face that would be the
+ * third on an edge, or that cannot agree in winding with a neighbour, gets its
+ * own copies of that edge's points (so it is still there, just not joined);
+ * bow-ties are split; unused points go. Per-point data follows the copies.
+ * With `weld`, points closer than that (rounded to a grid of that size) are
+ * joined first.
+ * Returns what was changed, for the import message. */
+export function repairImportedMesh(mesh, {weld = 0} = {}) {
+  const report = {doubled: 0, detached: 0, flipped: 0, welded: 0};
+  // Files split points along UV and normal seams (rips often store every
+  // triangle on its own): points at the same place (within `weld`) are joined
+  // first, so the surface is one piece; the first point's data is kept.
+  if (weld > 0) {
+    const cell = new Map(), to = mesh.verts.map((p, i) => {
+      const k = p.map(x => Math.round(x / weld)).join(',');
+      if (cell.has(k)) { report.welded++; return cell.get(k); }
+      cell.set(k, i); return i;
+    });
+    if (report.welded) mesh.faces.forEach(f => { f.v = f.v.map(i => to[i]).filter((x, i, v) => x !== v[(i + 1) % v.length]); });
+  }
+  const copyPoint = i => {
+    const j = mesh.verts.length; mesh.verts.push(mesh.verts[i].slice());
+    for (const key of VDATA_KEYS) { const m = mesh.vdata?.[key]; if (m && !EDGE_KEYED.has(key) && m[i] !== undefined) m[j] = key === 'skin' ? m[i].map(pair => pair.slice()) : Array.isArray(m[i]) ? m[i].slice() : m[i]; }
+    return j;
+  };
+  // Drop faces that repeat a corner or reuse another face's points.
+  const seenFaces = new Set();
+  mesh.faces = mesh.faces.filter(f => {
+    if (f.v.length < 3 || new Set(f.v).size !== f.v.length) { report.doubled++; return false; }
+    const key = f.v.slice().sort((a, b) => a - b).join(',');
+    if (seenFaces.has(key)) { report.doubled++; return false; }
+    seenFaces.add(key); return true;
+  });
+  // At most two faces per edge: a later face on a full edge is cut loose there.
+  const count = new Map(), key = (a, b) => a < b ? `${a},${b}` : `${b},${a}`;
+  const edgesOf = v => v.map((a, i) => key(a, v[(i + 1) % v.length]));
+  for (const f of mesh.faces) {
+    for (let guard = 0; guard <= f.v.length; guard++) {
+      const full = edgesOf(f.v).findIndex(k => (count.get(k) ?? 0) >= 2);
+      if (full < 0) break;
+      const i = full, j = (full + 1) % f.v.length;
+      f.v[i] = copyPoint(f.v[i]); f.v[j] = copyPoint(f.v[j]); report.detached++;
+    }
+    for (const k of edgesOf(f.v)) count.set(k, (count.get(k) ?? 0) + 1);
+  }
+  // Wind each piece one way, spreading from its first face; a face that cannot
+  // agree with a neighbour already placed is cut loose along that edge.
+  const uses = new Map();
+  mesh.faces.forEach((f, fi) => edgesOf(f.v).forEach(k => { if (!uses.has(k)) uses.set(k, []); uses.get(k).push(fi); }));
+  const placed = new Set();
+  for (let start = 0; start < mesh.faces.length; start++) {
+    if (placed.has(start)) continue;
+    const queue = [start]; placed.add(start);
+    while (queue.length) {
+      const v = mesh.faces[queue.shift()].v;
+      v.forEach((a, i) => {
+        const b = v[(i + 1) % v.length];
+        for (const other of uses.get(key(a, b)) ?? []) {
+          if (placed.has(other)) continue;
+          const w = mesh.faces[other].v, j = w.indexOf(a);
+          if (j >= 0 && w[(j + 1) % w.length] === b) { w.reverse(); report.flipped++; }
+          placed.add(other); queue.push(other);
+        }
+      });
+    }
+  }
+  const half = new Set();
+  for (const f of mesh.faces) {
+    for (let guard = 0; guard <= f.v.length; guard++) {
+      const i = f.v.findIndex((a, k) => half.has(`${a}>${f.v[(k + 1) % f.v.length]}`));
+      if (i < 0) break;
+      const j = (i + 1) % f.v.length; f.v[i] = copyPoint(f.v[i]); f.v[j] = copyPoint(f.v[j]); report.detached++;
+    }
+    f.v.forEach((a, k) => half.add(`${a}>${f.v[(k + 1) % f.v.length]}`));
+  }
+  for (const [copy, from] of splitBowTies(mesh)) for (const key of VDATA_KEYS) { const m = mesh.vdata?.[key]; if (m && !EDGE_KEYED.has(key) && m[from] !== undefined) m[copy] = key === 'skin' ? m[from].map(pair => pair.slice()) : Array.isArray(m[from]) ? m[from].slice() : m[from]; }
+  cleanup(mesh);
+  return report;
+}
+
 /** Delete vertices and every face and wire using them. A traced point left
  * with nothing joined to it stays as a loose point (as in Blender); points of
  * deleted faces go with them. */

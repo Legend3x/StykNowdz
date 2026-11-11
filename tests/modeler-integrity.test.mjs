@@ -160,14 +160,44 @@ test('random edit sequences never leave an invalid mesh behind', () => {
 test('imports, stored models and evaluated parts are checked too', () => {
   const log = console.error; console.error = () => {};
   try {
-    // Inconsistent winding is fixed on import; a non-manifold edge is refused with its report.
+    // Inconsistent winding is fixed on import, and so is a non-manifold edge
+    // (the third face on it is cut loose, as in game and rip exports).
     const flipped = importObj('o Box\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\nf 5 6 7 8\nf 2 1 4 3\nf 1 5 8 4\nf 6 2 3 7\nf 8 7 3 4\nf 5 1 2 6\n'.replace('f 5 6 7 8', 'f 8 7 6 5'));
     assert.ok(validateMesh(flipped[0].mesh, quiet).ok);
-    assert.throws(() => importObj('v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 -1 0\nv 0 0 1\nf 1 2 3\nf 2 1 4\nf 2 1 5\n'), error => error instanceof TopologyError && /Importing part/.test(error.message));
+    const fin = importObj('v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 -1 0\nv 0 0 1\nf 1 2 3\nf 2 1 4\nf 2 1 5\n');
+    assert.ok(validateMesh(fin[0].mesh, quiet).ok); assert.equal(fin[0].mesh.faces.length, 3);
     const model = emptyModel(); addPart(model, {name: 'Box', mesh: cube()});
     model.parts[0].mesh.faces.push({v: [0, 1, 99], c: 0});
     assert.throws(() => readModel(model), error => error instanceof TopologyError && error.result.errors.some(e => e.rule === 'H2'));
     const part = {mesh: M.transformMesh(cube(), X.translation([.5, 0, 0])), position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, -1, 1], mirror: true, smooth: 1};
     assert.ok(validateMesh(evaluatePart(part), quiet).ok, 'mirror + negative scale + smooth stays valid');
   } finally { console.error = log; }
+});
+
+test('imports from games and other programs are repaired, not refused', () => {
+  // Every problem rips usually carry, in one file: a doubled face (also wound
+  // the other way), a fin (three faces on one edge), mixed winding, a Möbius
+  // strip (cannot be wound one way) and a bow-tie point.
+  const lines = ['o Messy'];
+  const v = (...p) => { lines.push(`v ${p.join(' ')}`); return lines.filter(l => l.startsWith('v ')).length; };
+  const a = v(0, 0, 0), b = v(1, 0, 0), c = v(1, 1, 0), d = v(0, 1, 0), e = v(.5, .5, 1), f = v(.5, -.5, -1);
+  lines.push(`f ${a} ${b} ${c}`, `f ${c} ${b} ${a}`, `f ${a} ${c} ${d}`, `f ${b} ${a} ${e}`, `f ${a} ${b} ${f}`);
+  const m = [];
+  for (let i = 0; i < 12; i++) { const t = i / 12 * 2 * Math.PI, w = .3 * Math.cos(t / 2); m.push([v(5 + Math.cos(t) * (1 + w), Math.sin(t) * (1 + w), .3 * Math.sin(t / 2)), v(5 + Math.cos(t) * (1 - w), Math.sin(t) * (1 - w), -.3 * Math.sin(t / 2))]); }
+  for (let i = 0; i < 12; i++) { const [p, q] = m[i], [r, s2] = i === 11 ? [m[0][1], m[0][0]] : m[i + 1]; lines.push(`f ${p} ${r} ${s2} ${q}`); }
+  const g = v(10, 0, 0), h = v(11, 0, 0), k = v(10, 1, 0), l = v(9, 0, 0), n = v(10, -1, 0);
+  lines.push(`f ${g} ${h} ${k}`, `f ${g} ${l} ${n}`);
+  const [part] = importObj(lines.join('\n'));
+  const check = validateMesh(part.mesh, quiet);
+  assert.ok(check.ok, JSON.stringify(check.errors.slice(0, 3)));
+  assert.equal(part.mesh.faces.length, 4 + 12 + 2, 'only the doubled face goes');
+  // A clean file is left as it was (no points added).
+  const [box] = importObj('v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\nf 5 6 7 8\nf 2 1 4 3\nf 1 5 8 4\nf 6 2 3 7\nf 8 7 3 4\nf 5 1 2 6\n');
+  assert.equal(box.mesh.verts.length, 8);
+  // Per-point data follows the copies.
+  const skinned = {verts: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1]], faces: [{v: [0, 1, 2], c: 0}, {v: [1, 0, 3], c: 0}, {v: [1, 0, 4], c: 0}], vdata: {skin: {0: [['hip', 1]], 1: [['leg', 1]]}}};
+  const report = M.repairImportedMesh(skinned);
+  assert.ok(validateMesh(skinned, quiet).ok); assert.equal(report.detached, 1);
+  const fin = skinned.faces[2].v;
+  assert.deepEqual(fin.slice(0, 2).map(i => skinned.vdata.skin[i]), [[['leg', 1]], [['hip', 1]]]);
 });

@@ -26,6 +26,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed 3D Nowdz showing "OBJ imported" while adding nothing. Models from games and other programs that break the mesh rules (doubled faces, three faces on one edge, mixed winding) are now repaired on import, and a file that still can't be read shows why.
 - Fixed 3D Nowdz drawing parts that pass through each other wrongly, such as hair through a head: each spot now shows the nearest surface.
 - Fixed stretched or resized 3D limbs pinching thin where two bones meet when they twist.
 - Fixed being unable to leave the Model tab without closing the app.

@@ -16,7 +16,7 @@
  * exporter, with the same weights the animation uses (partWeights).
  */
 import {evaluatePart} from './model.mjs';
-import {add, sub, scale, normalize, cross, length, triangulate, vertexNormals, mergeByDistance, recalculateNormals} from './mesh.mjs';
+import {add, sub, scale, normalize, cross, length, triangulate, vertexNormals, recalculateNormals, repairImportedMesh} from './mesh.mjs';
 import {partWeights, boneOrder} from './armature.mjs';
 import * as X from './matrix.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
@@ -189,9 +189,10 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
   }
   if (!parts.length) fail('it has no triangle meshes');
   // Files split points along UV and normal seams; weld them back so the surface
-  // is one piece, then check it as any edit is checked.
+  // is one piece, split apart anything that breaks the rules, then check it as
+  // any edit is checked.
   for (const p of parts) {
-    try { mergeByDistance(p.mesh, 1e-6); } catch (error) { if (!(error instanceof TopologyError)) throw error; }
+    repairImportedMesh(p.mesh, {weld: 1e-6});
     try { recalculateNormals(p.mesh); }
     catch (error) {
       if (!(error instanceof TopologyError)) throw error;

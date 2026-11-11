@@ -2,7 +2,7 @@
  * Blender and other tools. Groups (`o`/`g`) become parts; materials (`usemtl`)
  * become palette colors when a companion MTL's `Kd` is given. */
 import {evaluatePart} from './model.mjs';
-import {recalculateNormals} from './mesh.mjs';
+import {recalculateNormals, repairImportedMesh} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 
 /** The model's evaluated parts (mirror and smooth applied) as OBJ text, plus an MTL for colors. */
@@ -59,9 +59,11 @@ export function importObj(text, {mtl = '', palette = []} = {}) {
   }
   const out = parts.filter(p => p.mesh.faces.length).map(p => ({name: p.name, mesh: p.mesh}));
   if (!out.length) throw new Error('This OBJ file has no faces.');
-  // Imported parts must follow the topology rules; inconsistent winding is the one
-  // problem fixed on the way in. Anything else is reported in full and refused.
+  // Imported parts must follow the topology rules. Files from games and other
+  // programs often break them (doubled faces, fins, mixed winding, bow-ties), so
+  // those are split apart on the way in; anything still wrong is refused in full.
   for (const p of out) {
+    repairImportedMesh(p.mesh, {weld: 1e-6});
     try { recalculateNormals(p.mesh); }
     catch (error) {
       if (!(error instanceof TopologyError)) throw error;

@@ -187,8 +187,8 @@ glTF 2.0 specification:
 - Each mesh becomes a part. Triangles of all its primitives come in at the rest
   pose: a skinned mesh is placed with the file's own joint matrices and inverse
   bind matrices (the skinning sum), others by their node's world matrix. Points
-  the file split along UV or normal seams are welded back (merge by distance
-  1e-6), winding is made consistent, and the result is checked like any edit.
+  the file split along UV or normal seams are welded back (1e-6), the file is
+  repaired (`repairImportedMesh`, below), and the result is checked like any edit.
   Triangles stay triangles (Tris to quads, Alt+J, joins them).
 - Base colour factors become palette colours (sRGB). Textures, morph targets,
   animations and compressed files (Draco, meshopt) aren't read; a file that
@@ -340,7 +340,15 @@ Three rules keep every model valid, whatever the tool or file it came from.
    the reason in the status line, and the report is printed to the console.
    Opening a stored model, importing OBJ, joining and separating parts, and
    adding the evaluated (mirrored, smoothed) parts to an animation are checked
-   the same way.
+   the same way. Imports (OBJ and glTF) are repaired first by
+   `repairImportedMesh` (src/modeler/mesh.mjs), because files from games and
+   other programs routinely break these rules where Blender would accept them:
+   points at the same place (1e-6) are welded, doubled faces dropped, a face
+   that would be the third on an edge (a fin) or that cannot agree in winding
+   with its neighbours (a Möbius strip) gets its own copies of that edge's
+   points, bow-ties are split, and unused points go. Per-point data (bone
+   weights) follows the copies. Only what is still wrong after that is refused,
+   and the status line then shows the reason, never "imported".
 3. **`validateMesh(mesh, options)`** (src/modeler/topology.mjs), a standalone
    helper. Meshes are stored as a face-vertex list; it builds the half-edge view
    (one half-edge per face corner, twins found by reversing) and checks what a
