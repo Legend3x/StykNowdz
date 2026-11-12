@@ -55,6 +55,7 @@ export default Object.freeze({
   "app.branchSelectedCopyOrEditTheCompleteBranch": "Branch selected — copy or edit the complete branch",
   "app.imported": "Imported {value}",
   "app.opened": "Opened {value}{value2}",
+  "app.repairedJoinLoops": "Repaired figures joined in a loop in {count} movieclip frames. Check the movieclips’ joined figures.",
   "app.chooseAParentJointForTheCopyEsc": "Choose a parent joint for the copy · Esc to cancel",
   "app.chooseAnAttachmentJointEscToCancel": "Choose an attachment joint · Esc to cancel",
   "app.importingImage": "Importing image…",

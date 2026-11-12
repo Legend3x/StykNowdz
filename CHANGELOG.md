@@ -31,6 +31,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed movieclips made while another layer had figures joining their figures to the wrong part (or to itself), which could stop the project from opening with “Figures contain a cyclic join.” Such projects now open with their movieclips repaired.
 - Fixed the 3D Nowdz knife refusing to cut across a pushed-in panel or step.
 - Fixed 3D Nowdz automatic weights locking a leg made in one piece to the thigh so it couldn't bend at the knee, and hair or quills at the back of the head following the chest or an arm.
 - Fixed 3D Nowdz showing "OBJ imported" while adding nothing. Models from games and other programs that break the mesh rules (doubled faces, three faces on one edge, mixed winding) are now repaired on import, and a file that still can't be read shows why.

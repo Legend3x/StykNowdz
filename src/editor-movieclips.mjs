@@ -21,9 +21,14 @@ function at(report,tick){
   const row=rows[low];return evaluatedFrame(report,low,row.count?(tick-row.start)/row.count:0,tick);
 }
 function filteredFrame(frame,selected){
-  const source=frame.objects,objects=source.filter(o=>selected.has(o.unique_id)).map(object=>{
-    const next=clone(object);delete next.runtime_segments;delete next._movieclipSample;
-    if(next.join)next.join.target_unique_id=source[next.join.target_object_slot]?.unique_id;
+  // Joins are renumbered for the kept figures: normalizeFrame reads join
+  // slots, so slots still counting figures left out would join each figure to
+  // the wrong one (or to itself) whenever an unselected figure came first.
+  const source=frame.objects,kept=source.filter(o=>selected.has(o.unique_id)),slotOf=new Map(kept.map((o,i)=>[o.unique_id,i]));
+  const objects=kept.map((object,slot)=>{
+    const next=clone(object);delete next.runtime_segments;delete next._movieclipSample;next.object_slot=slot;
+    if(next.join){const target=source[next.join.target_object_slot]?.unique_id;
+      next.join=slotOf.has(target)?{...next.join,target_unique_id:target,target_object_slot:slotOf.get(target)}:null;}
     return next;
   });
   const result={...frame,objects,camera:{is_default:true,x:0,y:0,angle_rad:0,scale:1},background_id:0,background_id_b:0,background_mix:0};
@@ -305,6 +310,9 @@ export const editorMovieclipMethods={
           if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), "errors.editorMovieclips.selectedFiguresOverlapOtherFiguresInTheStacking", {});
           for(const object of frame.objects)if(object.join)object.join.target_unique_id=frame.objects[object.join.target_object_slot]?.unique_id;
           frame.objects=frame.objects.filter(o=>!selected.has(o.unique_id));frame.objects.push(clone(instance));
+          // Renumber the joins left behind before normalizeFrame reads their slots.
+          const slots=new Map(frame.objects.map((object,slot)=>[object.unique_id,slot]));
+          for(const object of frame.objects)if(object.join)object.join.target_object_slot=slots.get(object.join.target_unique_id);
           const next=order.filter(id=>!selected.has(id));next.splice(Math.max(0,insertAt),0,uid);setOrder(frame,next);normalizeFrame(frame);this._selectIds([uid]);
         },{structural:true});
       }

@@ -97,3 +97,22 @@ test('a locked replacement layer rejects creation without publishing a partial d
   assert.throws(()=>e.createMovieclip({start:3,end:17}),/Unlock/);
   assert.deepEqual(e.serialize(),before);assert.equal(e._undo.length,history);assert.equal(e.historySize,bytes);
 });
+
+test('capture and convert keep joins on the right figure when unselected figures come first',()=>{
+  // An unrelated figure (1) before a joined pair (3 hangs from 2), and another
+  // joined pair (5 from 4) after it. Capturing 2 leaves 1 out of the clip; the
+  // clip's joins must still point at the figure they hung from (not one slot
+  // on, which joined figures to themselves and made the project unopenable).
+  const document=emptyDocument(),figure=document.figure_types[0],join=(slot,uid)=>({join:{target_object_slot:slot,target_unique_id:uid,target_handle_id:0}});
+  document.keyframes=[createFrame([createObject(figure,1,60,200),createObject(figure,2,200,200),createObject(figure,3,0,0,join(1,2)),createObject(figure,4,400,200),createObject(figure,5,0,0,join(3,4))],1)];
+  const e=new Editor({demo:false,layerTimeline:true}).load(document);
+  e.seek(0);e.select(2);e.createMovieclip({start:0,end:1});
+  const clip=e.report.figure_types.find(f=>movieclipAsset(f)),frame=movieclipAsset(clip).document.keyframes[0];
+  const uidAt=slot=>frame.objects[slot]?.unique_id,joined=frame.objects.filter(o=>o.join).map(o=>[o.unique_id,uidAt(o.join.target_object_slot),o.join.target_unique_id]);
+  assert.deepEqual(frame.objects.map(o=>o.unique_id),[2,3]);
+  assert.deepEqual(joined,[[3,2,2]]);
+  // The figures left on the stage keep their joins too.
+  const stage=e.report.keyframes[0].objects,five=stage.find(o=>o.unique_id===5);
+  assert.equal(stage[five.join.target_object_slot].unique_id,4);
+  assert.equal(five.join.target_unique_id,4);
+});

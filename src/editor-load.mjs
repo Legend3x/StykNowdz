@@ -11,6 +11,7 @@ import {internPoseSequencesSteps} from './pose-sequences.mjs';
 import {expandPoseSequencesSteps} from './pose-sequence-storage.mjs';
 import {validateMovieclipGraph, movieclipAsset,movieclipSourceDocument,normalizeLegacyMovieclips,movieclipTypes} from './movieclips.mjs';
 import {continuations} from './movieclip-presence.mjs';
+import {repairJoinLoops} from './movieclip-join-repair.mjs';
 import {nativeTimeline,timeline} from './pivot/geometry.mjs';
 import {validateLayerSheet,legacySheetReport} from './layer-sheet.mjs';
 import {validateAudioState, validateAudioAssetSteps} from './audio-model.mjs';
@@ -36,14 +37,16 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
   // Simple's stored-frame/export view represents the original zero-key file.
   const empty=report && Array.isArray(report.keyframes) && report.keyframes.length===0;
   if (empty) report.keyframes=[createFrame([],1)];
+  // Joins that loop (stored by earlier movieclip captures) are repaired rather than refusing the project.
+  let repairedJoins=repairJoinLoops(report);
   yield* validateSceneSteps(report,{sliceMs});
   validateDrawings(report);
   if(report._styk?.audio){for(const asset of Object.values(report._styk.audio.assets??{}))yield* validateAudioAssetSteps(asset);validateAudioState(report._styk.audio);}
   const movieclipSource=movieclipSourceDocument(report);
-  if(movieclipSource&&!movieclipVisited.has(movieclipSource))yield* prepareEditorLoadSteps(movieclipSource,{sliceMs,movieclipVisited});
+  if(movieclipSource&&!movieclipVisited.has(movieclipSource))repairedJoins+=(yield* prepareEditorLoadSteps(movieclipSource,{sliceMs,movieclipVisited})).repairedJoins;
   for (const figure of report.figure_types) {
     const asset = movieclipAsset(figure);
-    if (asset && !movieclipVisited.has(asset.document)) yield* prepareEditorLoadSteps(asset.document,{sliceMs,movieclipVisited});
+    if (asset && !movieclipVisited.has(asset.document)) repairedJoins+=(yield* prepareEditorLoadSteps(asset.document,{sliceMs,movieclipVisited})).repairedJoins;
   }
   const layers=ensureLayerState(report);
   yield* validateLayerStateSteps(layers);
@@ -115,7 +118,7 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
     frame._styk={...frame._styk,frameId:id};
     if (++work % 256===0) yield {phase:'identities',checked:work};
   }
-  return {report,nextFrameIdentity,nextUid,layerUidCounts,layerSeenUids,layerGroups,figureNames,tracks};
+  return {report,nextFrameIdentity,nextUid,layerUidCounts,layerSeenUids,layerGroups,figureNames,tracks,repairedJoins};
 }
 
 export function prepareEditorLoad(document) {
