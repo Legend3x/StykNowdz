@@ -8,7 +8,9 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
-- 3D Nowdz Build mode builds characters from 3D lines, like Styk Builder: each line is a capsule, tube, box, ball or ribbon you can taper, bulge, squash and twist, and every line is a bone, so the character poses as soon as it's added.
+- 3D Nowdz Build mode builds characters from 3D lines, like Styk Builder, with Build's tools and segment shapes (Stick Nodes shapes included) plus planes for hair. Every line is a bone, so the character poses as soon as it's added.
+- Bend 3D Nowdz lines by right-dragging them, as in Build, and shape them with sliders.
+- 3D Nowdz Poly fill works like Pivot's: click joints around an area to fill it with a rounded body that matches the thickness and curves of the lines around it.
 - Build body parts, hair and accessories as separate pieces in 3D Nowdz and snap them onto a joint; mark a line static to have it move with the line above it.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).

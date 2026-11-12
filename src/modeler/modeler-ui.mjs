@@ -191,7 +191,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }));
   // Build mode (3D stick building): its interaction and panel live in stick-build.mjs.
   const stick = createStickBuild({S, model: () => model, frame: () => frame, commit, refresh: () => refresh(), draw: () => draw(), toast: text => toast(text), t, el, section, field, vector, actions, colorRow, segmented: (...a) => segmented(...a),
-    button: (label, fn, options) => button(label, fn, options), screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
+    button: (label, fn, options) => button(label, fn, options), glyph, screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
+  stage.append(stick.rail);
   /** The darkest palette colour, for new outlines. */
   const inkColor = () => model.palette.reduce((best, c, i) => c[0] + c[1] + c[2] < model.palette[best].reduce((a, v) => a + v, 0) ? i : best, 0);
   const setOutline = (targets, on) => { if (on) S.toonPreview = true; commit(() => { for (const q of targets) q.outline = {...(q.outline ?? {thickness: OUTLINE_DEFAULTS.thickness, color: inkColor()}), on}; }); };
@@ -267,7 +268,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (p && S.parts.size === 1 && p.stick != null) {
         // A part made from a line: its shape and place come from the line (Build mode); its look is set here.
         blocks.push(section(t("modeler.part"), [el('p', {class: 'modeler-hint', text: t("modeler.stickPartHint")}),
-          actions([[t("modeler.stickShapeInBuild"), () => { S.stick.line = p.stick; S.stick.joint = null; setMode('build'); }]])]));
+          actions([[t("modeler.stickShapeInBuild"), () => { const fill = Boolean(K.fillOf(model.sticks, p.stick)); S.stick.line = fill ? null : p.stick; S.stick.fill = fill ? p.stick : null; S.stick.joint = null; setMode('build'); }]])]));
         blocks.push(section(t("modeler.partLook"), partLook(p)));
       } else if (p && S.parts.size === 1) {
         blocks.push(section(t("modeler.part"), [
@@ -386,7 +387,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Hidden points can't stay selected.
     const hide = S.mode === 'edit' ? activePart()?.mesh.vdata?.hide : null;
     if (hide && S.verts.size) for (const v of S.verts) if (hide[v]) S.verts.delete(v);
-    renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); draw();
+    renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); stick.sync(); draw();
   }
   /** Edit mode H / Shift+H / Alt+H, as Blender: hide the selection, hide everything
    * else, or show all again (selecting what comes back). Only shape is unaffected. */
@@ -1279,7 +1280,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       commit(() => {
         const lines = model.parts.filter(p => S.parts.has(p.id) && p.stick != null).map(p => p.stick);
         model.parts = model.parts.filter(p => !S.parts.has(p.id) || p.stick != null);
-        if (lines.length) { for (const id of lines) K.deleteLine(model.sticks, id); K.generateSticks(model); S.cache.clear(); }
+        if (lines.length) { for (const id of lines) { if (K.fillOf(model.sticks, id)) K.deleteFill(model.sticks, id); else K.deleteLine(model.sticks, id); } K.generateSticks(model); S.cache.clear(); }
         S.parts = new Set(); S.active = model.parts[0]?.id ?? null;
       });
     } else if (S.mode === 'edit') {
@@ -1587,7 +1588,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('div', {class: 'modeler-controls-grid'}, [
         group(t("modeler.controlsLook"), [[t("modeler.keysOrbitKeys"), t("modeler.keysOrbit")], [t("modeler.keysPanKeys"), t("modeler.keysPan")], [t("modeler.keysWheel"), t("modeler.keysZoom")], ['Numpad 1 / 3 / 7', t("modeler.keysViews")], ['Numpad .', t("modeler.frameSelected")]]),
         group(t("modeler.controlsSelect"), [[t("modeler.keysClickKeys"), t("modeler.keysClick")], ['A', t("modeler.selectAll")], ['Tab', t("modeler.keysTabBuild")]]),
-        group(t("modeler.controlsBuild"), [[t("modeler.keysDrawLineKeys"), t("modeler.keysDrawLine")], [t("modeler.keysNewPieceKeys"), t("modeler.keysNewPiece")], ['V', t("modeler.stickMove")], ['1 – 5', t("modeler.keysShapes")], ['Alt+drag', t("modeler.keysJointAlone")], ['M', t("modeler.stickMirror")], ['X / Delete', t("modeler.deleteSelected")], ['G / R / S', t("modeler.keysTransformParts")]]),
+        group(t("modeler.controlsBuild"), [[t("modeler.keysDrawLineKeys"), t("modeler.keysDrawLine")], [t("modeler.keysNewPieceKeys"), t("modeler.keysNewPiece")], ['V L C P H', t("modeler.keysTools")], ['Right-drag', t("modeler.keysBend")], ['Enter', t("modeler.keysFillClose")], ['Alt+drag', t("modeler.keysJointAlone")], ['M', t("modeler.stickMirror")], ['X / Delete', t("modeler.deleteSelected")], ['G / R / S', t("modeler.keysTransformParts")]]),
         group(t("modeler.controlsBones"), [[t("modeler.keysDragKeys"), t("modeler.keysDrag")], [t("modeler.keysStretchKeys"), t("modeler.keysStretch")], ['E', t("modeler.extrudeBone")], ['Ctrl+Z', t("modeler.undo")]])]),
       el('div', {class: 'modeler-controls-foot'}, [el('label', {class: 'modeler-check'}, [hide, t("modeler.controlsHide")]), ok])]);
     controls = el('div', {class: 'modeler-controls', onpointerdown: e => { if (e.target === controls) closeControls(); }}, [card]);
@@ -1663,7 +1664,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     const orbit = e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey && S.mode !== 'edit');
     canvas.setPointerCapture(e.pointerId);
+    // Build: right-drag (or Alt+right-drag) on a line bends it, as in Build; elsewhere it orbits.
+    if (e.button === 2 && S.mode === 'build' && !e.shiftKey) { const handler = stick.bendPress(p); if (handler) { drag = {kind: 'stick', handler, last: p}; e.preventDefault(); return; } }
     if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p}; e.preventDefault(); return; }
+    if (e.button === 0 && S.mode === 'build' && S.stick.tool === 'hand') { drag = {kind: 'pan', last: p}; return; }
     if (e.button === 0 && S.mode === 'build') { const handler = stick.press(p, e); drag = handler ? {kind: 'stick', handler, last: p} : null; return; }
     if (e.button === 0) drag = {kind: 'press', start: p, last: p, event: e, hit: e.shiftKey || (e.altKey && S.mode === 'edit') ? null : pick(p.x, p.y)};
   }, {signal});
@@ -1676,6 +1680,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'loopslide') { S.modal.mouse = p; applyLoopSlide(); return; }
     if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
+    if (!drag && S.mode === 'build' && S.stick.fillDraft?.length) { draw(); return; }
     if (!drag) return;
     if (drag.kind === 'stick') { drag.handler.move(p, e); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
