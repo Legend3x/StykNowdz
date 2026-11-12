@@ -4,6 +4,7 @@
 import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, vertexNormals, VDATA_KEYS} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
+import {readSticks} from './sticks.mjs';
 
 export const MODEL_VERSION = 1;
 export const SMOOTH_MAX = 3;
@@ -77,6 +78,10 @@ export function readModel(value) {
   model.palette = Array.isArray(model.palette) && model.palette.length ? model.palette : DEFAULT_PALETTE.map(c => c.slice());
   model.references = Array.isArray(model.references) ? model.references : [];
   for (const ref of model.references) if (ref && typeof ref === 'object' && ref.flip !== true) delete ref.flip;
+  // 3D stick building: the joints and lines the stick parts and bones are made from.
+  if (model.sticks !== undefined) { const sticks = readSticks(model.sticks, model.palette.length); if (sticks) model.sticks = sticks; else delete model.sticks; }
+  const stickLines = new Set(model.sticks?.lines.map(l => l.id) ?? []);
+  for (const item of [...model.parts, ...model.bones]) if (item.stick !== undefined && !stickLines.has(item.stick)) delete item.stick;
   model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1));
   return model;
 }

@@ -9,6 +9,8 @@ import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX}
 import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
+import {createStickBuild} from './stick-build.mjs';
+import * as K from './sticks.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
@@ -50,13 +52,13 @@ const rgbOf = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
 export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose} = {}) {
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
-  const S = {mode: 'object', selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
+  const S = {mode: model.parts.length && !model.sticks ? 'object' : 'build', selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
     depth: createDepthPass(), camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
 
   // ---------- history ----------
   const snapshot = () => JSON.stringify({model, parts: [...S.parts], active: S.active, verts: [...S.verts], bones: [...S.bones], mode: S.mode});
-  const restore = text => { const v = JSON.parse(text); model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode; S.cache.clear(); syncRefs(); refresh(); };
+  const restore = text => { const v = JSON.parse(text); model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode === 'edit' ? 'object' : v.mode; S.cache.clear(); syncRefs(); stick?.tidy(); refresh(); };
   /** Run a change as one undo step. A change that would break a mesh is
    * refused: the model goes back to how it was, the full topology report is
    * printed to the console, and the reason shows in the status line. */
@@ -127,8 +129,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const badge = el('span', {class: 'modeler-title-badge'}); badge.append(glyph('ws-model'));
     header.replaceChildren(...[
       el('strong', {class: 'modeler-title'}, [badge, t("modeler.title")]),
-      segmented([['object', t("modeler.objectMode"), t("modeler.objectModeHint")], ['edit', t("modeler.editMode"), t("modeler.editModeHint")], ['bones', t("modeler.bonesMode"), t("modeler.bonesModeHint")]], S.mode, setMode),
-      S.mode === 'edit' ? segmented([['vert', t("modeler.vertices"), '1'], ['edge', t("modeler.edges"), '2'], ['face', t("modeler.faces"), '3']], S.selectMode, m => { S.selectMode = m; refresh(); }) : null,
+      segmented([['build', t("modeler.buildMode"), t("modeler.buildModeHint")], ['object', t("modeler.objectMode"), t("modeler.objectModeHint")], ['bones', t("modeler.bonesMode"), t("modeler.bonesModeHint")]], S.mode, setMode),
       el('span', {class: 'modeler-gap'}),
       ...[['grab', t("modeler.move"), 'G', t("modeler.moveHint")], ['rotate', t("modeler.rotate"), 'R', t("modeler.rotateHint")], ['scale', t("modeler.scale"), 'S', t("modeler.scaleHint")]].map(([kind, label, key, title]) => {
         const b = button(label, () => startTransform(kind), {icon: key, title}); b.classList.add('modeler-transform'); return b; }),
@@ -188,6 +189,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const b = el('button', {type: 'button', class: 'modeler-swatch', 'aria-pressed': String(i === selected), title: t("modeler.outlineColorIndex", {index: i + 1}), onclick: () => onpick(i)}, [el('span', {class: 'modeler-swatch-fill'})]);
     b.firstChild.style.background = hex(c); return b;
   }));
+  // Build mode (3D stick building): its interaction and panel live in stick-build.mjs.
+  const stick = createStickBuild({S, model: () => model, frame: () => frame, commit, refresh: () => refresh(), draw: () => draw(), toast: text => toast(text), t, el, section, field, vector, actions, colorRow, segmented: (...a) => segmented(...a),
+    button: (label, fn, options) => button(label, fn, options), screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
   /** The darkest palette colour, for new outlines. */
   const inkColor = () => model.palette.reduce((best, c, i) => c[0] + c[1] + c[2] < model.palette[best].reduce((a, v) => a + v, 0) ? i : best, 0);
   const setOutline = (targets, on) => { if (on) S.toonPreview = true; commit(() => { for (const q of targets) q.outline = {...(q.outline ?? {thickness: OUTLINE_DEFAULTS.thickness, color: inkColor()}), on}; }); };
@@ -251,11 +255,21 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     ];
   }
 
+  /** Start: a ready-made character, a shape, or a finished example. */
+  const startSection = () => section(t("modeler.start"), [el('p', {class: 'modeler-hint', text: model.parts.length ? t("modeler.clickAPart") : t("modeler.startHint")}),
+    actions([[t("modeler.baseCharacter"), addBaseCharacter, t("modeler.baseCharacterHint")], [t("modeler.cube"), () => addPrimitive('cube')], [t("modeler.sphere"), () => addPrimitive('sphere')]]),
+    el('p', {class: 'modeler-hint', text: t("modeler.examplesHint")}),
+    actions(EXAMPLES.map(([id, label, hint]) => [t(label), () => openExample(id), t(hint)]))]);
   function renderProps() {
     const blocks = [];
     const p = activePart();
     if (S.mode === 'object') {
-      if (p && S.parts.size === 1) {
+      if (p && S.parts.size === 1 && p.stick != null) {
+        // A part made from a line: its shape and place come from the line (Build mode); its look is set here.
+        blocks.push(section(t("modeler.part"), [el('p', {class: 'modeler-hint', text: t("modeler.stickPartHint")}),
+          actions([[t("modeler.stickShapeInBuild"), () => { S.stick.line = p.stick; S.stick.joint = null; setMode('build'); }]])]));
+        blocks.push(section(t("modeler.partLook"), partLook(p)));
+      } else if (p && S.parts.size === 1) {
         blocks.push(section(t("modeler.part"), [
           el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.name")}), el('input', {type: 'text', value: p.name, maxlength: '120', onchange: e => commit(() => { p.name = e.target.value.trim() || p.name; })})]),
           vector(t("modeler.position"), p.position, (k, v) => commit(() => { p.position[k] = v; S.cache.delete(p.id); })),
@@ -274,10 +288,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         blocks.push(section(t("modeler.partLook"), partLook(p)));
       } else if (S.parts.size > 1) blocks.push(section(t("modeler.parts"), [el('p', {class: 'modeler-hint', text: t("modeler.partsSelected", {count: S.parts.size})}),
         actions([[t("modeler.joinParts"), joinParts, t("modeler.joinPartsHint")]])]));
-      else blocks.push(section(t("modeler.start"), [el('p', {class: 'modeler-hint', text: model.parts.length ? t("modeler.clickAPart") : t("modeler.startHint")}),
-        actions([[t("modeler.baseCharacter"), addBaseCharacter, t("modeler.baseCharacterHint")], [t("modeler.cube"), () => addPrimitive('cube')], [t("modeler.sphere"), () => addPrimitive('sphere')]]),
-        el('p', {class: 'modeler-hint', text: t("modeler.examplesHint")}),
-        actions(EXAMPLES.map(([id, label, hint]) => [t(label), () => openExample(id), t(hint)]))]));
+      else blocks.push(startSection());
     } else if (S.mode === 'edit' && p) {
       const mesh = p.mesh, faces = M.facesFromVerts(mesh, S.verts);
       blocks.push(section(t("modeler.editing", {name: p.name}), [
@@ -317,17 +328,19 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('p', {class: 'modeler-hint', text: t("modeler.bonesHint")})]));
       if (bone) blocks.push(section(t("modeler.bone"), [
         el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.name")}), el('input', {type: 'text', value: bone.name, maxlength: '80', onchange: e => commit(() => { bone.name = e.target.value.trim() || bone.name; })})]),
-        el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.parent")}), el('select', {onchange: e => commit(() => { bone.parent = Number(e.target.value); })},
+        bone.stick != null ? null : el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.parent")}), el('select', {onchange: e => commit(() => { bone.parent = Number(e.target.value); })},
           [el('option', {value: '0', text: t("modeler.none")}), ...model.bones.filter(b => b.id !== bone.id).map(b => el('option', {value: String(b.id), text: b.name, selected: bone.parent === b.id}))])]),
-        vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
-        actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]]),
+        ...(bone.stick != null ? [el('p', {class: 'modeler-hint', text: t("modeler.stickBoneHint")})] : [
+          vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
+          actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]])]),
         el('label', {class: 'modeler-check', title: t("modeler.faceBoneHint")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e => commit(() => { setFace(bone, e.target.checked ? faceOf(bone) : null); S.cache.clear(); })}), t("modeler.faceBone")]),
         bone.face ? field(t("modeler.faceReach"), bone.reach, v => commit(() => { setFace(bone, {...faceOf(bone), reach: v}); S.cache.clear(); }), {step: .01, min: 0}) : null,
         bone.face ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.faceCutHint")}, [el('span', {text: t("modeler.faceCut")}), el('select', {onchange: e => commit(() => { setFace(bone, {...faceOf(bone), cut: e.target.value}); S.cache.clear(); })},
           ['', ...FACE_CUTS].map(c => el('option', {value: c, text: t(c ? `modeler.faceCut.${c}` : "modeler.faceCut.none"), selected: (bone.cut ?? '') === c})))]) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.sideNamesHint")})]));
     }
-    if (S.mode === 'object') blocks.push(section(t("modeler.toonLook"), toonLook()));
+    if (S.mode === 'build') { blocks.push(...stick.props()); if (!model.parts.length) blocks.push(startSection()); }
+    if (S.mode === 'object' || S.mode === 'build') blocks.push(section(t("modeler.toonLook"), toonLook()));
     blocks.push(section(t("modeler.view"), [
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.toonPreview, onchange: e => { S.toonPreview = e.target.checked; refresh(); }}), t("modeler.toonPreview")]),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.wire, onchange: e => { S.wire = e.target.checked; refresh(); }}), t("modeler.wireframe")]),
@@ -363,7 +376,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
       : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '') + (m.typed ? ` · ${t("modeler.typedValue", {value: m.typed})}` : '')
       : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'bevel' ? t("modeler.bevelStatus", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind === 'knife' ? t("modeler.knifeStatus", {count: m.path.length}) : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
-      : S.mode === 'edit' ? t("modeler.editStatus") : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
+      : S.mode === 'build' ? (S.stick?.attachPick ? t("modeler.stickPickJoint") : t("modeler.buildStatus")) : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
     // Soft select: its radius, which the scroll wheel changes while moving.
     status.textContent = m?.target?.soft ? `${text} · ${t("modeler.softStatus", {radius: fmt(S.softRadius)})}` : text;
   }
@@ -436,6 +449,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'object') drawObjectOutline(ctx);
     if (S.mode === 'edit') drawCage(ctx);
     if (S.mode === 'bones' || S.showBones) drawBones(ctx);
+    if (S.mode === 'build') stick.drawOverlay(ctx);
     if (S.modal?.kind === 'loopcut' && S.modal.ring) drawRing(ctx, S.modal.ring, S.modal.cuts);
     if (S.modal?.kind === 'knife') drawKnife(ctx);
     if (S.modal?.box) drawBox(ctx, S.modal.box);
@@ -592,7 +606,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // ---------- modes and selection ----------
   function setMode(mode) {
     if (S.modal) cancelModal();
-    if (mode === 'edit' && !activePart()) { toast(t("modeler.selectAPartToEdit")); return; }
+    // Shapes are built from sticks here; there is no point-by-point mesh editing.
+    if (mode === 'edit') mode = 'build';
     S.mode = mode; S.hover = null;
     if (mode === 'edit') S.verts = new Set();
     refresh();
@@ -707,8 +722,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // ---------- transforms ----------
   /** World positions the transform moves, how to read and write them, and the pivot. */
   function transformTarget() {
+    if (S.mode === 'build') return null;
     if (S.mode === 'object') {
-      const parts = [...S.parts].map(part).filter(Boolean); if (!parts.length) return null;
+      const all = [...S.parts].map(part).filter(Boolean), parts = all.filter(p => p.stick == null);
+      if (all.length && !parts.length) { toast(t("modeler.stickPartHint")); return null; }
+      if (!parts.length) return null;
       const pivot = M.scale(parts.reduce((s, p) => M.add(s, p.position), [0, 0, 0]), 1 / parts.length);
       return {kind: 'parts', parts, start: parts.map(p => ({position: p.position.slice(), rotation: p.rotation.slice(), scale: p.scale.slice()})), pivot};
     }
@@ -723,6 +741,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Bones: a picked end moves alone; whole bones move both ends. Joints shared with
     // connected bones (a child's head on this tail) move together.
     const points = [];
+    if (model.bones.some(b => S.bones.has(b.id) && b.stick != null)) { toast(t("modeler.stickBoneHint")); return null; }
     for (const b of model.bones.filter(b => S.bones.has(b.id))) {
       const ends = S.bones.size === 1 && S.boneEnd ? [S.boneEnd] : ['head', 'tail'];
       for (const end of ends) {
@@ -1257,11 +1276,19 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function deleteSelection() {
     if (S.mode === 'object') {
       if (!S.parts.size) return;
-      commit(() => { model.parts = model.parts.filter(p => !S.parts.has(p.id)); S.parts = new Set(); S.active = model.parts[0]?.id ?? null; });
+      commit(() => {
+        const lines = model.parts.filter(p => S.parts.has(p.id) && p.stick != null).map(p => p.stick);
+        model.parts = model.parts.filter(p => !S.parts.has(p.id) || p.stick != null);
+        if (lines.length) { for (const id of lines) K.deleteLine(model.sticks, id); K.generateSticks(model); S.cache.clear(); }
+        S.parts = new Set(); S.active = model.parts[0]?.id ?? null;
+      });
     } else if (S.mode === 'edit') {
       const p = activePart(); if (!p || !S.verts.size) return;
       commit(() => { const faces = selectedFaces(p); if (S.selectMode === 'face' && faces.size) M.deleteFaces(p.mesh, faces); else M.deleteVerts(p.mesh, S.verts); S.verts = new Set(); S.cache.delete(p.id); });
-    } else if (S.bones.size) commit(() => { deleteBones(model, S.bones); S.bones = new Set(); });
+    } else if (S.bones.size) {
+      if (model.bones.some(b => S.bones.has(b.id) && b.stick != null)) { toast(t("modeler.stickBoneHint")); return; }
+      commit(() => { deleteBones(model, S.bones); S.bones = new Set(); });
+    }
   }
   function applyColor(index) {
     if (S.mode === 'edit') {
@@ -1319,6 +1346,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function duplicateParts() {
     if (S.mode === 'edit') return duplicateSelected();
     if (!S.parts.size) { toast(t("modeler.selectAPartFirst")); return; }
+    if ([...S.parts].some(id => part(id)?.stick != null)) { toast(t("modeler.stickPartHint")); return; }
     const before = snapshot();
     const copies = [...S.parts].map(id => { const p = part(id); return addPart(model, {...structuredClone(p), name: `${p.name} copy`}); });
     S.parts = new Set(copies.map(p => p.id)); S.active = copies[0].id; S.cache.clear();
@@ -1558,8 +1586,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('p', {class: 'modeler-controls-lede', text: t("modeler.controlsLede")}),
       el('div', {class: 'modeler-controls-grid'}, [
         group(t("modeler.controlsLook"), [[t("modeler.keysOrbitKeys"), t("modeler.keysOrbit")], [t("modeler.keysPanKeys"), t("modeler.keysPan")], [t("modeler.keysWheel"), t("modeler.keysZoom")], ['Numpad 1 / 3 / 7', t("modeler.keysViews")], ['Numpad .', t("modeler.frameSelected")]]),
-        group(t("modeler.controlsSelect"), [[t("modeler.keysClickKeys"), t("modeler.keysClick")], ['Alt+click', t("modeler.keysLoopSelect")], ['A', t("modeler.selectAll")], ['L', t("modeler.selectLinked")], ['Tab', t("modeler.keysTab")], ['1 2 3', t("modeler.keysSelectMode")]]),
-        group(t("modeler.controlsShape"), [['G / R / S', t("modeler.keysTransform")], ['G G', t("modeler.keysEdgeSlide")], ['X Y Z', t("modeler.keysAxis")], ['E', t("modeler.extrude")], ['Ctrl+click', t("modeler.keysAddPoint")], ['F', t("modeler.fill")], ['M', t("modeler.merge")], ['Ctrl+R', t("modeler.keysLoopCut")], ['O', t("modeler.softSelect")], ['X / Delete', t("modeler.deleteSelected")]]),
+        group(t("modeler.controlsSelect"), [[t("modeler.keysClickKeys"), t("modeler.keysClick")], ['A', t("modeler.selectAll")], ['Tab', t("modeler.keysTabBuild")]]),
+        group(t("modeler.controlsBuild"), [[t("modeler.keysDrawLineKeys"), t("modeler.keysDrawLine")], [t("modeler.keysNewPieceKeys"), t("modeler.keysNewPiece")], ['V', t("modeler.stickMove")], ['1 – 5', t("modeler.keysShapes")], ['Alt+drag', t("modeler.keysJointAlone")], ['M', t("modeler.stickMirror")], ['X / Delete', t("modeler.deleteSelected")], ['G / R / S', t("modeler.keysTransformParts")]]),
         group(t("modeler.controlsBones"), [[t("modeler.keysDragKeys"), t("modeler.keysDrag")], [t("modeler.keysStretchKeys"), t("modeler.keysStretch")], ['E', t("modeler.extrudeBone")], ['Ctrl+Z', t("modeler.undo")]])]),
       el('div', {class: 'modeler-controls-foot'}, [el('label', {class: 'modeler-check'}, [hide, t("modeler.controlsHide")]), ok])]);
     controls = el('div', {class: 'modeler-controls', onpointerdown: e => { if (e.target === controls) closeControls(); }}, [card]);
@@ -1589,6 +1617,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'bones') {
       let bone = model.bones.find(b => b.id === hit.bone), end = hit.end;
       if (!bone) return null;
+      if (bone.stick != null) { toast(t("modeler.stickBoneHint")); return null; }
       const parent = model.bones.find(b => b.id === bone.parent);
       // A joint shared with the parent belongs to the parent, as in a Pivot figure.
       if (end === 'head' && connected(bone, parent)) { bone = parent; end = 'tail'; }
@@ -1635,6 +1664,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const orbit = e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey && S.mode !== 'edit');
     canvas.setPointerCapture(e.pointerId);
     if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p}; e.preventDefault(); return; }
+    if (e.button === 0 && S.mode === 'build') { const handler = stick.press(p, e); drag = handler ? {kind: 'stick', handler, last: p} : null; return; }
     if (e.button === 0) drag = {kind: 'press', start: p, last: p, event: e, hit: e.shiftKey || (e.altKey && S.mode === 'edit') ? null : pick(p.x, p.y)};
   }, {signal});
   canvas.addEventListener('pointermove', e => {
@@ -1647,6 +1677,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
     if (!drag) return;
+    if (drag.kind === 'stick') { drag.handler.move(p, e); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
     if (drag.kind === 'orbit') { S.camera.yaw -= dx * .008; S.camera.pitch = Math.max(-1.55, Math.min(1.55, S.camera.pitch + dy * .008)); S.camera.ortho = false; draw(); }
     else if (drag.kind === 'pan') { const u = frame.unitsPerPixel(S.camera.target); S.camera.target = M.add(S.camera.target, M.add(M.scale(frame.right, -dx * u), M.scale(frame.up, dy * u))); draw(); }
@@ -1660,6 +1691,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('pointerup', e => {
     if (!drag) return;
     const d = drag; drag = null;
+    if (d.kind === 'stick') { d.handler.up(local(e), e); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
     else if (d.kind === 'press') clickSelect(d.start.x, d.start.y, e);
     else if (d.kind === 'box') { const box = S.modal?.box; S.modal = null; if (box) boxSelect(box, e.shiftKey); }
@@ -1723,8 +1755,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (key === 'k' && !ctrl && S.mode === 'edit' && !S.modal) startKnife();
     else if (ctrl && key === 'l') { if (S.mode === 'edit' && activePart()) { S.verts = M.linkedVerts(activePart().mesh, S.verts); refresh(); } }
     else if (ctrl && (key === '+' || key === '=')) { if (S.mode === 'edit' && activePart()) { S.verts = M.growSelection(activePart().mesh, S.verts); refresh(); } }
+    // Build mode has its own keys (tools, delete, mirror); views, Tab and ? work as everywhere.
+    else if (S.mode === 'build' && !ctrl && !e.code?.startsWith('Numpad') && !['Tab', '.', '?'].includes(key)) handled = stick.keydown(e);
     else if (ctrl) handled = false;
-    else if (key === 'Tab') setMode(S.mode === 'edit' ? 'object' : 'edit');
+    else if (key === 'Tab') setMode(S.mode === 'build' ? 'object' : 'build');
     else if (key === 'g') startTransform('grab');
     else if (key === 'r') startTransform('rotate');
     else if (key === 's') startTransform('scale');

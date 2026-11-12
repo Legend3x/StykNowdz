@@ -1,8 +1,7 @@
 /**
  * Browser test of the 3D Nowdz workspace (src/modeler/modeler-ui.mjs): the
  * Start > Examples models, numbers typed during a move, rotate or scale (as in
- * Blender: G Z 0.5, R 90, S 1.5), and Inset and Bevel staying adjustable in the
- * Adjust Last Operation panel.
+ * Blender: G Z 0.5, R 90, S 1.5), and building with 3D lines in Build mode.
  * Serve the repository (node scripts/serve.mjs --port 47832) and run
  * `node tests/modeler.browser.mjs`; STYK_URL overrides the address.
  */
@@ -64,22 +63,28 @@ try {
     assert.deepEqual(result, {moved: [-1, 0, .5], rotation: [0, 0, +(Math.PI / 2).toFixed(6)], scale: [3, 3, 3]});
   });
 
-  await step('Inset and Bevel can be changed afterwards in the panel', async () => {
-    const result = await page.evaluate(async () => {
-      press('Tab'); await wait(50);
-      const part = () => m.model.parts.find(q => q.id === m.state.active), field = () => [...document.querySelectorAll('.modeler-last-op input')];
-      m.state.verts = new Set(part().mesh.verts.map((v, i) => v[2] > .499 ? i : -1).filter(i => i >= 0)); m.refresh();
-      press('i'); press('Enter'); await wait(50);
-      const width = () => Math.max(...[...m.state.verts].map(i => Math.abs(part().mesh.verts[i][0])));
-      const inset = m.state.lastOp?.kind, wide = width();
-      field()[0].value = '0.5'; field()[0].dispatchEvent(new Event('change')); await wait(50);
-      const narrow = width();
-      press('a'); press('b', {ctrlKey: true}); press('Enter'); await wait(50);
-      const bevel = m.state.lastOp?.kind, faces = part().mesh.faces.length;
-      field()[1].value = '3'; field()[1].dispatchEvent(new Event('change')); await wait(50);
-      return {inset, thinner: narrow < wide - .05, bevel, more: part().mesh.faces.length > faces, valid: allValid()};
+  await step('Build mode: drag lines from joints, a ball, mirror, a piece attached, bones ready', async () => {
+    const sp = w => page.evaluate(w => m.screenPoint(w), w);
+    const drag = async (w0, w1) => { const a = await sp(w0), b = await sp(w1); await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2); await page.mouse.move(b.x, b.y); await page.mouse.up(); };
+    await page.evaluate(async () => { m.setMode('object'); button('Start over')?.click(); await wait(50); button('Replace')?.click(); m.model.parts = []; m.model.bones = []; delete m.model.sticks; m.setMode('build'); m.setView('front'); Object.assign(m.state.camera, {target: [0, 1, 0], dist: 3}); m.refresh(); await wait(50); });
+    await drag([0, 1, 0], [0, 1.4, 0]); // a new piece: the body
+    await drag([0, 1.4, 0], [.25, 1.1, 0]); // an arm from the chest
+    await page.evaluate(() => press('4')); await drag([0, 1.4, 0], [0, 1.8, 0]); // Ball tool: the head
+    await page.evaluate(() => { const s = m.model.sticks; m.state.stick.line = s.lines[1].id; m.refresh(); press('m'); });
+    await page.evaluate(() => press('5')); await drag([1, 1.8, 0], [1, 1.4, 0]); // a ribbon piece on the side
+    const attach = await page.evaluate(async () => {
+      const row = [...document.querySelectorAll('.modeler-piece-row')].at(-1); [...row.querySelectorAll('button')].find(x => x.textContent === 'Attach').click(); await wait(20);
+      return m.screenPoint([0, 1.8, 0]);
     });
-    assert.deepEqual(result, {inset: 'inset', thinner: true, bevel: 'bevel', more: true, valid: true});
+    await page.mouse.click(attach.x, attach.y);
+    const result = await page.evaluate(() => {
+      const s = m.model.sticks, bones = m.model.bones;
+      const hair = s.pieces[1], head = s.lines.find(l => l.shape.kind === 'ball');
+      return {lines: s.lines.length, pieces: s.pieces.length, kinds: s.lines.map(l => l.shape.kind).join(), mirrored: s.joints.some(j => Math.abs(j.at[0] + .25) < 1e-3 && Math.abs(j.at[1] - 1.1) < 1e-3),
+        attached: hair.attach === head.to, hairBoneParent: bones.find(b => b.stick === s.lines.at(-1).id)?.parent === bones.find(b => b.stick === head.id)?.id,
+        parts: m.model.parts.length, valid: allValid()};
+    });
+    assert.deepEqual(result, {lines: 5, pieces: 2, kinds: 'capsule,capsule,ball,capsule,ribbon', mirrored: true, attached: true, hairBoneParent: true, parts: 5, valid: true});
   });
   assert.deepEqual(errors, []);
 } finally {

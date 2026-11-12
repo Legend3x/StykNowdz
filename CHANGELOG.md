@@ -8,6 +8,8 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- 3D Nowdz Build mode builds characters from 3D lines, like Styk Builder: each line is a capsule, tube, box, ball or ribbon you can taper, bulge, squash and twist, and every line is a bone, so the character poses as soon as it's added.
+- Build body parts, hair and accessories as separate pieces in 3D Nowdz and snap them onto a joint; mark a line static to have it move with the line above it.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).
 - 3D Nowdz Inset and Bevel can be changed after they finish, with exact thickness, width and segments.
@@ -25,6 +27,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Changed
 
+- 3D Nowdz now shapes characters in Build mode instead of Edit mode, and Tab switches between Build and Object mode.
 - Blender Lite is now called 3D Nowdz.
 - Leaving 3D Nowdz for another tab keeps your unfinished model, and it comes back where you left off the next time you open the Model tab, even after a restart.
 - Extrude, Delete and Duplicate now work on selections Blender allows, such as faces that touch only at a corner or a whole block of faces.
