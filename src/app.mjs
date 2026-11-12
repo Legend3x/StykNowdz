@@ -3521,6 +3521,8 @@ async function acceptImport(
   status(
     {messageKey: "app.opened", messageParams: {value: result.filename || name || editor.name, value2: ms !== undefined ? result.timings?.cache_hit ? {messageKey:'app.openedTimingCached',messageParams:{milliseconds:Math.round(ms)}} : ` · ${Math.round(ms)} ms` : ""}},
   );
+  // Joins that looped (saved by an earlier movieclip capture) were repaired on the way in.
+  if (!["stk", "stkz", "stykmov"].includes(kind) && editor.repairedJoins) notify(interfaceText("app.repairedJoinLoops", {count: editor.repairedJoins}), "app.repairedJoinLoops", {count: editor.repairedJoins});
   warmPlayback({immediate:true});
   return true;
   } finally {

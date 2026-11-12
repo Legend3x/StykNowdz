@@ -511,6 +511,8 @@ export class Editor extends EventTarget {
   }
   _publishLoadedReport(prepared, name, {initialFrameIndex=0, initialTick, preserveDrawingResources=false, onDetach} = {}) {
     const {report} = prepared;
+    /** Frames whose looping joins were repaired while opening (see movieclip-join-repair.mjs). */
+    this.repairedJoins = prepared.repairedJoins ?? 0;
     if (name !== undefined && name !== null && typeof name !== 'string') throw messageError(new Error(''), "errors.editor.theDocumentNameMustBeText", {});
     const initial=prepared.scene??initialLoadState(report,{initialFrameIndex,initialTick},this._frameDraftEnabled),index=initial.frameIndex;
     const started = performance.now();
