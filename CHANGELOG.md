@@ -8,6 +8,9 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
+- Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).
+- 3D Nowdz Inset and Bevel can be changed after they finish, with exact thickness, width and segments.
 - 3D Nowdz Humanoid skeleton now fits imported and cartoon models: bones go where the model's hands, crotch, ankles and toes are, for big heads, short legs, large shoes and arms held out in a T or A pose, so a model from a game can be rigged in one click and posed on the stage.
 - 3D Nowdz OBJ import gives each material its own colour when no .mtl file is chosen.
 - 3D Nowdz outlines can taper to sharp tips and use a darker shade of each part's colour for coloured line art.
@@ -28,6 +31,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed the 3D Nowdz knife refusing to cut across a pushed-in panel or step.
 - Fixed 3D Nowdz automatic weights locking a leg made in one piece to the thigh so it couldn't bend at the knee, and hair or quills at the back of the head following the chest or an arm.
 - Fixed 3D Nowdz showing "OBJ imported" while adding nothing. Models from games and other programs that break the mesh rules (doubled faces, three faces on one edge, mixed winding) are now repaired on import, and a file that still can't be read shows why.
 - Fixed 3D Nowdz drawing parts that pass through each other wrongly, such as hair through a head: each spot now shows the nearest surface.

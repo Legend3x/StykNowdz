@@ -1315,7 +1315,28 @@ function knifeEdit(mesh, path, project) {
   if (path.length < 2) throw refused('Click at least two points on edges or corners for the knife to cut between.');
   const resolve = point => point.v !== undefined ? point.v : pointOnEdge(mesh, point.edge[0], point.edge[1], point.t);
   const onFaceOf = (point, fi) => { const w = mesh.faces[fi].v; return point.v !== undefined ? w.includes(point.v) : w.includes(point.edge[0]) && w.includes(point.edge[1]); };
-  const cut = new Set();
+  const cut = new Set(), crossed = new Set();
+  // A face seen edge-on (the wall of a recess or a step, straight down the view)
+  // has no area on screen: the cut goes straight down it, to the point of its
+  // far edge under the same spot, as Blender's knife does. Each wall once.
+  const area = poly => Math.abs(poly.reduce((a, p, i) => { const q = poly[(i + 1) % poly.length]; return a + p.x * q.y - q.x * p.y; }, 0)) / 2;
+  const downWall = (faces, from) => {
+    for (const fi of faces) {
+      if (crossed.has(fi)) continue;
+      const w = mesh.faces[fi].v, poly = w.map(v => project(mesh.verts[v]));
+      const size = Math.max(1e-9, ...poly.map(p => Math.hypot(p.x - poly[0].x, p.y - poly[0].y)));
+      if (area(poly) > size * size * 1e-6) continue;
+      for (let i = 0; i < w.length; i++) {
+        const a = w[i], b = w[(i + 1) % w.length]; if (a === cur || b === cur) continue;
+        const A = poly[i], B = poly[(i + 1) % w.length], dx = B.x - A.x, dy = B.y - A.y, l2 = dx * dx + dy * dy;
+        if (l2 < 1e-18) continue;
+        const u = ((from.x - A.x) * dx + (from.y - A.y) * dy) / l2;
+        if (u < -1e-6 || u > 1 + 1e-6 || Math.hypot(A.x + dx * u - from.x, A.y + dy * u - from.y) > size * 1e-4) continue;
+        crossed.add(fi); return {fi, a, b, u: Math.max(0, Math.min(1, u))};
+      }
+    }
+    return null;
+  };
   let cur = resolve(path[0]); cut.add(cur);
   for (let k = 1; k < path.length; k++) {
     const target = path[k], goal = project(target.v !== undefined ? mesh.verts[target.v] : lerp(mesh.verts[target.edge[0]], mesh.verts[target.edge[1]], target.t));
@@ -1341,6 +1362,7 @@ function knifeEdit(mesh, path, project) {
           if (!best || hit.t < best.t) best = {t: hit.t, fi, a, b, u: hit.u};
         }
       }
+      if (!best) best = downWall(faces, from);
       if (!best) throw refused('The knife line has to run across faces between the points you click.');
       const next = pointOnEdge(mesh, best.a, best.b, best.u);
       const fi = mesh.faces.findIndex(f => f.v.includes(cur) && f.v.includes(next));

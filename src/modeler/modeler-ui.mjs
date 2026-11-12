@@ -34,6 +34,8 @@ const rad = d => d * Math.PI / 180;
 const fmt = v => String(Math.round(v * 1000) / 1000);
 // Modal transforms driven by the pointer.
 const TRANSFORMS = ['grab', 'rotate', 'scale', 'shear'];
+/** Start > Examples: [file in ./examples, label, hint]. */
+const EXAMPLES = [['juniper', "modeler.exampleJuniper", "modeler.exampleJuniperHint"], ['kettle', "modeler.exampleKettle", "modeler.exampleKettleHint"]];
 const hex = rgb => '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 const rgbOf = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
 
@@ -273,7 +275,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       } else if (S.parts.size > 1) blocks.push(section(t("modeler.parts"), [el('p', {class: 'modeler-hint', text: t("modeler.partsSelected", {count: S.parts.size})}),
         actions([[t("modeler.joinParts"), joinParts, t("modeler.joinPartsHint")]])]));
       else blocks.push(section(t("modeler.start"), [el('p', {class: 'modeler-hint', text: model.parts.length ? t("modeler.clickAPart") : t("modeler.startHint")}),
-        actions([[t("modeler.baseCharacter"), addBaseCharacter, t("modeler.baseCharacterHint")], [t("modeler.cube"), () => addPrimitive('cube')], [t("modeler.sphere"), () => addPrimitive('sphere')]])]));
+        actions([[t("modeler.baseCharacter"), addBaseCharacter, t("modeler.baseCharacterHint")], [t("modeler.cube"), () => addPrimitive('cube')], [t("modeler.sphere"), () => addPrimitive('sphere')]]),
+        el('p', {class: 'modeler-hint', text: t("modeler.examplesHint")}),
+        actions(EXAMPLES.map(([id, label, hint]) => [t(label), () => openExample(id), t(hint)]))]));
     } else if (S.mode === 'edit' && p) {
       const mesh = p.mesh, faces = M.facesFromVerts(mesh, S.verts);
       blocks.push(section(t("modeler.editing", {name: p.name}), [
@@ -357,7 +361,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (flash) { status.textContent = flash; return; }
     const m = S.modal;
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
-      : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '')
+      : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '') + (m.typed ? ` · ${t("modeler.typedValue", {value: m.typed})}` : '')
       : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'bevel' ? t("modeler.bevelStatus", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind === 'knife' ? t("modeler.knifeStatus", {count: m.path.length}) : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
       : S.mode === 'edit' ? t("modeler.editStatus") : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
     // Soft select: its radius, which the scroll wheel changes while moving.
@@ -760,8 +764,25 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     applyTransform(); setStatus();
   }
   /** The world-space matrix of the current move, rotate or scale (pure). */
+  /** The number typed during a move, rotate or scale (as in Blender: G Z 0.5,
+   * R 90, S 1.5), or null while nothing parseable is typed. */
+  const typedValue = m => { const v = m.typed ? Number(m.typed === '-' ? NaN : m.typed) : NaN; return Number.isFinite(v) ? v : null; };
   function modalMatrix(m, w = 1) {
-    const dx = m.mouse.x - m.start.x, dy = m.mouse.y - m.start.y;
+    const dx = m.mouse.x - m.start.x, dy = m.mouse.y - m.start.y, typed = typedValue(m);
+    // A typed value replaces the mouse: units along the locked axis (X when
+    // none), degrees about the locked axis (the view's when none), or a factor.
+    if (typed !== null) {
+      if (m.kind === 'grab') return X.translation(M.scale(m.axis ?? [1, 0, 0], typed * w));
+      if (m.kind === 'rotate') {
+        const axis = m.axis ?? frame.back, angle = typed * Math.PI / 180;
+        if (w === 1) { m.angle = angle; m.rotationAxis = axis; }
+        return X.about(m.pivot, X.rotationAxis(axis, angle * w));
+      }
+      if (m.kind === 'shear') { if (w === 1) m.factor = typed; const along = m.axis ?? frame.right, by = Math.abs(M.dot(M.normalize(along), frame.up)) > .9 ? frame.right : frame.up; return X.about(m.pivot, X.shearing(along, by, typed * w)); }
+      if (w === 1) m.factor = typed;
+      const f = 1 + (typed - 1) * w;
+      return X.about(m.pivot, m.axis ? X.scalingAlong(m.axis, f) : X.scaling([f, f, f]));
+    }
     if (m.kind === 'shear') {
       // Slide along the locked axis (or the view's right) in proportion to height
       // in the view (or along the view's right when the axis is vertical).
@@ -847,7 +868,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       try { m.after?.(); assertValidMesh(edited.mesh, m.kind === 'inset' ? 'Inset' : m.kind === 'bevel' ? 'Bevel' : 'This move'); }
       catch (error) { restore(m.before); refuse(error); return; }
     }
-    S.undo.push(m.before); S.redo = []; S.cache.clear(); refresh();
+    S.undo.push(m.before); S.redo = []; S.cache.clear();
+    // Inset and Bevel can be changed afterwards in the Adjust Last Operation panel, as in Blender.
+    if (m.kind === 'inset') S.lastOp = {kind: 'inset', part: edited.id, sel: [...m.verts], before: m.before, params: {amount: m.amount},
+      run: (p, sel, {amount}) => M.insetFaces(p.mesh, m.faces, Math.max(.01, Math.min(.99, amount)))};
+    else if (m.kind === 'bevel') S.lastOp = {kind: m.points ? 'bevelPoints' : 'bevel', part: edited.id, sel: [...m.verts], before: m.before, params: {width: m.width, segments: m.segments},
+      run: (p, sel, {width, segments}) => m.points ? M.bevelVerts(p.mesh, sel, {width: Math.max(1e-4, width)}) : M.bevelEdges(p.mesh, m.edges, {width: Math.max(1e-4, width), segments})};
+    refresh();
   }
   /** Put what a transform acts on back where the transform found it. */
   function resetTarget(target) {
@@ -860,7 +887,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function switchTransform(kind) {
     const m = S.modal; if (!m || !TRANSFORMS.includes(m.kind) || m.tweak || m.kind === kind) return;
     resetTarget(m.target);
-    S.modal = {...m, kind, start: {...m.mouse}, axis: null, axisName: '', snap: false, factor: undefined, angle: undefined};
+    S.modal = {...m, kind, start: {...m.mouse}, axis: null, axisName: '', snap: false, factor: undefined, angle: undefined, typed: ''};
     applyTransform(); setStatus();
   }
   function cancelModal() {
@@ -965,9 +992,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     smooth: () => [['factor', t("modeler.smoothFactor"), {step: .05, min: -1, max: 1}], ['repeat', t("modeler.smoothRepeat"), {step: 1, min: 1, max: 100, whole: true}]],
     holes: () => [['sides', t("modeler.holeSides"), {step: 1, min: 0, max: 1000, whole: true}]],
     quads: () => [['faceAngle', t("modeler.quadFaceAngle"), {step: 5, min: 0, max: 180}], ['shapeAngle', t("modeler.quadShapeAngle"), {step: 5, min: 0, max: 180}]],
+    inset: () => [['amount', t("modeler.insetAmount"), {step: .02, min: .01, max: .99}]],
+    bevel: () => [['width', t("modeler.bevelWidth"), {step: .005, min: .0001, max: 100}], ['segments', t("modeler.bevelSegments"), {step: 1, min: 1, max: 12, whole: true}]],
+    bevelPoints: () => [['width', t("modeler.bevelWidth"), {step: .005, min: .0001, max: 100}]],
     wrap: () => [['offset', t("modeler.wrapOffset"), {step: .005, min: -1, max: 1}], ['project', t("modeler.wrapMode"), {choices: [['nearest', t("modeler.wrapNearest")], ['view', t("modeler.wrapView")]]}]],
   };
-  const LAST_OP_NAMES = {grid: "modeler.gridFill", smooth: "modeler.smoothVerts", holes: "modeler.fillHoles", quads: "modeler.trisToQuads", wrap: "modeler.shrinkwrap"};
+  const LAST_OP_NAMES = {grid: "modeler.gridFill", smooth: "modeler.smoothVerts", holes: "modeler.fillHoles", quads: "modeler.trisToQuads", wrap: "modeler.shrinkwrap", inset: "modeler.inset", bevel: "modeler.bevel", bevelPoints: "modeler.bevel"};
   function lastOpPanel(p) {
     const g = S.lastOp; if (!g || g.part !== p.id || !LAST_OP_FIELDS[g.kind]) return null;
     return el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: t(LAST_OP_NAMES[g.kind])}),
@@ -1025,7 +1055,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const amount = Math.max(.02, Math.min(.95, .25 + (1 - d1 / d0) * .7));
     // Each pointer move insets a fresh copy of the starting mesh.
     const mesh = M.cloneMesh(m.original);
-    try { S.verts = M.insetFaces(mesh, m.faces, amount); }
+    try { S.verts = M.insetFaces(mesh, m.faces, amount); m.amount = amount; }
     catch (error) { cancelModal(); refuse(error); return; }
     m.part.mesh = mesh; S.cache.delete(m.part.id); draw();
   }
@@ -1256,6 +1286,21 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (kind === 'point') { S.mode = 'edit'; S.selectMode = 'vert'; S.verts = new Set([0]); }
     });
     if (kind === 'point') toast(t("modeler.singlePointAdded"));
+  }
+  /** Start > Examples: a finished character made with these tools, opened in
+   * place of the model (asking first when there is one), ready to take apart. */
+  function openExample(id) {
+    const open = async () => {
+      let loaded;
+      try { loaded = readModel((await import(`./examples/${id}.mjs`)).default); }
+      catch (error) { refuse(error); return; }
+      commit(() => {
+        model = loaded; S.parts = new Set(); S.active = model.parts[0]?.id ?? null; S.verts = new Set(); S.bones = new Set(); S.mode = 'object';
+        S.camera = {...defaultCamera(), target: [0, 1, 0], dist: 4.2}; S.cache.clear(); syncRefs();
+      });
+      refresh(); toast(t("modeler.exampleOpened", {name: loaded.name}));
+    };
+    if (model.parts.length) askConfirm(t("modeler.replaceWithExample"), open); else open();
   }
   function addBaseCharacter() {
     commit(() => {
@@ -1657,6 +1702,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (S.modal && key === 'Escape') cancelModal();
     else if (S.modal?.kind === 'knife' && key !== 'Backspace') { /* other keys wait until the cut is done */ }
     else if (S.modal?.kind === 'grab' && !S.modal.tweak && S.modal.target?.kind === 'verts' && key === 'g' && !ctrl) startEdgeSlide();
+    else if (S.modal && TRANSFORMS.includes(S.modal.kind) && !ctrl && (/^[0-9.]$/.test(key) || key === '-' || key === 'Backspace')) {
+      // Typing a value, as in Blender; '-' flips the sign, Backspace takes a character off.
+      const m = S.modal, text = m.typed ?? '';
+      m.typed = key === 'Backspace' ? text.slice(0, -1) : key === '-' ? (text.startsWith('-') ? text.slice(1) : '-' + text) : key === '.' && text.includes('.') ? text : text + key;
+      applyTransform(); setStatus();
+    }
     else if (S.modal && !ctrl && ['g', 'r', 's'].includes(key)) switchTransform({g: 'grab', r: 'rotate', s: 'scale'}[key]);
     else if (S.modal?.kind === 'loopcut' && ['+', '=', '-'].includes(key)) { S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (key === '-' ? -1 : 1))); setStatus(); draw(); }
     else if (S.modal) handled = false;

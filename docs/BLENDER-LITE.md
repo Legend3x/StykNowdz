@@ -178,6 +178,12 @@ pointer. X, Y or Z locks to an axis (again to unlock), Ctrl snaps (0.05 units,
 15°, tenths), click or Enter finishes, right-click or Esc cancels. Extrude moves
 the new faces along their normal; when that points at you, drag up to push it out.
 
+Typing a number replaces the pointer, as in Blender: units along the locked
+axis (X when none) for G, degrees about the locked axis (the view's when none)
+for R, a factor for S and Shear. `-` flips the sign, Backspace takes off a
+character, and the status line shows what is typed. `G Z 0.5 Enter`,
+`R Z 90 Enter`, `S 1.5 Enter`; E then `Z -0.03` pushes a fresh extrusion in.
+
 ### glTF (.glb / .gltf) with bones
 
 **File > Import OBJ or glTF** reads glTF 2.0: a `.glb`, or a `.gltf` chosen
@@ -250,7 +256,7 @@ and validated like the rest.
 | Grid fill | Edit panel | A selected closed ring of open edges (a hole or a traced outline), even point count: quads, Span × (ring/2 − Span). Start at the sharpest corner; Span from the next sharpest corner, else ring/4 (`gridFillLayout`). Inner points: a Coons patch of the four sides (Blender blends rails slightly differently). Span and Offset can be changed afterwards in the Edit panel (redoes the fill, like Blender's Adjust Last Operation) |
 | Rip | V | Selected edges with faces on both sides: the side nearer the mouse gets its own points, then follows the mouse. Ends inside the surface stay joined (a slit); a line reaching the border cuts through |
 | Bevel | Ctrl+B, Ctrl+Shift+B | Edges: a strip at right angles `width` from the edge (Offset mode, slide clamped at 95% of the edge), rounded by Segments (scroll; quadratic profile toward the old corner). Faces between two bevelled edges get the meeting point of the offset lines; corners left open are closed with one face; a corner left joining two edges is dissolved (the cube-corner pentagons). Points: each selected point is cut off by a face |
-| Knife | K | Click points on edges or corners (Ctrl: edge middle); between points the cut follows the straight screen line across faces. Backspace removes the last point, Enter/Space cuts, Esc or right-click cancels. Clicks inside a face (away from edges) aren't supported yet |
+| Knife | K | Click points on edges or corners (Ctrl: edge middle); between points the cut follows the straight screen line across faces. Backspace removes the last point, Enter/Space cuts, Esc or right-click cancels. A face seen edge-on (the wall of a recess or a step straight down the view) has no area on screen; the cut goes down it to its far edge under the same spot, once per wall, so a line across an inset and pushed-in panel cuts its walls and floor too. Clicks inside a face (away from edges) aren't supported yet |
 
 | Smooth | Edit panel | Each selected point moves Factor of the way to the mean of its neighbours, Repeat times (Vertex > Smooth Vertices). Border points use border neighbours only; a traced line's ends stay put |
 | Triangulate | Ctrl+T | Quads split along the shorter diagonal; larger faces by ear clipping in their own plane (concave faces come out right) |
@@ -266,12 +272,42 @@ and validated like the rest.
 Smooth, Fill holes, Tris to quads, Shrinkwrap and Grid fill can be adjusted
 after the fact in the Edit panel, like Blender's Adjust Last Operation:
 `adjustable()` keeps the state from before the edit, and each change redoes
-the edit from it with the new settings (one undo step in all).
+the edit from it with the new settings (one undo step in all). Inset (Thickness)
+and Bevel (Width, Segments) are set with the mouse and then join the same panel
+when they finish, so an exact amount can be typed after.
 
 Vertex slide is GG on points (the existing edge slide). Not ported yet: Bevel
 profile shapes and vertex-only corner patches with several segments (an
 n-gon closes them), Knife cuts starting inside a face, Rip of a single point,
 Grid fill between two separate lines, Limited dissolve.
+
+### Examples
+
+**Start > Examples** opens a finished character in place of the model (asking
+first when there is one; Undo brings it back), to take apart or build on. Both
+were made in 3D Nowdz with its own tools, driven through the workspace the way
+a person uses it, and are kept as model files in `src/modeler/examples/`
+(loaded only when opened):
+
+- **Juniper**, an anime-style girl from Base character: Like a sphere face
+  normals; eyes from a circle inset twice (iris, pupil) and a mouth and brows
+  from planes, pressed onto the face and bangs with Shrinkwrap (Along view) and
+  mirrored; bangs and long back hair extruded from the hair cap with typed
+  moves and scales; an ahoge bent with typed rotations; a skirt from a
+  cylinder with its caps deleted, the hem flared and every other point pushed
+  out for pleats, a loop cut and Solidify; collar and bow; boots; toon
+  shadows, outlines and face bones.
+- **Kettle**, a robot from primitives in an A pose: body, head and feet
+  bevelled (Ctrl+B, exact width and segments in the panel); a chest panel and
+  visor inset and pushed in (E then Z typed); a belt line cut with the knife
+  across the recessed panel; arms rotated with R Z 40 typed; loop-cut
+  forearms; subdivided hands with extruded fingers; edges creased (Shift+E)
+  under Smooth; toon shadows, outlines and a Humanoid skeleton fitted to the
+  model.
+
+Selecting faces is selecting their points, so in Faces mode picking both caps
+of a cylinder picks every point and with them the sides: delete one cap at a
+time (Blender keeps a separate face selection).
 
 ### Drafts and starting over
 

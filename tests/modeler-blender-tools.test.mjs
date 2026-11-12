@@ -204,3 +204,18 @@ test('random runs of the Blender tools never leave a broken mesh', () => {
     }
   });
 });
+
+test('knife: a cut across a recessed panel goes down and up its walls, seen edge-on', () => {
+  // A cube's front face inset and pushed in: its walls point straight at the viewer.
+  const mesh = cube(1), frontFace = new Set(mesh.faces.map((f, i) => f.v.every(v => mesh.verts[v][2] > .499) ? i : -1).filter(i => i >= 0));
+  const inner = M.insetFaces(mesh, frontFace, .3), panel = new Set(mesh.faces.map((f, i) => f.v.every(v => inner.has(v)) ? i : -1).filter(i => i >= 0));
+  const moved = M.extrudeFaces(mesh, panel); for (const v of moved) mesh.verts[v][2] -= .06;
+  const project = p => ({x: p[0] * 100, y: -p[1] * 100});
+  const sideEdge = x => { const e = M.meshEdges(mesh).find(([a, b]) => [a, b].every(v => Math.abs(mesh.verts[v][0] - x) < 1e-6 && mesh.verts[v][2] > .49)); const A = mesh.verts[e[0]], B = mesh.verts[e[1]]; return {edge: e, t: (-.1 - A[1]) / (B[1] - A[1])}; };
+  const faces = mesh.faces.length, cut = M.knife(mesh, [sideEdge(-.5), sideEdge(.5)], project);
+  assert.ok(validateMesh(mesh, {print: false}).ok);
+  assert.equal(cut.size, 6, 'both border edges, both wall tops and both wall bottoms');
+  assert.equal(mesh.faces.length, faces + 5, 'the border either side, both walls and the panel are split');
+  assert.ok([...cut].every(v => Math.abs(mesh.verts[v][1] + .1) < 1e-9), 'the cut stays on its line');
+  assert.equal([...cut].filter(v => mesh.verts[v][2] < .45).length, 2, 'two points at the bottom of the walls');
+});

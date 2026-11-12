@@ -168,9 +168,14 @@ export function fitHumanoid(meshes) {
   // densest slab in the outer half, go in while it stays dense.
   const span = tipX - shoulderX, outer = track.filter(t => t.x > shoulderX + span * .5);
   const densest = outer.reduce((a, t) => t.n > a.n ? t : a, outer[0] ?? {n: 0, x: shoulderX + span * .8});
+  // A hand no denser than the arm (a block on a robot) gives no clue: it is
+  // then the usual quarter of the reach, as on a person.
+  const armDensity = median(track.filter(t => t.x <= shoulderX + span * .5).map(t => t.n));
   let wristX = densest.x;
-  for (const t of track) if (t.x < densest.x) { if (t.n >= densest.n * .35) wristX = t.x; else break; }
-  wristX = shoulderX + span * Math.min(.85, Math.max(.6, (wristX - slab / 2 - shoulderX) / span));
+  if (densest.n >= Math.max(1, armDensity) * 1.5) {
+    for (const t of track) if (t.x < densest.x) { if (t.n >= densest.n * .35) wristX = t.x; else break; }
+    wristX = shoulderX + span * Math.min(.85, Math.max(.6, (wristX - slab / 2 - shoulderX) / span));
+  } else wristX = shoulderX + span * .76;
   // The arm's line: a straight fit through the forearm and upper arm, leaving
   // out the hand and the slabs by the shoulder (hair or quills beside it would
   // pull the line up). Theil–Sen (the median of the slopes between slabs), so a
