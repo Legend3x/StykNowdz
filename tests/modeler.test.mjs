@@ -4,7 +4,7 @@ import * as M from '../src/modeler/mesh.mjs';
 import {translation} from '../src/modeler/matrix.mjs';
 import {PRIMITIVES, baseCharacter, cube, uvSphere, cylinder} from '../src/modeler/primitives.mjs';
 import {emptyModel, addPart, evaluatePart, readModel, catmullClark} from '../src/modeler/model.mjs';
-import {baseCharacterSkeleton, humanoidSkeleton, autoWeights, symmetrizeBones, deleteBones, addBone} from '../src/modeler/armature.mjs';
+import {baseCharacterSkeleton, humanoidSkeleton, fitHumanoid, autoWeights, symmetrizeBones, deleteBones, addBone} from '../src/modeler/armature.mjs';
 import {exportObj, importObj} from '../src/modeler/obj-format.mjs';
 import {modelToFigure, modelDocument} from '../src/modeler/export-figure.mjs';
 import {Editor} from '../src/editor.mjs';
@@ -344,4 +344,63 @@ test('traced lines stay out of the stage: evaluation, export, outlines, symmetri
   // Transforms keep them.
   const moved = M.transformMesh(part.mesh, translation([1, 0, 0]));
   assert.deepEqual(moved.edges, part.mesh.edges); assert.notEqual(moved.edges, part.mesh.edges);
+});
+
+/** A cartoon figure in separate pieces, like a game export: a big head with
+ * spikes out behind it, a short trunk, thin one-piece legs, large shoes
+ * pointing +Z, arms out (raised by `armDrop` per unit out: 0 is a T pose) and
+ * dense fists. */
+function cartoon({armDrop = 0} = {}) {
+  const box = (size, at, segs = 1) => M.transformMesh(segs > 1 ? uvSphere(size[0] / 2, segs, segs) : cube(1), translation(at));
+  const scaled = (mesh, s) => ({...mesh, verts: mesh.verts.map(v => v.map((x, k) => x * s[k]))});
+  const piece = (s, at, segs) => { const m = scaled(segs ? uvSphere(.5, segs, segs) : cube(1), s); return M.transformMesh(m, translation(at)); };
+  void box;
+  const parts = [
+    piece([.5, .45, .45], [0, .95, .05], 12), // head
+    piece([.08, .5, .3], [.14, .95, -.3]), piece([.08, .5, .3], [-.14, .95, -.3]), // spikes behind, out to the sides
+    piece([.18, .22, .14], [0, .63, 0]), // trunk
+    piece([.05, .3, .05], [.08, .38, 0]), piece([.05, .3, .05], [-.08, .38, 0]), // one-piece legs (hip to ankle)
+    piece([.12, .14, .34], [.09, .07, .1]), piece([.12, .14, .34], [-.09, .07, .1]), // shoes, toes +Z
+  ];
+  for (const s of [1, -1]) {
+    for (let i = 0; i < 6; i++) { const x = .13 + i * .055; parts.push(piece([.055, .05, .05], [s * x, .72 - armDrop * (x - .13), 0])); }
+    const x = .5; parts.push(piece([.11, .12, .12], [s * x, .72 - armDrop * (x - .13), 0], 8)); // fist: many points
+  }
+  return parts;
+}
+
+test('humanoid skeleton fits a cartoon model: joints where its hands, crotch, ankles and toes are', () => {
+  for (const armDrop of [0, .5]) {
+    const fit = fitHumanoid(cartoon({armDrop})), {arm, leg, spine} = fit;
+    assert.ok(fit, `armDrop ${armDrop}`);
+    assert.equal(fit.front, 1, 'shoes point +Z');
+    assert.ok(Math.abs(leg.hip[1] - .53) < .05, `crotch ${leg.hip[1]}`);
+    assert.ok(leg.ankle[1] > .1 && leg.ankle[1] < .2, `ankle at the shoe top ${leg.ankle[1]}`);
+    assert.ok(leg.toe[2] > .15, `toes forward ${leg.toe[2]}`);
+    assert.ok(Math.abs(leg.hip[0] - .08) < .02, `leg x ${leg.hip[0]}`);
+    // The arm's line, not the spikes beside the shoulder.
+    const armY = x => .72 - armDrop * (x - .13);
+    for (const [name, p] of Object.entries({shoulder: arm.shoulder, elbow: arm.elbow, wrist: arm.wrist})) assert.ok(Math.abs(p[1] - armY(p[0])) < .03, `${name} y ${p[1]} at x ${p[0]} (arm ${armY(p[0])})`);
+    assert.ok(arm.wrist[0] > .38 && arm.wrist[0] < .47, `wrist before the fist ${arm.wrist[0]}`);
+    assert.ok(arm.tip[0] > .54, `hand reaches the fist's end ${arm.tip[0]}`);
+    assert.ok(spine[0][1] < spine[3][1] && spine[3][1] < spine[4][1] && spine[4][1] < spine[5][1], 'spine goes up');
+  }
+  // Arms down at the sides: the average-adult layout, fitted to the size.
+  const model = emptyModel(); for (const p of baseCharacter()) addPart(model, p);
+  assert.equal(fitHumanoid(model.parts.map(p => evaluatePart(p, {smooth: false}))), null);
+});
+
+test('automatic weights: one-piece legs bend at the knee, the head region follows the head', () => {
+  const model = emptyModel(), parts = cartoon();
+  parts.forEach((mesh, i) => addPart(model, {name: `Piece ${i}`, mesh}));
+  humanoidSkeleton(model, model.parts.map(p => evaluatePart(p, {smooth: false})));
+  const name = new Map(model.bones.map(b => [b.id, b.name]));
+  const bonesOf = part => { const mesh = evaluatePart(part, {smooth: false}), w = autoWeights(model, mesh, part); return new Set(w.bones.filter((id, i) => id && w.weights[i] > .05).map(id => name.get(id))); };
+  const leg = bonesOf(model.parts[4]);
+  assert.ok(leg.has('Thigh.L') && leg.has('Shin.L'), `the leg bends at the knee: ${[...leg]}`);
+  for (const spike of [model.parts[1], model.parts[2]]) {
+    const got = bonesOf(spike);
+    assert.ok([...got].every(n => n === 'Head' || n === 'Neck'), `spikes follow the head, not an arm or the chest: ${[...got]}`);
+  }
+  assert.deepEqual([...bonesOf(model.parts[8 + 6])], ['Hand.L'], 'the fist follows the hand');
 });

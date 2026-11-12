@@ -57,13 +57,39 @@ export function symmetrizeBones(model) {
   }
 }
 
-/** A humanoid skeleton fitted to the model's height and width (feet at the lowest point). */
+/** A humanoid skeleton fitted to the model, like the marker step of an
+ * auto-rigger: `fitHumanoid` finds the hands, the crotch, the ankles, the toes
+ * and the shoulders on the model itself, so cartoon proportions (a big head,
+ * short legs, large shoes, arms out in a T or A) get bones where their joints
+ * are. A model it can't read (arms down at the sides, no gap between the legs)
+ * gets the proportions of an average adult fitted to its height and width. */
 export function humanoidSkeleton(model, meshes) {
-  const points = meshes.flatMap(m => m.verts), box = points.length ? bounds(points) : {min: [-.4, 0, -.2], max: [.4, 2, .2]};
-  const h = Math.max(.1, box.max[1] - box.min[1]), y0 = box.min[1], w = Math.max(.1, (box.max[0] - box.min[0]) / 2), cz = (box.min[2] + box.max[2]) / 2;
-  const at = (x, y) => [x * w, y0 + y * h, cz];
+  const points = meshes.flatMap(m => m.verts);
+  const fit = points.length ? fitHumanoid(meshes) : null;
   model.bones = [];
   const bone = (name, head, tail, parent = 0) => addBone(model, {name, head, tail, parent}).id;
+  if (fit) {
+    const {spine: [hipsAt, spineAt, chestAt, neckAt, headAt, top], arm, leg} = fit;
+    const hips = bone('Hips', hipsAt, spineAt);
+    const spine = bone('Spine', spineAt, chestAt, hips);
+    const chest = bone('Chest', chestAt, neckAt, spine);
+    const neck = bone('Neck', neckAt, headAt, chest);
+    bone('Head', headAt, top, neck);
+    for (const [side, s] of [['L', 1], ['R', -1]]) {
+      const x = q => [q[0] * s, q[1], q[2]];
+      const shoulder = bone(`Shoulder.${side}`, x(arm.clavicle), x(arm.shoulder), chest);
+      const upper = bone(`UpperArm.${side}`, x(arm.shoulder), x(arm.elbow), shoulder);
+      const lower = bone(`LowerArm.${side}`, x(arm.elbow), x(arm.wrist), upper);
+      bone(`Hand.${side}`, x(arm.wrist), x(arm.tip), lower);
+      const thigh = bone(`Thigh.${side}`, x(leg.hip), x(leg.knee));
+      const shin = bone(`Shin.${side}`, x(leg.knee), x(leg.ankle), thigh);
+      bone(`Foot.${side}`, x(leg.ankle), x(leg.toe), shin);
+    }
+    return model.bones;
+  }
+  const box = points.length ? bounds(points) : {min: [-.4, 0, -.2], max: [.4, 2, .2]};
+  const h = Math.max(.1, box.max[1] - box.min[1]), y0 = box.min[1], w = Math.max(.1, (box.max[0] - box.min[0]) / 2), cz = (box.min[2] + box.max[2]) / 2;
+  const at = (x, y) => [x * w, y0 + y * h, cz];
   // Proportions of an average adult; arms spread to the model's width.
   const hips = bone('Hips', at(0, .5), at(0, .57));
   const spine = bone('Spine', at(0, .57), at(0, .68), hips);
@@ -78,10 +104,113 @@ export function humanoidSkeleton(model, meshes) {
     // Thighs hang from the figure's root, beside Hips, as in Pivot: bending the hips bends the body, not the legs.
     const thigh = bone(`Thigh.${side}`, at(s * .22, .5), at(s * .22, .27));
     const shin = bone(`Shin.${side}`, at(s * .22, .27), at(s * .22, .05), thigh);
-    const foot = addBone(model, {name: `Foot.${side}`, head: at(s * .22, .05), tail: add(at(s * .22, .01), [0, 0, h * .07]), parent: shin});
-    void foot;
+    addBone(model, {name: `Foot.${side}`, head: at(s * .22, .05), tail: add(at(s * .22, .01), [0, 0, h * .07]), parent: shin});
   }
   return model.bones;
+}
+
+const median = values => { if (!values.length) return NaN; const v = values.slice().sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+const quantile = (values, q) => { if (!values.length) return NaN; const v = values.slice().sort((a, b) => a - b); return v[Math.min(v.length - 1, Math.max(0, Math.round(q * (v.length - 1))))]; };
+
+/**
+ * Joint positions read off a standing humanoid (feet down, +Y up, facing ±Z,
+ * centred on X = 0 as the modeler mirrors it), for the left side (+X); the
+ * right side is its mirror. Works from points alone, so a model in many
+ * separate pieces (game exports) reads the same as one surface. Returns null
+ * when the arms aren't held out from the body or the legs aren't apart.
+ */
+export function fitHumanoid(meshes) {
+  const corners = meshes.flatMap(m => m.verts);
+  if (!corners.length) return null;
+  const box = bounds(corners), y0 = box.min[1], top = box.max[1], H = top - y0;
+  if (!(H > 1e-6)) return null;
+  // Read the surfaces, not just their corners: a low-poly box has no points in
+  // its middle. Faces are sampled about every H/60.
+  const points = corners.slice(), gap = H / 60;
+  for (const m of meshes) for (const f of m.faces ?? []) for (let i = 1; i + 1 < f.v.length; i++) {
+    const a = m.verts[f.v[0]], b = m.verts[f.v[i]], c = m.verts[f.v[i + 1]];
+    const n = Math.min(40, Math.ceil(Math.max(length(sub(b, a)), length(sub(c, a)), length(sub(c, b))) / gap));
+    if (n < 2) continue;
+    for (let u = 0; u <= n; u++) for (let v = 0; u + v <= n; v++) if ((u && v) || u + v < n) points.push(add(a, add(scale(sub(b, a), u / n), scale(sub(c, a), v / n))));
+  }
+  const band = (lo, hi) => points.filter(p => p[1] >= y0 + lo * H && p[1] < y0 + hi * H);
+  // Crotch: going up from the ankles, the first height where the middle (X ≈ 0)
+  // fills in for good. Legs apart leave it empty below.
+  const step = .02, mid = .025 * H, filled = [];
+  for (let y = 0; y < .8; y += step) filled.push(band(y, y + step).some(p => Math.abs(p[0]) < mid));
+  let crotch = -1;
+  for (let i = Math.round(.25 / step); i + 3 < filled.length; i++) if (filled[i] && filled.slice(i, i + 4).filter(Boolean).length >= 3 && !filled.slice(Math.round(.12 / step), i).every(Boolean)) { crotch = i * step; break; }
+  if (crotch < .25 || crotch > .65) return null;
+  // Legs: the middle of each leg halfway up, and the torso's half-width just above the crotch.
+  const legBand = band(crotch * .55, crotch * .9).filter(p => p[0] > mid * .5);
+  const torso = band(crotch + .01, crotch + .08);
+  if (legBand.length < 2 || torso.length < 2) return null;
+  // The trunk is the run of points out from the middle with no wide gap (arms
+  // held out start past one, even on a short cartoon trunk).
+  const out = torso.map(p => Math.abs(p[0])).sort((a, b) => a - b);
+  let reach = out[0]; for (const x of out) { if (x - reach > .04 * H) break; reach = x; }
+  const legX = median(legBand.map(p => p[0])), torsoHalf = Math.max(legX, reach);
+  // Arms: the hand tip is the widest point; held out (T or A pose) it reaches well past the torso.
+  const tipX = box.max[0];
+  if (tipX < torsoHalf * 2.4 || tipX < .18 * H) return null;
+  const tipPts = points.filter(p => p[0] > tipX - .04 * H);
+  const tip = [tipX, median(tipPts.map(p => p[1])), median(tipPts.map(p => p[2]))];
+  // Follow the arm in from the hand, keeping to the points around the line so
+  // hair or quills beside the shoulder don't pull it.
+  const shoulderX = Math.min(tipX * .45, torsoHalf * 1.35), radius = .09 * H, slab = .025 * H, track = [];
+  let c = [tip[1], tip[2]];
+  for (let x = tipX; x > shoulderX; x -= slab) {
+    const near = points.filter(p => p[0] <= x && p[0] > x - slab && Math.hypot(p[1] - c[0], p[2] - c[1]) < radius);
+    if (near.length) c = [median(near.map(p => p[1])), median(near.map(p => p[2]))];
+    track.push({x: x - slab / 2, y: c[0], z: c[1], n: near.length});
+  }
+  // Wrist: hands (fingers, a fist, a glove) are denser than forearms. From the
+  // densest slab in the outer half, go in while it stays dense.
+  const span = tipX - shoulderX, outer = track.filter(t => t.x > shoulderX + span * .5);
+  const densest = outer.reduce((a, t) => t.n > a.n ? t : a, outer[0] ?? {n: 0, x: shoulderX + span * .8});
+  let wristX = densest.x;
+  for (const t of track) if (t.x < densest.x) { if (t.n >= densest.n * .35) wristX = t.x; else break; }
+  wristX = shoulderX + span * Math.min(.85, Math.max(.6, (wristX - slab / 2 - shoulderX) / span));
+  // The arm's line: a straight fit through the forearm and upper arm, leaving
+  // out the hand and the slabs by the shoulder (hair or quills beside it would
+  // pull the line up). Theil–Sen (the median of the slopes between slabs), so a
+  // stray slab on a low-poly arm doesn't tilt it.
+  const fitted = track.filter(t => t.n && t.x <= wristX && t.x >= shoulderX + span * .15);
+  const line = k => {
+    if (fitted.length < 2) { const v = median((fitted.length ? fitted : track).map(t => t[k])); return () => v; }
+    const slopes = [];
+    for (let a = 0; a < fitted.length; a++) for (let b = a + 1; b < fitted.length; b++) if (Math.abs(fitted[a].x - fitted[b].x) > 1e-9) slopes.push((fitted[a][k] - fitted[b][k]) / (fitted[a].x - fitted[b].x));
+    const slope = median(slopes), base = median(fitted.map(t => t[k] - slope * t.x));
+    return x => base + slope * x;
+  };
+  const ly = line('y'), lz = line('z'), on = x => [x, ly(x), lz(x)];
+  const shoulder = on(shoulderX), elbow = on(shoulderX + (wristX - shoulderX) * .5), wrist = on(wristX);
+  // Ankles: going up from the floor, where the foot (long front to back) narrows into the leg.
+  const legDepth = (lo, hi) => { const q = band(lo, hi).filter(p => p[0] > 0 && p[0] < torsoHalf * 2.5).map(p => p[2]); return q.length > 1 ? Math.max(...q) - Math.min(...q) : 0; };
+  const shin = legDepth(crotch * .55, crotch * .85) || .05 * H;
+  let ankle = .05;
+  for (let y = .02; y < crotch * .6; y += step) if (legDepth(y, y + step) > shin * 2.2) ankle = y + step;
+  ankle = Math.min(ankle, crotch * .5);
+  // Facing: the feet reach further toward the front than the heels.
+  const feet = band(0, ankle).filter(p => p[0] > 0), legs = band(ankle, crotch).filter(p => p[0] > 0);
+  const legZ = legs.length ? median(legs.map(p => p[2])) : (box.min[2] + box.max[2]) / 2;
+  const toeFront = feet.length ? Math.max(...feet.map(p => p[2])) : legZ, toeBack = feet.length ? Math.min(...feet.map(p => p[2])) : legZ;
+  const front = toeFront - legZ >= legZ - toeBack ? 1 : -1, toeZ = front > 0 ? toeFront : toeBack;
+  const footX = feet.length ? median(feet.map(p => p[0])) : legX;
+  const at = (x, y, z) => [x, y0 + y * H, z];
+  const hip = at(legX, crotch, legZ), ankleAt = at(legX, ankle, legZ);
+  const knee = add(scale(add(hip, ankleAt), .5), [0, 0, front * .01 * H]);
+  const toe = [footX, y0 + Math.min(ankle * .4, .03) * H, legZ + (toeZ - legZ) * .8];
+  // The body's line: the middle of the trunk front to back at each height.
+  const trunkZ = (lo, hi) => { const q = band(lo, hi).filter(p => Math.abs(p[0]) < torsoHalf).map(p => p[2]); return q.length ? median(q) : legZ; };
+  const shoulderY = (shoulder[1] - y0) / H, chestY = crotch + (shoulderY - crotch) * .6;
+  const neckY = Math.min(.97, Math.max(shoulderY, crotch + .05) + (1 - Math.max(shoulderY, crotch + .05)) * .2), headY = Math.min(.985, neckY + (1 - neckY) * .12);
+  const spineAt = (y, z) => at(0, y, z), hipsZ = trunkZ(crotch, crotch + .05);
+  const chestZ = trunkZ(chestY - .03, chestY + .03), headZ = (chestZ + trunkZ(headY, 1.01)) / 2;
+  const spine = [spineAt(crotch, hipsZ), spineAt(crotch + (shoulderY - crotch) * .3, trunkZ(crotch + .05, chestY)), spineAt(chestY, chestZ), spineAt(neckY, (chestZ + headZ) / 2), spineAt(headY, headZ)];
+  spine.push(spineAt(1, spine[4][2]));
+  const clavicle = [Math.min(shoulder[0] * .3, torsoHalf * .4), shoulder[1], shoulder[2]];
+  return {spine, arm: {clavicle, shoulder, elbow, wrist, tip}, leg: {hip, knee, ankle: ankleAt, toe}, front};
 }
 
 /** Distance from p to the segment a→b. */
@@ -141,6 +270,15 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     return samples.some(q => inside(q, 0)) || samples.filter(q => inside(q, grow)).length >= 2;
   }).map(b => b.id));
   if (!candidates.size) candidates = new Set(bones.map(b => b.id));
+  // A humanoid's head region: a part centred above the base of the neck and
+  // inside the shoulders (hair, quills, ears, a hat) moves with the head and
+  // neck only, even where it hangs down beside an arm or behind the chest.
+  const neckBone = byName.get('Neck'), headBone = byName.get('Head'), upperArms = bones.filter(b => /^UpperArm\./.test(b.name));
+  if (neckBone && headBone && n) {
+    const centre = scale(mesh.verts.reduce((acc, p) => add(acc, p), [0, 0, 0]), 1 / n);
+    const inside = upperArms.length ? Math.min(...upperArms.map(b => Math.abs(b.head[0]))) : Infinity;
+    if (centre[1] > neckBone.head[1] && Math.abs(centre[0]) < inside) candidates = new Set([neckBone.id, headBone.id]);
+  }
   const nearest = (p, pool) => sideBones(p).filter(b => !pool || pool.has(b.id)).reduce((best, b) => { const d = segmentDistance(p, b.head, b.tail); return d < best[1] ? [b.id, d] : best; }, [0, Infinity])[0];
   // Root bones (Hips and the thighs) meet at the figure's root, so a part centred on one of them blends with the others.
   const partCentre = byId.get(nearest(scale(mesh.verts.reduce((acc, p) => add(acc, p), [0, 0, 0]), 1 / Math.max(1, n)), candidates));
@@ -154,6 +292,7 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
   // keeps its shape instead of pinching where it touches the next bone. Mirrored parts are judged per side.
   const groups = part?.mirror ? [v => v[0] > 1e-3, v => v[0] < -1e-3, v => Math.abs(v[0]) <= 1e-3] : [() => true];
   const singleOf = new Array(n).fill(null);
+  const alongMiddle = (p, b) => { const ax = sub(b.tail, b.head), l2 = dot(ax, ax), t = l2 > 1e-12 ? dot(sub(p, b.head), ax) / l2 : -1; return t > .15 && t < .85; };
   if (!rigid) for (const test of groups) {
     const members = mesh.verts.map((p, i) => i).filter(i => test(mesh.verts[i]));
     if (!members.length) continue;
@@ -163,7 +302,17 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     const axis = sub(bone.tail, bone.head), len = length(axis);
     if (len < 1e-9) continue;
     const margin = len * .35, along = members.filter(i => { const t = dot(sub(mesh.verts[i], bone.head), axis) / len; return t >= -margin && t <= len + margin; }).length;
-    if (along / members.length >= rigidShare) for (const i of members) singleOf[i] = bone.id;
+    // ...unless a good share of it runs on past a joint onto the next bone (a
+    // leg in one piece from hip to ankle, a shoe with the shin), which must bend there.
+    // (A short parent, such as a neck under a head, carries no part of its own.)
+    const hasChild = bones.some(c => c.parent === bone.id), up = byId.get(bone.parent);
+    const longUp = up && length(sub(up.tail, up.head)) >= len * .4, past = members.filter(i => {
+      const p = mesh.verts[i], t = dot(sub(p, bone.head), axis) / len;
+      // Beyond either end, or along the parent bone itself, not just by the
+      // joint (a shoe in one piece with the shin).
+      return (hasChild && t > len + margin) || (up && (t < -margin || longUp && alongMiddle(p, up) && segmentDistance(p, up.head, up.tail) < segmentDistance(p, bone.head, bone.tail)));
+    }).length;
+    if (along / members.length >= rigidShare && past / members.length < .12) for (const i of members) singleOf[i] = bone.id;
   }
   const lists = mesh.verts.map((p, v) => {
     if (rigid) {

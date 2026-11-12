@@ -35,7 +35,7 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
   Symmetrize, Merge doubles, and the tools ported from Blender below (Bevel,
   Knife, Dissolve, Merge options, Grid fill, Rip). Points behind the model can't be picked unless
   X-ray is on, as in Blender.
-- **Bones**: Humanoid skeleton (fitted to the model's size), Add bone, Extrude
+- **Bones**: Humanoid skeleton (fitted to the model's hands, crotch, ankles and toes; see Automatic weights), Add bone, Extrude
   bone (E), Delete, Mirror .L to .R; click a bone to select it and drag its
   joints (see Dragging). With one bone selected the model shows what it moves,
   blue (nothing) to red (fully). Bones mode sets the skeleton's rest shape: the
@@ -435,7 +435,44 @@ follows the opposite-side bone. A part that lies along one bone (at least 70%
 of its points, per side for mirrored parts, project onto that bone's span
 widened by 35% of its length) is bound rigidly to it too, so sleeves,
 forearms, legs, shoes and heads keep their shape instead of pinching where they
-touch the next bone.
+touch the next bone. It is not bound when more than 12% of its points run on
+past a joint: beyond the span at a child's end or the parent's end, or along
+the middle of the parent itself and nearer it (a leg in one piece from hip to
+ankle, a shoe in one piece with the shin), so it still bends there. A parent
+much shorter than the bone (under 40% of its length: a neck under a head)
+doesn't count.
+
+On a humanoid skeleton (bones named Neck, Head and UpperArm), a part centred
+above the base of the neck and inside the shoulders (hair, quills, ears, a
+hat) takes only the Head and Neck, even where it hangs down beside an arm or
+behind the chest.
+
+**Humanoid skeleton** fits the bones to the model itself (`fitHumanoid`, like
+the marker step of an auto-rigger), reading the surfaces (sampled about every
+1/60 of the height, so low-poly boxes have points in their middle) for:
+
+- the crotch: going up from the ankles, the first height where the middle
+  (X ≈ 0) fills in for good;
+- the legs' X halfway up, and the trunk's half-width just above the crotch (the
+  run of points out from the middle with no wide gap, so arms held out on a
+  short cartoon trunk don't count);
+- the hands: the widest point. Arms reaching less than 2.4× the trunk's
+  half-width (down at the sides) fall back to an average adult fitted to the
+  model's height and width, as before;
+- the arm's line, tracked in from the hand tip a slab at a time around the
+  previous centre, then fitted straight (Theil–Sen) through the forearm and
+  upper arm so hair or quills beside the shoulder don't pull it. The wrist is
+  where the hand's dense points (fingers, a fist, a glove) end, kept to 60–85%
+  of the way out; the elbow is halfway to it;
+- the ankles: going up, where the foot (long front to back) narrows into the
+  leg; the toes: the foot's far end on the side it reaches further, which also
+  gives the facing (±Z); knees halfway, nudged forward;
+- the spine: the middle of the trunk front to back at each height, the chest
+  60% of the way to the shoulders, the neck a fifth of the way from the
+  shoulders to the top.
+
+It is tested on a cartoon figure in separate pieces (big head, spikes behind
+it, one-piece legs, large shoes, dense fists) in a T and an A pose.
 
 ### Face rig
 

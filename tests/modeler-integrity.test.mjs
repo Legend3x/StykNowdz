@@ -201,3 +201,12 @@ test('imports from games and other programs are repaired, not refused', () => {
   const fin = skinned.faces[2].v;
   assert.deepEqual(fin.slice(0, 2).map(i => skinned.vdata.skin[i]), [[['leg', 1]], [['hip', 1]]]);
 });
+
+test('OBJ materials without an MTL colour each get their own palette colour', () => {
+  const text = 'v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\nusemtl body\nf 1 2 3\nusemtl shoe\nf 2 4 3\n';
+  const palette = [[1, 2, 3], [4, 5, 6], [7, 8, 9]], [part] = importObj(text, {palette});
+  assert.deepEqual(part.mesh.faces.map(f => f.c), [0, 1]);
+  assert.equal(importObj(text, {palette}).uncoloredMaterials, 2);
+  const withMtl = importObj(text, {palette, mtl: 'newmtl body\nKd 1 0 0\nnewmtl shoe\nKd 0 0 1\n'});
+  assert.equal(withMtl.uncoloredMaterials, 0); assert.deepEqual(palette.slice(3), [[255, 0, 0], [0, 0, 255]]);
+});

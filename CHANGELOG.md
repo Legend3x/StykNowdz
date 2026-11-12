@@ -8,6 +8,8 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- 3D Nowdz Humanoid skeleton now fits imported and cartoon models: bones go where the model's hands, crotch, ankles and toes are, for big heads, short legs, large shoes and arms held out in a T or A pose, so a model from a game can be rigged in one click and posed on the stage.
+- 3D Nowdz OBJ import gives each material its own colour when no .mtl file is chosen.
 - 3D Nowdz outlines can taper to sharp tips and use a darker shade of each part's colour for coloured line art.
 - 3D Nowdz can set shading normals, so faces shade smoothly like a 2D drawing instead of showing every nose and cheek bump.
 - 3D Nowdz soft select has Connected only (Alt+O), so pulling an upper eyelid or lip leaves the one next to it alone.
@@ -26,6 +28,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed 3D Nowdz automatic weights locking a leg made in one piece to the thigh so it couldn't bend at the knee, and hair or quills at the back of the head following the chest or an arm.
 - Fixed 3D Nowdz showing "OBJ imported" while adding nothing. Models from games and other programs that break the mesh rules (doubled faces, three faces on one edge, mixed winding) are now repaired on import, and a file that still can't be read shows why.
 - Fixed 3D Nowdz drawing parts that pass through each other wrongly, such as hair through a head: each spot now shows the nearest surface.
 - Fixed stretched or resized 3D limbs pinching thin where two bones meet when they twist.

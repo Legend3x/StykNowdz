@@ -1,6 +1,7 @@
 /** Wavefront OBJ in and out for 3D Nowdz, so models travel to and from
  * Blender and other tools. Groups (`o`/`g`) become parts; materials (`usemtl`)
- * become palette colors when a companion MTL's `Kd` is given. */
+ * become palette colors when a companion MTL's `Kd` is given (without one,
+ * each material takes the next palette colour). */
 import {evaluatePart} from './model.mjs';
 import {recalculateNormals, repairImportedMesh} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
@@ -36,9 +37,12 @@ export function importObj(text, {mtl = '', palette = []} = {}) {
   const verts = [], parts = [];
   let part = null, material = 0;
   const start = name => { part = {name: name || `Part ${parts.length + 1}`, map: new Map(), mesh: {verts: [], faces: []}}; parts.push(part); };
+  // A material the MTL doesn't give (or no MTL chosen) still gets a colour of its
+  // own, taken in turn from the palette, so the pieces can be told apart.
+  const unnamed = new Map();
   const paletteIndex = name => {
     const rgb = colors.get(name);
-    if (!rgb) return 0;
+    if (!rgb) { if (!unnamed.has(name)) unnamed.set(name, unnamed.size % Math.max(1, palette.length)); return unnamed.get(name); }
     let i = palette.findIndex(c => c.every((v, k) => v === rgb[k]));
     if (i < 0) { palette.push(rgb); i = palette.length - 1; }
     return i;
@@ -71,5 +75,7 @@ export function importObj(text, {mtl = '', palette = []} = {}) {
       throw new TopologyError(`Importing part “${p.name}”`, check.ok ? error.result : check);
     }
   }
+  /** How many materials had no colour in the MTL (for the import message). */
+  out.uncoloredMaterials = unnamed.size;
   return out;
 }

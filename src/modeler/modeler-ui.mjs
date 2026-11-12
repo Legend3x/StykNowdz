@@ -1427,9 +1427,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (!objFile) { toast(t("modeler.chooseAnObjFile")); return; }
       try {
         const [text, mtl] = await Promise.all([objFile.text(), mtlFile ? mtlFile.text() : '']);
-        const added = commit(() => { const parts = importObj(text, {mtl, palette: model.palette}); for (const p of parts) addPart(model, {name: p.name, mesh: p.mesh}); S.parts = new Set(); return parts.length; });
+        let uncolored = 0;
+        const added = commit(() => { const parts = importObj(text, {mtl, palette: model.palette}); uncolored = parts.uncoloredMaterials; for (const p of parts) addPart(model, {name: p.name, mesh: p.mesh}); S.parts = new Set(); return parts.length; });
         // commit shows the reason when the file is refused; only say "imported" when it was.
-        if (added) { frameSelected(); toast(t("modeler.importedObj")); }
+        if (added) { frameSelected(); toast(uncolored ? t("modeler.importedObjNoMtl", {count: uncolored}) : t("modeler.importedObj")); }
       } catch (error) { toast(error.message); }
     });
     input.click();
