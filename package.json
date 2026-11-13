@@ -81,6 +81,7 @@
     "verify:sidecar": "node scripts/verify-sidecar.mjs",
     "pack": "electron-builder --dir",
     "verify:package": "node scripts/verify-package.mjs",
+    "build:blender-engine": "node scripts/build-blender-engine.mjs",
     "mark:release": "node scripts/mark-release.mjs",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
@@ -232,6 +233,13 @@
       "icon": "desktop/assets/stykanimate.ico",
       "signExecutable": false,
       "extraResources": [
+        {
+          "from": "build/blender-engine",
+          "to": "blender-engine",
+          "filter": [
+            "**/*"
+          ]
+        },
         {
           "from": "native/bin",
           "to": "vfw",
