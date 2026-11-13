@@ -9,6 +9,10 @@ on:
       voxel:
         description: Pedestal Remesh voxel size (smaller = heavier)
         default: '0.006'
+      dump:
+        description: Print the render and merged model into the log (newest Blender only)
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -61,9 +65,16 @@ jobs:
         run: |
           out="$RUNNER_TEMP/link"; echo "OUT=$out" >> "$GITHUB_ENV"
           node scripts/blender-link-stress.mjs send "$out"
-          STYK_STRESS=detail STYK_RENDER="$out/blender-render.png" STYK_OUT="$out" \
+          STYK_STRESS=detail STYK_RENDER="$out/blender-render.jpg" STYK_OUT="$out" \
             "$BLENDER" -b --python-exit-code 1 --python desktop/blender/styk_link.py -- --styk-session "$out" --styk-test scripts/blender-link-stress.py
           node scripts/blender-link-stress.mjs merge "$out"
+      - name: Dump the render and merged model into the log
+        if: inputs.dump && matrix.series == 'latest'
+        run: |
+          for f in blender-render.jpg merged.json report.json; do
+            [ -s "$OUT/$f" ] || continue
+            gzip -9c "$OUT/$f" | base64 -w 3000 | sed "s/^/STYKDUMP $f /"
+          done
       - name: Round 2 - untouched round trip changes nothing
         run: |
           STYK_STRESS=none STYK_OUT="$OUT/next" \
@@ -85,7 +96,7 @@ jobs:
             ${{ env.OUT }}/report.json
             ${{ env.OUT }}/merged.json
             ${{ env.OUT }}/incoming.json
-            ${{ env.OUT }}/blender-render.png
+            ${{ env.OUT }}/blender-render.jpg
             ${{ env.OUT }}/blender-log.txt
             ${{ env.OUT }}/*.blend
             ${{ env.OUT }}/next/report.json

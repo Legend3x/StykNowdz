@@ -93,8 +93,9 @@ def material_for(rgb, cache):
     linear = [srgb_to_linear(v) for v in key]
     mat.diffuse_color = (*linear, 1.0)
     mat.roughness = 0.9
-    mat.use_nodes = True
-    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bpy.app.version < (5, 0, 0):
+        mat.use_nodes = True  # always on from Blender 5.0
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if mat.node_tree else None
     if bsdf is not None:
         bsdf.inputs["Base Color"].default_value = (*linear, 1.0)
         bsdf.inputs["Roughness"].default_value = 0.9
@@ -268,7 +269,7 @@ def material_rgb(mat):
     if mat is None:
         return [200, 200, 200]
     color = list(mat.diffuse_color)[:3]
-    if mat.use_nodes and mat.node_tree:
+    if mat.node_tree and (bpy.app.version >= (5, 0, 0) or mat.use_nodes):
         bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
         if bsdf is not None and not bsdf.inputs["Base Color"].is_linked:
             color = list(bsdf.inputs["Base Color"].default_value)[:3]

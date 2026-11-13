@@ -47,7 +47,7 @@ export default Object.freeze({
   "modeler.blenderClosed": "Blender closed. Its last saved changes are in.",
   "modeler.boneStrength": "Strength",
   "modeler.boneRange": "Reach",
-  "modeler.bonePullHint": "Strength sets how hard this bone pulls the skin (0 moves nothing, 1 is normal). Reach stops it pulling points farther away than that (0 means no limit). Turn on Show weights to see the effect.",
+  "modeler.bonePullHint": "Strength sets how hard this bone pulls the skin (0 moves nothing, 1 is normal). Reach stops it pulling points farther away than that (0 means no limit). The colours on the model show the effect as you type.",
   "modeler.shortcuts": "Shortcuts",
   "modeler.controls": "Controls",
   "modeler.controlsTitle": "3D Nowdz controls",

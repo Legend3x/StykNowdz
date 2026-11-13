@@ -30,7 +30,8 @@ def material(name, rgb):
     mat = bpy.data.materials.new(name)
     lin = [((c / 255 + .055) / 1.055) ** 2.4 if c / 255 > .04045 else c / 255 / 12.92 for c in rgb]
     mat.diffuse_color = (*lin, 1)
-    mat.use_nodes = True
+    if bpy.app.version < (5, 0, 0):
+        mat.use_nodes = True
     bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     bsdf.inputs["Base Color"].default_value = (*lin, 1)
     return mat
@@ -202,9 +203,11 @@ note("edits took %.2fs" % (time.time() - started))
 render = os.environ.get("STYK_RENDER")
 if render:
     scene.render.engine = "CYCLES"
-    scene.cycles.device, scene.cycles.samples = "CPU", 24
+    scene.cycles.device, scene.cycles.samples = "CPU", 64
     scene.render.resolution_x, scene.render.resolution_y = 900, 1000
     scene.render.filepath = render
+    scene.render.image_settings.file_format = "JPEG"
+    scene.render.image_settings.quality = 88
     world = scene.world or bpy.data.worlds.new("World")
     scene.world = world
     world.color = (.55, .6, .68)

@@ -13,6 +13,7 @@ import {performance} from 'node:perf_hooks';
 import {readModel, evaluateModel} from '../src/modeler/model.mjs';
 import {startBlenderLink, applyBlenderLink} from '../src/modeler/blender-link.mjs';
 import {modelToFigure, modelDocument} from '../src/modeler/export-figure.mjs';
+import {partWeights} from '../src/modeler/armature.mjs';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
@@ -92,19 +93,28 @@ try {
     const p0 = e.getSpatialPose(); t = performance.now(); e.setSpatialPose({bend: p0.bend - 1.2});
     const after = meshOf().positions; timings.poseMs = performance.now() - t;
     const moved = set => [...set].filter(v => Math.hypot(beforePose[v * 2] - after[v * 2], beforePose[v * 2 + 1] - after[v * 2 + 1]) > .5).length / Math.max(1, set.size);
-    pose = {swordMoved: moved(swordVerts), pedestalMoved: moved(pedestalVerts)};
+    pose = {swordMoved: moved(swordVerts), pedestalMoved: moved(pedestalVerts),
+      byPart: Object.fromEntries(groups.map(g => [g.name, +moved(vertsOf(g)).toFixed(3)]))};
     expect(pose.swordMoved > .9, `bending the right forearm swings the sword (${(pose.swordMoved * 100).toFixed(0)}% moved)`);
   }
 } catch (error) { failures.push(`figure: ${error.message}`); }
 
 const evaluated = evaluateModel(model);
+// Which bones each new part follows (share of its points' weight), to see props that bend when they shouldn't.
+const follows = {};
+for (const {part, mesh} of evaluated) {
+  if (state.model.parts.some(p => p.id === part.id)) continue;
+  const skin = partWeights(model, mesh, part), sum = new Map();
+  for (let i = 0; i < skin.bones.length; i++) if (skin.bones[i]) { const name = model.bones.find(b => b.id === skin.bones[i])?.name; sum.set(name, (sum.get(name) ?? 0) + skin.weights[i]); }
+  follows[part.name] = Object.fromEntries([...sum].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([n, w]) => [n, +(w / mesh.verts.length).toFixed(2)]));
+}
 const report = {
   blender: reply.blender, merge, before,
   after: {parts: model.parts.length, bones: model.bones.length, palette: model.palette.length,
     points: model.parts.reduce((s, p) => s + p.mesh.verts.length, 0), faces: model.parts.reduce((s, p) => s + p.mesh.faces.length, 0),
     shownPoints: evaluated.reduce((s, {mesh}) => s + mesh.verts.length, 0), shownFaces: evaluated.reduce((s, {mesh}) => s + mesh.faces.length, 0)},
   parts: model.parts.map(p => ({name: p.name, points: p.mesh.verts.length, faces: p.mesh.faces.length, mirror: p.mirror, smooth: p.smooth, solidify: p.solidify ?? 0, painted: Object.keys(p.mesh.vdata?.skin ?? {}).length})),
-  replyMB: +(replyText.length / 1048576).toFixed(2), figure: figureStats, pose,
+  replyMB: +(replyText.length / 1048576).toFixed(2), figure: figureStats, pose, follows,
   timings: Object.fromEntries(Object.entries(timings).map(([k, v]) => [k, Math.round(v)])), failures,
 };
 await write('merged.json', model);
