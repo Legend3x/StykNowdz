@@ -47,10 +47,21 @@ def new_object(mesh_op, name, mat, **kw):
     return obj
 
 
+def bone_parent(obj, bone):
+    """Ctrl+P > Bone: the object stays where it is and moves with the bone."""
+    bpy.context.view_layer.update()
+    world = obj.matrix_world.copy()
+    obj.parent, obj.parent_type, obj.parent_bone = arm, "BONE", bone
+    bpy.context.view_layer.update()
+    obj.matrix_world = world
+
+
 def weight_all(obj, bone, also=()):
+    """Ctrl+P > With Empty Groups, then paint every point fully to one bone."""
     for name in (bone, *also):
         obj.vertex_groups.new(name=name)
     obj.vertex_groups[bone].add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
+    obj.modifiers.new("Armature", "ARMATURE").object = arm
 
 
 steel, gold, stone, red, leather = (material("Steel", (176, 186, 198)), material("Gold", (232, 184, 64)),
@@ -160,11 +171,12 @@ if mode == "detail":
     scarf = bpy.data.objects.new("Scarf", curve)
     scene.collection.objects.link(scarf)
     curve.materials.append(red)
-    note("Scarf: Bezier curve with bevel (baked; weights come from 3D Nowdz)")
+    bone_parent(scarf, "Neck")
+    note("Scarf: Bezier curve with bevel, bone-parented to Neck (baked; moves with the neck)")
 
     # 9. Studs round the skirt's waist: an Array bent on a circle by a Curve modifier.
     stud = new_object(bpy.ops.mesh.primitive_ico_sphere_add, "Studs", gold, radius=.012, subdivisions=2)
-    stud.location = (0, 0, 0)
+    stud.location = (0, 0, .8)
     array = stud.modifiers.new("Row", "ARRAY")
     array.count, array.relative_offset_displace = 24, (2.2, 0, 0)
     bpy.ops.curve.primitive_bezier_circle_add(radius=.19, location=(0, 0, .8))
@@ -172,7 +184,8 @@ if mode == "detail":
     ring.name = "Stud ring"
     bend = stud.modifiers.new("Round", "CURVE")
     bend.object = ring
-    note("Studs: Array of 24 bent round the waist by a Curve modifier (baked)")
+    bone_parent(stud, "Hips")
+    note("Studs: Array of 24 bent round the waist by a Curve modifier, bone-parented to Hips (baked)")
 
     # 10. Bones: a sword bone, weaker shoulders, and a rename.
     bpy.context.view_layer.objects.active = arm

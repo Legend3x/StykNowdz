@@ -97,3 +97,19 @@ test('bone strength and reach travel to Blender as bone properties', () => {
   assert.deepEqual(doc.bones.find(b => b.name === 'Shoulder.L'), {...doc.bones.find(b => b.name === 'Shoulder.L'), strength: 0, range: .1});
   assert.ok(evaluatePart(model.parts[0]).verts.length);
 });
+
+test('parts follow the skeleton as they did in Blender: bone parent, weights, or not attached', () => {
+  const model = hero(), arm = model.parts.find(p => p.name === 'Arm'); arm.bone = model.bones.find(b => b.name === 'UpperArm.L').id;
+  const {doc, session} = startBlenderLink(model);
+  assert.deepEqual(doc.parts.find(p => p.key === `part-${arm.id}`).follows, {bone: 'UpperArm.L'}, 'Moves with goes to Blender as a bone parent');
+  assert.equal(Object.keys(doc.parts.find(p => p.key === `part-${arm.id}`).weights).length, 0);
+  const reply = untouched(doc), box = cube(.4);
+  const add = (key, follows) => reply.parts.push({key, name: key, follows, matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], verts: box.verts, faces: box.faces.map(f => f.v), colors: box.faces.map(() => 0), mirror: false, smooth: 0, solidify: 0, visible: true, baked: true});
+  add('Pedestal', 'root'); add('Scarf', {bone: 'Neck'}); add('Cape', 'skin');
+  applyBlenderLink(model, reply, session);
+  const by = name => model.parts.find(p => p.name === name), id = name => model.bones.find(b => b.name === name).id;
+  assert.equal(by('Pedestal').bone, id('Hips'), 'not attached to the armature: stays with the root');
+  assert.equal(by('Scarf').bone, id('Neck'));
+  assert.equal(by('Cape').bone, undefined, 'an Armature modifier means weights');
+  assert.equal(arm.bone, id('UpperArm.L'), 'an untouched bound part keeps its bone');
+});

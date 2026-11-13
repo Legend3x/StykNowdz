@@ -229,7 +229,12 @@ def build(doc, folder):
         if p.get("smooth"):
             mod = obj.modifiers.new("Subdivision", "SUBSURF")
             mod.levels = mod.render_levels = int(p["smooth"])
-        if arm_obj is not None:
+        bound = p.get("follows", {}).get("bone") if isinstance(p.get("follows"), dict) else None
+        if arm_obj is not None and bound in arm_obj.data.bones:
+            # "Moves with" a bone in 3D Nowdz: a bone parent, as Ctrl+P > Bone makes.
+            obj.parent, obj.parent_type, obj.parent_bone = arm_obj, "BONE", bound
+            obj.matrix_world = Y_TO_Z @ rows(p["matrix"]) @ Z_TO_Y
+        elif arm_obj is not None:
             groups = {}
             for i, pairs in p.get("weights", {}).items():
                 for name, w in pairs:
@@ -312,6 +317,18 @@ def live_modifiers(obj, middle):
             return None
         out["smooth"] = sub.levels
     return out
+
+
+def follows(obj, arm_obj, root):
+    """How an object follows the skeleton: a bone it is parented to, weights
+    (an Armature modifier or armature parent), or nothing ("root" in 3D Nowdz)."""
+    if arm_obj is None:
+        return "skin"
+    if obj.parent == arm_obj and obj.parent_type == "BONE" and obj.parent_bone in arm_obj.data.bones:
+        return {"bone": obj.parent_bone}
+    if (obj.parent == arm_obj and obj.parent_type == "ARMATURE") or any(m.type == "ARMATURE" and m.object == arm_obj for m in obj.modifiers):
+        return "skin"
+    return "root" if root else "skin"
 
 
 def mesh_data(mesh, obj, bone_names):
@@ -450,6 +467,7 @@ def collect():
             palette_of_slots = [color_of(m) for m in slots] or [color_of(None)]
             colors = [palette_of_slots[m] if 0 <= m < len(palette_of_slots) else palette_of_slots[0] for m in data.pop("mats")]
             parts.append({"key": key, "name": obj.name, "matrix": flat(Z_TO_Y @ obj.matrix_world @ Y_TO_Z),
+                          "follows": follows(obj, arm_obj, bones),
                           "colors": colors, "baked": obj.type != "MESH" or live_modifiers(obj, middle) is None,
                           "visible": not obj.hide_get() and not obj.hide_viewport, **live, **data})
     finally:

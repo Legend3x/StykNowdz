@@ -72,6 +72,10 @@ if (flag === '--expect-unchanged') {
   expect(Math.abs((bone('Shoulder.L')?.strength ?? 1) - .3) < 1e-6, 'bone Strength set in Blender comes back');
   expect(Object.keys(part('Sword')?.mesh.vdata?.skin ?? {}).length > 0, "the sword keeps the weights painted in Blender");
   expect(merge.baked >= 6, 'Bevel/Boolean/Remesh/text/curve/array objects come back baked');
+  const root = model.bones.find(b => !b.parent);
+  expect(part('Pedestal')?.bone === root?.id && part('Nameplate')?.bone === root?.id, 'objects not attached to the armature stay with the root');
+  expect(part('Scarf')?.bone === bone('Neck')?.id && part('Studs')?.bone === bone('Hips')?.id, 'bone-parented objects move with their bone');
+  expect(!part('Sword')?.bone && !part('Pauldron')?.bone, 'objects with an Armature modifier follow their weights');
 }
 
 // The merged model as a posable figure on the stage.
@@ -96,6 +100,7 @@ try {
     pose = {swordMoved: moved(swordVerts), pedestalMoved: moved(pedestalVerts),
       byPart: Object.fromEntries(groups.map(g => [g.name, +moved(vertsOf(g)).toFixed(3)]))};
     expect(pose.swordMoved > .9, `bending the right forearm swings the sword (${(pose.swordMoved * 100).toFixed(0)}% moved)`);
+    expect(pose.pedestalMoved === 0, `the pedestal stays put when the arm bends (${(pose.pedestalMoved * 100).toFixed(0)}% moved)`);
   }
 } catch (error) { failures.push(`figure: ${error.message}`); }
 

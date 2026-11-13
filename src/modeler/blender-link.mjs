@@ -14,7 +14,10 @@
  * the caller's undo step): an object Blender left alone leaves its part exactly
  * as it is here, so edits made in 3D Nowdz meanwhile survive; a changed object
  * replaces its part's mesh, transform and modifiers and keeps the 3D Nowdz-only
- * settings (outline, shadows, bone binding); objects and bones deleted in
+ * settings (outline, shadows). It follows the skeleton as it did in Blender:
+ * parented to a bone, it moves with that bone (Moves with); with an Armature
+ * modifier, by weights; not attached to the armature at all, with the root
+ * bone (a pedestal or a prop doesn't bend with the feet); objects and bones deleted in
  * Blender are removed and new ones added. Objects Blender can't express as
  * Mirror + Solidify + Smooth (a Boolean, Remesh, a text or curve object) come
  * back "baked": their final shape as plain faces.
@@ -49,14 +52,17 @@ function weightsByName(model, mesh, part, names) {
 /** A part as the link carries it (object space, its own colour indices). */
 function partData(model, part, names) {
   const mesh = part.mesh, vdata = mesh.vdata ?? {};
+  // How it follows the skeleton: a bone (Moves with) becomes a Blender bone parent; else an Armature modifier.
+  const follows = part.bone && names.has(part.bone) ? {bone: names.get(part.bone)} : 'skin';
   return {
+    follows,
     key: `part-${part.id}`, name: part.name || 'Part', matrix: [...objectMatrix(part)],
     verts: mesh.verts.map(p => p.slice()), faces: mesh.faces.map(f => f.v.slice()), colors: mesh.faces.map(f => f.c ?? 0),
     edges: (mesh.edges ?? []).map(e => e.slice()), loose: (mesh.loose ?? []).slice(),
     mirror: Boolean(part.mirror), clip: part.clip !== false, smooth: part.smooth ?? 0, solidify: part.solidify ?? 0, visible: part.visible !== false,
     crease: {...(vdata.crease ?? {})}, line: {...(vdata.line ?? {})}, normal: Object.fromEntries(Object.entries(vdata.normal ?? {}).map(([i, n]) => [i, n.slice()])),
     // Blender gets the weights the animation uses, so posing there matches posing here.
-    weights: model.bones.length ? weightsByName(model, mesh, part, names) : {},
+    weights: model.bones.length && follows === 'skin' ? weightsByName(model, mesh, part, names) : {},
   };
 }
 
@@ -102,6 +108,7 @@ export function readBlenderReply(reply) {
 function sameAsLast(back, last, rgbOf) {
   if (!last || Boolean(back.baked) !== Boolean(last.baked) || back.name !== last.name) return false;
   if (Boolean(back.mirror) !== last.mirror || (back.smooth ?? 0) !== last.smooth || !close(back.solidify, last.solidify, 1e-6) || (back.visible !== false) !== last.visible || (back.clip !== false) !== last.clip) return false;
+  if (JSON.stringify(back.follows ?? 'skin') !== JSON.stringify(last.follows ?? 'skin')) return false;
   if (!closeList(back.matrix, last.matrix, 1e-5) || back.verts.length !== last.verts.length || back.faces.length !== last.faces.length) return false;
   for (let i = 0; i < back.verts.length; i++) if (!closeList(back.verts[i], last.verts[i], 1e-5)) return false;
   for (let i = 0; i < back.faces.length; i++) {
@@ -237,7 +244,12 @@ export function applyBlenderLink(model, rawReply, session) {
     if (back.baked) report.baked++;
     if (!back.baked && Number.isFinite(back.solidify) && back.solidify !== 0) part.solidify = Math.max(-1, Math.min(1, back.solidify)); else delete part.solidify;
     if (back.clip === false) part.clip = false; else delete part.clip;
-    report.painted += keepPaintedWeights(model, part);
+    // Following the skeleton as it did in Blender: parented to a bone moves with that bone; an
+    // object not attached to the armature at all stays with the body's root; otherwise weights.
+    const follows = back.follows ?? 'skin', root = boneOrder(model).find(b => !b.parent);
+    const bound = follows === 'root' ? root : typeof follows?.bone === 'string' ? model.bones.find(b => b.id === boneId.get(follows.bone)) : null;
+    if (bound) { part.bone = bound.id; if (part.mesh.vdata?.skin) { delete part.mesh.vdata.skin; if (!Object.keys(part.mesh.vdata).length) delete part.mesh.vdata; } }
+    else { delete part.bone; report.painted += keepPaintedWeights(model, part); }
     claimedParts.add(part.id); order.push(part); remember(part.id);
   }
   // Parts deleted in Blender go; parts made here while Blender was open stay, after the rest.
