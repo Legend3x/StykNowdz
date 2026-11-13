@@ -7,9 +7,10 @@ import {sub, dot, add, scale, length, bounds} from './mesh.mjs';
 export const sideOf = name => /\.L$/i.test(name) ? 'L' : /\.R$/i.test(name) ? 'R' : '';
 export const otherSide = name => name.replace(/\.L$/, '.~').replace(/\.R$/, '.L').replace(/\.~$/, '.R').replace(/\.l$/, '.~').replace(/\.r$/, '.l').replace(/\.~$/, '.r');
 
-export function addBone(model, {name = 'Bone', head, tail, parent = 0, face}) {
+export function addBone(model, {name = 'Bone', head, tail, parent = 0, face, strength, range}) {
   const bone = {id: model.nextId++, name: uniqueName(model, name), head: head.slice(), tail: tail.slice(), parent};
   if (face) setFace(bone, face);
+  setPull(bone, {strength, range});
   model.bones.push(bone);
   return bone;
 }
@@ -18,6 +19,21 @@ export function uniqueName(model, name) {
   if (!taken.has(name)) return name;
   const side = name.match(/(\.[LR])$/i)?.[1] ?? '', base = side ? name.slice(0, -2) : name;
   for (let n = 2; ; n++) if (!taken.has(`${base}.${String(n).padStart(3, '0')}${side}`)) return `${base}.${String(n).padStart(3, '0')}${side}`;
+}
+
+/** How hard a bone pulls the skin around it in automatic weights. `strength`
+ * scales its share against the bones beside it (0: it moves nothing, like a
+ * bone with Deform off in Blender; 1 is the default; up to 2), and `range`, when
+ * set, is the farthest a point can be from the bone and still follow it. */
+export const STRENGTH_MAX = 2;
+export function pullOf(bone) {
+  const strength = Number.isFinite(bone?.strength) ? Math.max(0, Math.min(STRENGTH_MAX, bone.strength)) : 1;
+  return {strength, range: Number.isFinite(bone?.range) && bone.range > 0 ? bone.range : 0};
+}
+export function setPull(bone, {strength, range} = {}) {
+  if (strength !== undefined) { if (Number.isFinite(strength) && Math.abs(strength - 1) > 1e-9) bone.strength = Math.max(0, Math.min(STRENGTH_MAX, strength)); else delete bone.strength; }
+  if (range !== undefined) { if (Number.isFinite(range) && range > 0) bone.range = Math.min(100, range); else delete bone.range; }
+  return bone;
 }
 
 /** Bones ordered parents first. */
@@ -51,9 +67,9 @@ export function symmetrizeBones(model) {
     const name = otherSide(bone.name), parent = byId.get(bone.parent), parentName = parent ? (sideOf(parent.name) === 'L' ? otherSide(parent.name) : parent.name) : null;
     const mirror = p => [-p[0], p[1], p[2]], target = byName.get(name);
     const parentId = parentName ? byName.get(parentName)?.id ?? 0 : 0;
-    const face = bone.face ? faceOf(bone) : null;
-    if (target) { target.head = mirror(bone.head); target.tail = mirror(bone.tail); target.parent = parentId; setFace(target, face); }
-    else { const created = addBone(model, {name, head: mirror(bone.head), tail: mirror(bone.tail), parent: parentId, face}); byName.set(name, created); byId.set(created.id, created); }
+    const face = bone.face ? faceOf(bone) : null, {strength, range} = pullOf(bone);
+    if (target) { target.head = mirror(bone.head); target.tail = mirror(bone.tail); target.parent = parentId; setFace(target, face); setPull(target, {strength, range}); }
+    else { const created = addBone(model, {name, head: mirror(bone.head), tail: mirror(bone.tail), parent: parentId, face, strength, range}); byName.set(name, created); byId.set(created.id, created); }
   }
 }
 
@@ -258,11 +274,19 @@ export function autoWeights(model, mesh, part, options = {}) {
 }
 
 function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
-  const bones = model.bones, n = mesh.verts.length;
+  const n = mesh.verts.length, everyBone = new Map(model.bones.map(b => [b.id, b]));
+  // Bones with no strength move nothing: weights go to the bones around them,
+  // and their parent and children count as each other's neighbours.
+  const pulls = new Map(model.bones.map(b => [b.id, pullOf(b)]));
+  let bones = model.bones.filter(b => pulls.get(b.id).strength > 0);
+  const bound = part?.bone && everyBone.get(part.bone);
+  if (bound && !bones.includes(bound)) bones = [...bones, bound]; // a part bound to a bone always follows it
   if (!bones.length) return {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
   const byId = new Map(bones.map(b => [b.id, b])), byName = new Map(bones.map(b => [b.name, b]));
-  const rigid = part?.bone && byId.get(part.bone);
-  const neighbours = new Map(bones.map(b => [b.id, new Set([b.id, b.parent, ...bones.filter(c => c.parent === b.id).map(c => c.id)].filter(Boolean))]));
+  const rigid = bound;
+  const upOf = b => { let p = b.parent; const seen = new Set(); while (p && !byId.has(p) && everyBone.has(p) && !seen.has(p)) { seen.add(p); p = everyBone.get(p).parent; } return byId.has(p) ? p : 0; };
+  const deformParent = new Map(bones.map(b => [b.id, upOf(b)]));
+  const neighbours = new Map(bones.map(b => [b.id, new Set([b.id, deformParent.get(b.id), ...bones.filter(c => deformParent.get(c.id) === b.id).map(c => c.id)].filter(Boolean))]));
   const sideBones = p => { const side = p[0] > 1e-3 ? 'L' : p[0] < -1e-3 ? 'R' : ''; return bones.filter(b => !side || !sideOf(b.name) || sideOf(b.name) === side); };
   // Bones that run through this part (sampled along the bone, inside its slightly grown bounds).
   // A torso never takes the upper arm hanging beside it; a hip still takes the thighs that start inside it.
@@ -310,7 +334,7 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     // ...unless a good share of it runs on past a joint onto the next bone (a
     // leg in one piece from hip to ankle, a shoe with the shin), which must bend there.
     // (A short parent, such as a neck under a head, carries no part of its own.)
-    const hasChild = bones.some(c => c.parent === bone.id), up = byId.get(bone.parent);
+    const hasChild = bones.some(c => deformParent.get(c.id) === bone.id), up = byId.get(deformParent.get(bone.id));
     const longUp = up && length(sub(up.tail, up.head)) >= len * .4, past = members.filter(i => {
       const p = mesh.verts[i], t = dot(sub(p, bone.head), axis) / len;
       // Beyond either end, or along the parent bone itself, not just by the
@@ -326,9 +350,20 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     }
     if (singleOf[v]) return new Map([[singleOf[v], 1]]);
     const allowed = allowedFor[v];
-    const scored = sideBones(p).filter(b => allowed.has(b.id)).map(b => [b.id, segmentDistance(p, b.head, b.tail)]).sort((a, b) => a[1] - b[1]).slice(0, 4);
+    let scored = sideBones(p).filter(b => allowed.has(b.id)).map(b => [b.id, segmentDistance(p, b.head, b.tail)]).sort((a, b) => a[1] - b[1]);
+    // A bone with a range lets go of points beyond it (unless no other bone is left to take them).
+    const reached = scored.filter(([id, d]) => !pulls.get(id).range || d <= pulls.get(id).range);
+    if (reached.length) scored = reached;
+    scored = scored.slice(0, 4);
     const closest = scored[0]?.[1] ?? 0, out = new Map();
-    for (const [id, d] of scored) { const w = 1 / Math.pow(Math.max(1e-4, d) / Math.max(1e-4, closest), 6); if (w > .02) out.set(id, w); }
+    for (const [id, d] of scored) {
+      const {strength, range} = pulls.get(id);
+      // Strength scales the bone's share (cubed, so the slider is felt against the steep distance falloff);
+      // inside a range the pull also fades out towards its edge.
+      const fade = range ? Math.min(1, Math.max(0, 1 - d / range) * 4) : 1;
+      const w = strength ** 3 * fade / Math.pow(Math.max(1e-4, d) / Math.max(1e-4, closest), 6);
+      if (w > .02) out.set(id, w);
+    }
     if (!out.size) out.set(nearest(p) || bones[0].id, 1);
     return out;
   });
@@ -341,6 +376,11 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     }
     next.forEach((m, i) => { lists[i] = m; });
   }
+  // Smoothing must not carry a bone past its range.
+  if (!rigid && [...pulls.values()].some(q => q.range)) lists.forEach((m, v) => {
+    if (singleOf[v]) return;
+    for (const id of [...m.keys()]) { const {range} = pulls.get(id) ?? {}; if (range && m.size > 1 && segmentDistance(mesh.verts[v], byId.get(id).head, byId.get(id).tail) > range) m.delete(id); }
+  });
   const outBones = [], outWeights = [];
   for (const m of lists) {
     let top = [...m].sort((a, b) => b[1] - a[1]).slice(0, 4);

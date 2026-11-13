@@ -73,6 +73,9 @@ export function readModel(value) {
     // Face bones: a flag, how far each pulls the skin, and an optional cut.
     if (b.face === true) { b.reach = Number.isFinite(b.reach) ? Math.max(0, Math.min(10, b.reach)) : .05; if (!['below', 'above'].includes(b.cut)) delete b.cut; }
     else { delete b.face; delete b.reach; delete b.cut; }
+    // How hard the bone pulls in automatic weights (armature.mjs pullOf); defaults are not stored.
+    if (b.strength !== undefined) { if (Number.isFinite(b.strength) && b.strength !== 1) b.strength = Math.max(0, Math.min(2, b.strength)); else delete b.strength; }
+    if (b.range !== undefined) { if (Number.isFinite(b.range) && b.range > 0) b.range = Math.min(100, b.range); else delete b.range; }
   }
   model.palette = Array.isArray(model.palette) && model.palette.length ? model.palette : DEFAULT_PALETTE.map(c => c.slice());
   model.references = Array.isArray(model.references) ? model.references : [];

@@ -6,7 +6,7 @@ import {t} from '../localization.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS} from './armature.mjs';
+import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
@@ -321,6 +321,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           [el('option', {value: '0', text: t("modeler.none")}), ...model.bones.filter(b => b.id !== bone.id).map(b => el('option', {value: String(b.id), text: b.name, selected: bone.parent === b.id}))])]),
         vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
         actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]]),
+        // How hard the bone pulls the skin: weaker, or only within a distance, so it stops tugging what is merely close to it.
+        field(t("modeler.boneStrength"), pullOf(bone).strength, v => commit(() => { setPull(bone, {strength: v}); S.cache.clear(); }), {step: .1, min: 0, max: STRENGTH_MAX}),
+        field(t("modeler.boneRange"), pullOf(bone).range, v => commit(() => { setPull(bone, {range: v}); S.cache.clear(); }), {step: .01, min: 0}),
+        el('p', {class: 'modeler-hint', text: t("modeler.bonePullHint")}),
         el('label', {class: 'modeler-check', title: t("modeler.faceBoneHint")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e => commit(() => { setFace(bone, e.target.checked ? faceOf(bone) : null); S.cache.clear(); })}), t("modeler.faceBone")]),
         bone.face ? field(t("modeler.faceReach"), bone.reach, v => commit(() => { setFace(bone, {...faceOf(bone), reach: v}); S.cache.clear(); }), {step: .01, min: 0}) : null,
         bone.face ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.faceCutHint")}, [el('span', {text: t("modeler.faceCut")}), el('select', {onchange: e => commit(() => { setFace(bone, {...faceOf(bone), cut: e.target.value}); S.cache.clear(); })},

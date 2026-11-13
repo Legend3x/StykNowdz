@@ -404,3 +404,30 @@ test('automatic weights: one-piece legs bend at the knee, the head region follow
   }
   assert.deepEqual([...bonesOf(model.parts[8 + 6])], ['Hand.L'], 'the fist follows the hand');
 });
+
+test('bone strength and reach limit what a bone pulls in automatic weights', async () => {
+  const {setPull, pullOf} = await import('../src/modeler/armature.mjs');
+  const model = characterModel(), torso = model.parts.find(p => p.name === 'Torso'), mesh = evaluatePart(torso);
+  const shoulder = model.bones.find(b => b.name === 'Shoulder.L');
+  const pull = () => { const s = autoWeights(model, mesh, torso); let total = 0, farthest = 0;
+    mesh.verts.forEach((p, v) => { for (let k = 0; k < 4; k++) if (s.bones[v * 4 + k] === shoulder.id && s.weights[v * 4 + k] > 0) { total += s.weights[v * 4 + k]; farthest = Math.max(farthest, segment(p)); } });
+    for (let v = 0; v * 4 < s.weights.length; v++) assert.ok(Math.abs(s.weights.slice(v * 4, v * 4 + 4).reduce((a, b) => a + b, 0) - 1) < 1e-6, 'weights still sum to one');
+    return {total, farthest}; };
+  const segment = p => { const ab = M.sub(shoulder.tail, shoulder.head), t = Math.max(0, Math.min(1, M.dot(M.sub(p, shoulder.head), ab) / M.dot(ab, ab))); return M.length(M.sub(p, M.add(shoulder.head, M.scale(ab, t)))); };
+  const normal = pull();
+  assert.ok(normal.total > 10, 'the shoulder pulls part of the torso by default');
+  setPull(shoulder, {strength: .4});
+  assert.ok(pull().total < normal.total * .6, 'a weaker bone pulls less');
+  setPull(shoulder, {strength: 1, range: .08});
+  assert.ok(pull().farthest <= .08 + 1e-9 && pull().total > 0, 'nothing beyond its reach follows it');
+  setPull(shoulder, {strength: 0, range: 0});
+  assert.equal(pull().total, 0, 'strength 0 moves nothing');
+  assert.deepEqual(pullOf(shoulder), {strength: 0, range: 0});
+  // Saved and reopened; mirrored to the other side; the default is not stored.
+  setPull(shoulder, {strength: .5, range: .2}); symmetrizeBones(model);
+  const other = model.bones.find(b => b.name === 'Shoulder.R');
+  assert.deepEqual(pullOf(other), {strength: .5, range: .2});
+  const reopened = readModel(JSON.parse(JSON.stringify(model)));
+  assert.deepEqual(pullOf(reopened.bones.find(b => b.name === 'Shoulder.L')), {strength: .5, range: .2});
+  setPull(shoulder, {strength: 1, range: 0}); assert.ok(!('strength' in shoulder) && !('range' in shoulder));
+});

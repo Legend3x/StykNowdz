@@ -8,6 +8,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- 3D Nowdz bones have Strength and Reach, so a bone stops tugging nearby parts it shouldn't move, such as a shoulder pulling the back. Turn on Show weights to see the change as you type.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).
 - 3D Nowdz Inset and Bevel can be changed after they finish, with exact thickness, width and segments.
