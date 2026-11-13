@@ -56,14 +56,14 @@ if (process.platform === 'win32') {
   run(path.join(out, 'bin', 'python'), ['-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', `bpy==${bpyVersion}`]);
 }
 
-// What only rendering or Blender's interface uses: GPU render kernels and
-// denoiser drivers, interface translations. The tools are modeling only, and
+// What only rendering or Blender's interface uses: GPU render kernel files and
+// interface translations. The tools are modeling only, and
 // the Windows build checks every tool on the packaged engine after this.
 const [bmaj, bmin] = bpyVersion.split('.'), bpyRoot = process.platform === 'win32' ? path.join(out, 'Lib', 'site-packages', 'bpy') : null;
 if (bpyRoot) {
   let pruned = 0;
   const drop = async target => { try { const before = await sizeOf(target); await rm(target, {recursive: true, force: true}); pruned += before; } catch { /* not in this version */ } };
-  for (const name of await readdir(bpyRoot)) if (/^cycles_kernel_.*\.dll$/i.test(name) || /^OpenImageDenoise_device_.*\.dll$/i.test(name)) await drop(path.join(bpyRoot, name));
+  // Every DLL stays: bpy loads some GPU and denoiser libraries as soon as it is imported.
   await drop(path.join(bpyRoot, `${bmaj}.${bmin}`, 'datafiles', 'locale'));
   await drop(path.join(bpyRoot, `${bmaj}.${bmin}`, 'scripts', 'addons_core', 'cycles', 'lib'));
   console.log(`Left out ${(pruned / 1048576).toFixed(0)} MiB used only for rendering and translations.`);
