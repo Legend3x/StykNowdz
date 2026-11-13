@@ -9,6 +9,7 @@ import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX}
 import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
+import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
@@ -38,6 +39,20 @@ const TRANSFORMS = ['grab', 'rotate', 'scale', 'shear'];
 const EXAMPLES = [['juniper', "modeler.exampleJuniper", "modeler.exampleJuniperHint"], ['kettle', "modeler.exampleKettle", "modeler.exampleKettleHint"]];
 const hex = rgb => '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 const rgbOf = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
+
+// Open in Blender (desktop only): one link per window. It outlives the Model tab;
+// changes saved in Blender while the tab is closed wait for it to open again.
+const desktop = () => (typeof window !== 'undefined' ? window.stykDesktop : null);
+const blender = {link: null, open: null, subscribed: false};
+function listenToBlender() {
+  if (blender.subscribed || !desktop()?.onBlenderChanged) return;
+  blender.subscribed = true;
+  desktop().onBlenderChanged(event => {
+    const link = blender.link; if (!link || event?.token !== link.token) return;
+    if (event.closed) { link.closed = true; blender.open?.blenderClosed(); return; }
+    if (Number.isFinite(event.seq) && event.seq > link.seen) { link.waiting = event.seq; blender.open?.pullBlender(); }
+  });
+}
 
 /**
  * Open the modeler. Resolves nothing; calls `onDone(model)` when the user
@@ -144,7 +159,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); importObjFile(); }}, t("modeler.importObj")),
         editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t("modeler.startOver")),
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportObjFile(); }}, t("modeler.exportObj")),
-        el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportGlbFile(); }}, t("modeler.exportGlb"))])),
+        el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportGlbFile(); }}, t("modeler.exportGlb")),
+        desktop()?.openInBlender ? el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.openInBlenderHint"), onclick: () => { closePopover(); openInBlender(); }}, t("modeler.openInBlender")) : null,
+        desktop()?.locateBlender ? el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); desktop().locateBlender().then(found => { if (found) toast(t("modeler.blenderChosen")); }, error => toast(error.message)); }}, t("modeler.chooseBlender")) : null].filter(Boolean))),
       iconButton('keyboard', t("modeler.controls"), () => showControls()),
       button(t("modeler.close"), requestClose),
       el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: done}, editing ? t("modeler.updateFigure") : t("modeler.addToAnimation"))].filter(Boolean));
@@ -1468,6 +1485,44 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     });
     frameSelected();
   }
+  /** File > Open in Blender: the model goes to the person's Blender; each save there comes back. */
+  async function openInBlender() {
+    if (!model.parts.length) { toast(t("modeler.nothingToExport")); return; }
+    let started;
+    try {
+      const {doc, session} = startBlenderLink(model);
+      toast(t("modeler.openingBlender"));
+      const result = await desktop().openInBlender({text: JSON.stringify(doc), name: model.name || 'model'});
+      if (!result?.opened) return;
+      started = {token: result.token, session, seen: 0, waiting: 0, closed: false};
+    } catch (error) { toast(error.message); return; }
+    const previous = blender.link; blender.link = started; listenToBlender();
+    if (previous && !previous.closed) desktop().endBlenderLink?.(previous.token).catch(() => {});
+    toast(t("modeler.blenderLinked"));
+  }
+  /** Bring Blender's latest save into the model, as one undo step. */
+  let pulling = false;
+  async function pullBlender() {
+    const link = blender.link;
+    if (!link || pulling || link.waiting <= link.seen) return;
+    pulling = true;
+    try {
+      const seq = link.waiting, text = await desktop().readBlenderChanges(link.token), reply = JSON.parse(text);
+      link.seen = seq;
+      // A link belongs to the model it was started from: the reply's parts must be ours.
+      const ids = new Set(model.parts.map(p => p.id));
+      if (model.parts.length && link.session.parts.size && ![...link.session.parts.values()].some(entry => ids.has(entry.id))) { toast(t("modeler.blenderOtherModel")); return; }
+      let report = null;
+      try { report = commit(() => applyBlenderLink(model, reply, link.session)); }
+      catch (error) { toast(error.message); return; }
+      if (!report) return;
+      const touched = report.changed + report.added + report.removed + report.bones.changed + report.bones.added + report.bones.removed;
+      toast(touched ? t("modeler.blenderMerged", {changed: report.changed, added: report.added, removed: report.removed, bones: report.bones.changed + report.bones.added + report.bones.removed})
+        : t("modeler.blenderNoChanges"));
+    } catch (error) { toast(error.message); }
+    finally { pulling = false; if (blender.link === link && link.waiting > link.seen) pullBlender(); }
+  }
+  function blenderClosed() { toast(t("modeler.blenderClosed")); }
   function importObjFile() {
     const input = el('input', {type: 'file', accept: '.obj,.mtl,.glb,.gltf,.bin', multiple: true});
     input.addEventListener('change', async () => {
@@ -1768,6 +1823,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
 
   // ---------- lifecycle ----------
   function close() {
+    if (blender.open?.owner === close) blender.open = null;
     listeners.abort(); cancelAnimationFrame(frameRequest); clearTimeout(flashTimer); root.remove();
     const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model)) && (model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0);
     // The draft remembers where you were (mode, part and selection), so coming back
@@ -1780,6 +1836,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     try { onDone?.(structuredClone(model)); finished = true; close(); }
     catch (error) { toast(error.modelerMessage ? error.message : (error.message || t("modeler.couldNotAdd"))); }
   }
+  // This tab now takes Blender's changes, including any saved while it was closed.
+  blender.open = {owner: close, pullBlender, blenderClosed};
+  if (blender.link && blender.link.waiting > blender.link.seen) queueMicrotask(pullBlender);
   syncRefs();
   if (!model.parts.length) S.camera = defaultCamera();
   if (draft?.camera) S.camera = {...S.camera, ...draft.camera};

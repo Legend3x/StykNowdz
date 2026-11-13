@@ -17,7 +17,7 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
 
 | Area | What's there |
 | --- | --- |
-| Top bar | Object / Edit / Bones modes; Points / Edges / Faces in Edit; Move, Rotate, Scale (keys only on narrow windows); Undo, Redo; Front, Side, Top; perspective or flat view; Frame; File (Import OBJ or glTF, Export OBJ, Export GLB, Start over); the keyboard button (the controls card); Close (or any other workspace tab: the unfinished model is kept as a draft, see below); **Add to animation** (or **Update figure**) |
+| Top bar | Object / Edit / Bones modes; Points / Edges / Faces in Edit; Move, Rotate, Scale (keys only on narrow windows); Undo, Redo; Front, Side, Top; perspective or flat view; Frame; File (Import OBJ or glTF, Export OBJ, Export GLB, Open in Blender and Choose Blender… in the desktop app, Start over); the keyboard button (the controls card); Close (or any other workspace tab: the unfinished model is kept as a draft, see below); **Add to animation** (or **Update figure**) |
 | Left | Parts list (click, Shift-click, double-click to rename, ● to hide), Add (Base character and primitives), Duplicate, Delete; the color palette (click to paint, right-click to change a color, + to add one) |
 | Right | Properties for the mode: part position, rotation, size, Mirror left and right, Smooth 0–3, Moves with (a rigid bone or automatic); Edit tools; Skeleton tools and the selected bone; View toggles; reference images |
 | Controls card | Shown over the viewport when 3D Nowdz opens: the main keys in four groups (Look around, Select, Shape, Bones). "Don't show this when 3D Nowdz opens" remembers the choice on this computer (`localStorage` key `stykNowdz.modeler.hideControls`); the keyboard button in the bar opens it again. Esc, Got it or a click outside closes it |
@@ -213,6 +213,57 @@ colour (linear factors), and with a skeleton a skin named Armature: one joint pe
 bone, +Y along the bone like Blender's exporter, inverse bind matrices, up to
 four weights per point (normalised). Bone tails ride along in `extras.tail`, so
 a model exported and imported again keeps its exact skeleton.
+
+### Open in Blender
+
+**File > Open in Blender** (desktop app) hands the model to the person's own
+Blender and brings their changes back every time they save there (Ctrl+S) or
+press **Send to 3D Nowdz** in Blender's sidebar (N > 3D Nowdz). Nothing leaves
+the computer and nothing is installed into Blender.
+
+- `desktop/blender-bridge.cjs` finds Blender (the one chosen with **File >
+  Choose Blender…**, else the installer's `Blender Foundation\Blender x.y`
+  folders newest first, Steam, the Microsoft Store alias, /Applications, Snap,
+  PATH), writes a session folder in the temp folder (`outgoing.json` and a copy
+  of `desktop/blender/styk_link.py`, since Blender can't read inside the app
+  archive) and starts `blender --python styk_link.py -- --styk-session <folder>`.
+  It watches `incoming.seq` (plus a 1.5 s poll) and tells the window; the
+  renderer reads `incoming.json`. Folders older than two days are swept.
+- `src/modeler/blender-link.mjs` is the format, both ways, in 3D Nowdz's space
+  (the script converts Y up ↔ Blender's Z up: (x, y, z) ↔ (x, −z, y)). Parts go
+  as their own mesh in object space with their transform, so quads, n-gons and
+  wires survive; **Mirror** (about a locked "3D Nowdz Middle" empty at the
+  world's middle), **Solidify** (offset −1) and **Smooth** (Subdivision Surface)
+  become live Blender modifiers and come back as settings. Creases, line weights
+  (`styk_line`) and custom normals (`styk_normal`) ride as attributes; bones
+  become an armature with Strength and Reach as bone properties; every part
+  gets the weights the animation uses as vertex groups; reference images become
+  image empties where 3D Nowdz shows them.
+- Coming back, objects and bones are matched by a key (new ones get their own),
+  so a renamed bone keeps its id and the animations on it. An object Blender
+  didn't change leaves its part exactly as it is in 3D Nowdz (edits made here
+  meanwhile survive); a changed one takes Blender's mesh, transform and
+  modifiers and keeps the 3D Nowdz-only settings (outline, shadows, Moves with).
+  Anything Blender can't express as those three modifiers (Bevel, Boolean,
+  Remesh, Array, Displace…, or a text, curve or metaball object) comes back
+  **baked**: its final shape (Armature modifier left out). Boolean cutters,
+  guide curves with no surface, cameras, lights and empties stay in Blender.
+  Weights painted in Blender are kept on the points; points whose weights are
+  what 3D Nowdz would give anyway stay automatic. The whole merge is one undo
+  step. Up to 2 million points come back (Decimate in Blender for more).
+- The link outlives the Model tab: changes saved while it's closed arrive when
+  it opens again. A reply for another model is refused.
+
+`.github/workflows/blender-link.yml` checks this against real Blender releases
+(3.6, 4.2, 4.5 and the newest): `scripts/blender-link-stress.mjs` sends Juniper,
+`scripts/blender-link-stress.py` stands in for a person in Blender (a bevelled
+sword painted to the hand, a Boolean-cut mirrored pauldron, a remeshed and
+displaced stone pedestal, a 3D text nameplate, a curve scarf, an Array of studs
+bent round the waist, a second Smooth level on the head, creases, a new bone, a
+rename, weaker shoulders, a deleted part), then the reply must merge, become a
+posable figure whose sword follows the forearm, and a second untouched round
+trip must change nothing. Under Xvfb it also saves with Ctrl+S's operator in a
+real Blender window.
 
 ### Depth buffer
 
@@ -460,6 +511,15 @@ purity, rollback and a run of random edits validated after every step.
 3. Weights are smoothed twice across the surface, keeping each point's allowed
    bones, then normalized.
 
+Each bone has **Strength** and **Reach** (Bones mode, Bone panel; `pullOf` /
+`setPull`). Strength (0–2, default 1) scales the bone's share in step 2 (cubed,
+so it is felt against the steep distance falloff); 0 makes the bone move
+nothing, like Deform off in Blender: its points go to the bones around it, and
+its parent and children count as each other's neighbours. Reach, when set, is
+the farthest a point can be from the bone and still follow it (fading over its
+last quarter), also after smoothing; it gives way only where no other bone is
+left. Defaults are not stored; Mirror bones copies both across.
+
 Two refinements: a bone that only touches a part's edge (a thigh starting just
 under the shirt, sampled inside the part's tight bounds once or its grown
 bounds at most once) is not a candidate; and a part centred on a root bone
@@ -559,11 +619,15 @@ undo step.
 | src/modeler/export-figure.mjs | Model → figure |
 | src/modeler/obj-format.mjs | OBJ/MTL import and export |
 | src/modeler/gltf-format.mjs | glTF 2.0 (.glb, .gltf + .bin) import and export, with skeleton and skin weights |
+| src/modeler/blender-link.mjs | Open in Blender: the link format and merging Blender's changes |
+| desktop/blender-bridge.cjs | Finding and starting Blender, watching for its saves |
+| desktop/blender/styk_link.py | The script Blender runs: builds the scene, sends it back on save |
 | src/modeler/viewport.mjs | Camera, projection and drawing |
 | src/modeler/modeler-ui.mjs | The workspace |
 | src/styles/features/modeler.css | Its styles |
 | tests/modeler.test.mjs | Operations, weights, export and re-editing |
 | tests/modeler-integrity.test.mjs | Matrix purity, topology rules, atomic edits |
+| tests/modeler-blender-link.test.mjs, tests/blender-bridge.test.mjs | The Blender link's merge rules and desktop session |
 
 ## Not yet
 

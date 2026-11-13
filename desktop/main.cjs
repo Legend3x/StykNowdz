@@ -19,6 +19,7 @@ const { WorkspacePreferences } = require('./preferences.cjs');
 const { SupportService } = require('./support.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
 const { FontService } = require('./font-service.cjs');
+const { BlenderBridge } = require('./blender-bridge.cjs');
 const { VideoExportService } = require('./video-export-service.cjs');
 const { AudioService } = require('./audio-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
@@ -466,6 +467,43 @@ function registerIpc() {
   const editorSettings = new WorkspacePreferences(app.getPath('userData'), { filename: 'editor-settings.json' });
   // The person's effect presets (src/vfx-user-presets.mjs): their own file, so they never crowd the 16 KB settings.
   const vfxPresets = new WorkspacePreferences(app.getPath('userData'), { filename: 'vfx-presets.json', maxBytes: 1024 * 1024 });
+  // 3D Nowdz > File > Open in Blender: the person's own Blender, linked both ways.
+  const blender = new BlenderBridge({
+    store: new WorkspacePreferences(app.getPath('userData'), { filename: 'blender.json' }), tempRoot: app.getPath('temp'),
+    notify: value => { if (window && !window.isDestroyed()) window.webContents.send('styk:blender-changed', value); },
+  });
+  blender.sweep().catch(() => {});
+  app.on('will-quit', () => blender.dispose());
+  const locateBlender = async () => {
+    const result = await dialog.showOpenDialog(window, {
+      title: t('desktop.blender.locateTitle'), properties: ['openFile'],
+      filters: process.platform === 'win32' ? [{ name: 'Blender', extensions: ['exe'] }] : [],
+      defaultPath: process.platform === 'win32' ? (process.env.ProgramFiles || 'C:\\Program Files') : process.platform === 'darwin' ? '/Applications' : undefined,
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    // On a Mac the app bundle is chosen; Blender itself is inside it.
+    const picked = result.filePaths[0], inside = path.join(picked, 'Contents', 'MacOS', 'Blender');
+    return blender.choose(process.platform === 'darwin' && picked.endsWith('.app') ? inside : picked);
+  };
+  handle('styk:blender-open', async (event, options) => {
+    trusted(event);
+    let found = await blender.find();
+    if (!found) {
+      const answer = await dialog.showMessageBox(window, {
+        type: 'info', title: t('desktop.blender.notFoundTitle'), message: t('desktop.blender.notFoundTitle'), detail: t('desktop.blender.notFoundDetail'),
+        buttons: [t('desktop.blender.locate'), t('desktop.blender.download'), t('common.cancel')], defaultId: 0, cancelId: 2, noLink: true,
+      });
+      if (answer.response === 1) { await shell.openExternal('https://www.blender.org/download/'); return { opened: false }; }
+      if (answer.response !== 0) return { opened: false };
+      found = await locateBlender();
+      if (!found) return { opened: false };
+    }
+    const { token } = await blender.open(found.path, options?.text, { name: options?.name });
+    return { opened: true, token, blender: path.basename(path.dirname(found.path)) };
+  });
+  handle('styk:blender-locate', async event => { trusted(event); const found = await locateBlender(); return found ? { path: found.path } : null; });
+  handle('styk:blender-read', (event, token) => { trusted(event); return blender.read(String(token)); });
+  handle('styk:blender-end', (event, token) => { trusted(event); blender.end(String(token)); return true; });
   const fonts = new FontService();
   handle('styk:fonts-list', event => { trusted(event); return fonts.listFonts(); });
   handle('styk:fonts-read', async (event, id) => {

@@ -127,6 +127,12 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   setEditorSettings: (settings) => ipcRenderer.invoke('styk:editor-settings-set', settings),
   getVfxPresets: () => ipcRenderer.invoke('styk:vfx-presets-get'),
   setVfxPresets: (presets) => ipcRenderer.invoke('styk:vfx-presets-set', presets),
+  // 3D Nowdz > Open in Blender (desktop/blender-bridge.cjs): the model goes out as link JSON text.
+  openInBlender: options => ipcRenderer.invoke('styk:blender-open', options),
+  locateBlender: () => ipcRenderer.invoke('styk:blender-locate'),
+  readBlenderChanges: token => ipcRenderer.invoke('styk:blender-read', token),
+  endBlenderLink: token => ipcRenderer.invoke('styk:blender-end', token),
+  onBlenderChanged: callback => subscribe('styk:blender-changed', callback),
   listFonts: () => ipcRenderer.invoke('styk:fonts-list'),
   readFont: (id) => ipcRenderer.invoke('styk:fonts-read', id),
   readClipboardText: () => ipcRenderer.invoke('styk:clipboard-text-read'),

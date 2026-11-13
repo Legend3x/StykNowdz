@@ -1,0 +1,92 @@
+name: Blender link
+# Open in Blender (docs/BLENDER-LITE.md) against real Blender releases: Juniper goes
+# to Blender, gets detail no 3D Nowdz tool makes (Bevel, Boolean, Remesh + Displace,
+# text, curves, Array), comes back, becomes a posable figure, and then makes an
+# untouched second round trip that must change nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      voxel:
+        description: Pedestal Remesh voxel size (smaller = heavier)
+        default: '0.006'
+  push:
+    branches: [main]
+    paths:
+      - desktop/blender/**
+      - desktop/blender-bridge.cjs
+      - src/modeler/blender-link.mjs
+      - scripts/blender-link-stress.*
+      - scripts/blender-link-ui-check.py
+      - .github/workflows/blender-link.yml
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  round-trip:
+    name: Blender ${{ matrix.series }}
+    strategy:
+      fail-fast: false
+      matrix:
+        series: ['3.6', '4.2', '4.5', 'latest']
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      STYK_VOXEL: ${{ inputs.voxel || '0.006' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Download Blender ${{ matrix.series }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libegl1 libxkbcommon0 libsm6 libice6 xvfb libgl1-mesa-dri >/dev/null
+          series='${{ matrix.series }}'
+          if [ "$series" = latest ]; then
+            series=$(curl -fsSL https://download.blender.org/release/ | grep -oE 'Blender[0-9]+\.[0-9]+/' | sed 's/Blender//; s#/##' | sort -uV | tail -1)
+          fi
+          file=$(curl -fsSL "https://download.blender.org/release/Blender$series/" | grep -oE "blender-$series\.[0-9]+-linux-x64\.tar\.xz" | sort -uV | tail -1)
+          echo "Using $file"
+          curl -fsSL -o blender.tar.xz "https://download.blender.org/release/Blender$series/$file"
+          mkdir -p "$RUNNER_TEMP/blender" && tar -xf blender.tar.xz -C "$RUNNER_TEMP/blender" --strip-components=1
+          echo "BLENDER=$RUNNER_TEMP/blender/blender" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/blender/blender" --version | head -1
+      - name: Round 1 - detail in Blender, bring it back
+        run: |
+          out="$RUNNER_TEMP/link"; echo "OUT=$out" >> "$GITHUB_ENV"
+          node scripts/blender-link-stress.mjs send "$out"
+          STYK_STRESS=detail STYK_RENDER="$out/blender-render.png" STYK_OUT="$out" \
+            "$BLENDER" -b --python-exit-code 1 --python desktop/blender/styk_link.py -- --styk-session "$out" --styk-test scripts/blender-link-stress.py
+          node scripts/blender-link-stress.mjs merge "$out"
+      - name: Round 2 - untouched round trip changes nothing
+        run: |
+          STYK_STRESS=none STYK_OUT="$OUT/next" \
+            "$BLENDER" -b --python-exit-code 1 --python desktop/blender/styk_link.py -- --styk-session "$OUT/next" --styk-test scripts/blender-link-stress.py
+          node scripts/blender-link-stress.mjs merge "$OUT/next" --expect-unchanged
+      - name: Ctrl+S in a real Blender window sends the model
+        if: matrix.series != '3.6'
+        run: |
+          ui="$RUNNER_TEMP/ui"; node scripts/blender-link-stress.mjs send "$ui"
+          LIBGL_ALWAYS_SOFTWARE=1 timeout 300 xvfb-run -a -s "-screen 0 1600x1000x24" \
+            "$BLENDER" --python-exit-code 1 --python desktop/blender/styk_link.py --python scripts/blender-link-ui-check.py -- --styk-session "$ui"
+          test -s "$ui/incoming.json"
+          node scripts/blender-link-stress.mjs merge "$ui" --expect-unchanged
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blender-link-${{ matrix.series }}
+          path: |
+            ${{ env.OUT }}/report.json
+            ${{ env.OUT }}/merged.json
+            ${{ env.OUT }}/incoming.json
+            ${{ env.OUT }}/blender-render.png
+            ${{ env.OUT }}/blender-log.txt
+            ${{ env.OUT }}/*.blend
+            ${{ env.OUT }}/next/report.json
+          if-no-files-found: warn
