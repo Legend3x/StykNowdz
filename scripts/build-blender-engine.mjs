@@ -56,6 +56,24 @@ if (process.platform === 'win32') {
   run(path.join(out, 'bin', 'python'), ['-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', `bpy==${bpyVersion}`]);
 }
 
+// What only rendering or Blender's interface uses: GPU render kernels and
+// denoiser drivers, interface translations. The tools are modeling only, and
+// the Windows build checks every tool on the packaged engine after this.
+const [bmaj, bmin] = bpyVersion.split('.'), bpyRoot = process.platform === 'win32' ? path.join(out, 'Lib', 'site-packages', 'bpy') : null;
+if (bpyRoot) {
+  let pruned = 0;
+  const drop = async target => { try { const before = await sizeOf(target); await rm(target, {recursive: true, force: true}); pruned += before; } catch { /* not in this version */ } };
+  for (const name of await readdir(bpyRoot)) if (/^cycles_kernel_.*\.dll$/i.test(name) || /^OpenImageDenoise_device_.*\.dll$/i.test(name)) await drop(path.join(bpyRoot, name));
+  await drop(path.join(bpyRoot, `${bmaj}.${bmin}`, 'datafiles', 'locale'));
+  await drop(path.join(bpyRoot, `${bmaj}.${bmin}`, 'scripts', 'addons_core', 'cycles', 'lib'));
+  console.log(`Left out ${(pruned / 1048576).toFixed(0)} MiB used only for rendering and translations.`);
+}
+async function sizeOf(target) {
+  const info = await stat(target);
+  if (!info.isDirectory()) return info.size;
+  let total = 0; for (const entry of await readdir(target)) total += await sizeOf(path.join(target, entry)); return total;
+}
+
 // Nothing the engine needs: pip's own copies of wheels' scripts and caches.
 async function sweep(dir) {
   for (const entry of await readdir(dir, {withFileTypes: true})) {
@@ -72,7 +90,7 @@ async function measure(dir) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) { await measure(full); continue; }
     // Sizes by folder, four levels down (Lib/site-packages/bpy/<part>), to see what is large.
-    const size = (await stat(full)).size, key = path.relative(out, full).split(path.sep).slice(0, 4).join('/');
+    const size = (await stat(full)).size, rel = path.relative(out, full).split(path.sep), key = rel.slice(0, rel[3] === `${bpyVersion.split('.').slice(0, 2).join('.')}` ? 6 : 4).join('/');
     files++; bytes += size; sizes.set(key, (sizes.get(key) ?? 0) + size);
   }
 }
