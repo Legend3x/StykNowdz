@@ -230,7 +230,7 @@ def build(doc, folder):
             mod = obj.modifiers.new("Subdivision", "SUBSURF")
             mod.levels = mod.render_levels = int(p["smooth"])
         bound = p.get("follows", {}).get("bone") if isinstance(p.get("follows"), dict) else None
-        if arm_obj is not None and bound in arm_obj.data.bones:
+        if arm_obj is not None and isinstance(bound, str) and bound in arm_obj.data.bones:
             # "Moves with" a bone in 3D Nowdz: a bone parent, as Ctrl+P > Bone makes.
             obj.parent, obj.parent_type, obj.parent_bone = arm_obj, "BONE", bound
             obj.matrix_world = Y_TO_Z @ rows(p["matrix"]) @ Z_TO_Y
@@ -324,7 +324,7 @@ def follows(obj, arm_obj, root):
     (an Armature modifier or armature parent), or nothing ("root" in 3D Nowdz)."""
     if arm_obj is None:
         return "skin"
-    if obj.parent == arm_obj and obj.parent_type == "BONE" and obj.parent_bone in arm_obj.data.bones:
+    if obj.parent == arm_obj and obj.parent_type == "BONE" and obj.parent_bone and obj.parent_bone in arm_obj.data.bones:
         return {"bone": obj.parent_bone}
     if (obj.parent == arm_obj and obj.parent_type == "ARMATURE") or any(m.type == "ARMATURE" and m.object == arm_obj for m in obj.modifiers):
         return "skin"
