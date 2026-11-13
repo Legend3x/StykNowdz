@@ -38,3 +38,21 @@ test('without WebGL the depth pass says so, and the viewport falls back to sorti
   const batch = vertexBatch(); for (let i = 0; i < 10000; i++) batch.push(0, 0, .5, [10, 20, 30]);
   assert.equal(batch.count, 10000); assert.equal(batch.done().positions.length, 30000);
 });
+
+test('Front, Back, Left and Right views get a grid in their own plane, finer as you zoom in', async () => {
+  const {cameraFrame, defaultCamera, VIEWS, sideOnAxis, gridStep} = await import('../src/modeler/viewport.mjs');
+  const view = (name, ortho = true) => { const c = {...defaultCamera(), ortho}; [c.yaw, c.pitch] = VIEWS[name]; return cameraFrame(c, 800, 600); };
+  assert.equal(sideOnAxis(view('front')), 'x');
+  assert.equal(sideOnAxis(view('back')), 'x');
+  assert.equal(sideOnAxis(view('right')), 'z');
+  assert.equal(sideOnAxis(view('left')), 'z');
+  // Top view keeps the floor grid; perspective and orbited views do too.
+  assert.equal(sideOnAxis(view('top')), null);
+  assert.equal(sideOnAxis(view('front', false)), null);
+  const tilted = {...defaultCamera(), ortho: true, yaw: .3, pitch: 0};
+  assert.equal(sideOnAxis(cameraFrame(tilted, 800, 600)), null);
+  // Lines at least 14 pixels apart: zooming in picks a finer step.
+  assert.equal(gridStep(.25 / 14), .25);
+  assert.ok(gridStep(.001) < gridStep(.01) && gridStep(.01) < gridStep(.1));
+  assert.equal(gridStep(100), 10);
+});

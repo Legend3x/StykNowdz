@@ -237,7 +237,25 @@ export function weightColor(w) {
   return t < .5 ? [40, 80 + 340 * t, 255 - 300 * t] : [40 + 430 * (t - .5), 250 - 400 * (t - .5), 105 - 150 * (t - .5)].map(v => Math.max(0, Math.min(255, v)));
 }
 
+/** Grid spacing in world units for a flat view: the finest step at least
+ * `minPixels` apart on screen (Blender's grid subdivides the same way as you zoom). */
+export const GRID_STEPS = [.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10];
+export function gridStep(unitsPerPixel, minPixels = 14) {
+  return GRID_STEPS.find(s => s / unitsPerPixel >= minPixels) ?? GRID_STEPS.at(-1);
+}
+
+/** The flat side-on views (Front, Back, Left, Right, looking level): the axis
+ * across the screen ('x' or 'z'), or null for any other view. */
+export function sideOnAxis(frame) {
+  if (!frame.ortho || Math.abs(frame.back[1]) > 1e-3) return null;
+  const [rx, , rz] = frame.right;
+  if (Math.abs(rx) > .9999) return 'x';
+  if (Math.abs(rz) > .9999) return 'z';
+  return null;
+}
+
 function drawGrid(ctx, frame) {
+  if (sideOnAxis(frame)) { drawViewGrid(ctx, frame, sideOnAxis(frame)); return; }
   const span = 6, step = .25;
   for (let i = -span; i <= span + 1e-9; i += step) {
     const strong = Math.abs(i % 1) < 1e-6;
@@ -249,6 +267,34 @@ function drawGrid(ctx, frame) {
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
     }
   }
+}
+
+/** A flat side-on view's grid, as in Blender: it fills the view in the view's own
+ * plane, with a blue line up the middle (X = 0 in Front and Back is where Mirror
+ * reflects; Z = 0 in the side views) and a red ground line, and grows finer as
+ * you zoom in. */
+function drawViewGrid(ctx, frame, across) {
+  const {w, h} = frame, k = across === 'x' ? 0 : 2, unit = [0, 0, 0];
+  unit[k] = 1;
+  // Where the screen's edges are, along the axis across and up (the view plane through the middle).
+  const origin = frame.project([0, 0, 0]), upp = frame.unitsPerPixel([0, 0, 0]), sign = Math.sign(frame.right[k]) || 1;
+  const along = x => (x - origin.x) * upp * sign, height = y => (origin.y - y) * upp;
+  const [a0, a1] = [along(0), along(w)].sort((p, q) => p - q), [y0, y1] = [height(h), height(0)];
+  const step = gridStep(upp), strong = step * (step === .25 || step === 2.5 ? 4 : 5);
+  const line = (p, q, color, width) => { ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); };
+  const at = (a, y) => { const p = [0, y, 0]; p[k] = a; return frame.project(p); };
+  const isMultiple = (v, of) => Math.abs(v / of - Math.round(v / of)) < 1e-6;
+  // At most a few hundred lines however far you zoom out.
+  for (let i = Math.ceil(a0 / step), n = 0; i * step <= a1 && n < 400; i++, n++) {
+    const a = i * step; if (i === 0) continue;
+    line(at(a, y0), at(a, y1), isMultiple(a, strong) ? VIEW_COLORS.gridStrong : VIEW_COLORS.grid, 1);
+  }
+  for (let j = Math.ceil(y0 / step), n = 0; j * step <= y1 && n < 400; j++, n++) {
+    const y = j * step; if (j === 0) continue;
+    line(at(a0, y), at(a1, y), isMultiple(y, strong) ? VIEW_COLORS.gridStrong : VIEW_COLORS.grid, 1);
+  }
+  if (a0 <= 0 && a1 >= 0) line(at(0, y0), at(0, y1), VIEW_COLORS.axisZ, 1.5);
+  if (y0 <= 0 && y1 >= 0) line(at(a0, 0), at(a1, 0), VIEW_COLORS.axisX, 1.5);
 }
 
 /** Topmost painted polygon under (x, y). */

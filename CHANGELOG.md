@@ -9,6 +9,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 ### Added
 
 - 3D Nowdz File > Open in Blender sends your model to Blender and brings your changes back each time you save there, with bones, mirror and smoothing kept. Blender's other tools, such as Boolean, Remesh, text and curves, come back as finished shapes.
+- 3D Nowdz Front, Back and Side views show a grid with a line up the middle and along the ground, as in Blender, so you can see where your model lines up and where Mirror reflects it. The grid gets finer as you zoom in.
 - 3D Nowdz bones have Strength and Reach, so a bone stops tugging nearby parts it shouldn't move, such as a shoulder pulling the back. The weight colours show the change as you type.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).

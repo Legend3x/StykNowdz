@@ -227,7 +227,7 @@ export default Object.freeze({
   "modeler.wireframe": "Show wireframe",
   "modeler.xray": "See through (X-ray)",
   "modeler.showBones": "Show bones",
-  "modeler.grid": "Show floor grid",
+  "modeler.grid": "Show grid",
   "modeler.references": "Reference images",
   "modeler.flipImage": "Flip",
   "modeler.flipImageHint": "Mirror the image left to right, for a side drawing that faces the other way (the model's front is on the left in the Side view).",
