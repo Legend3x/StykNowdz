@@ -39,7 +39,8 @@ jobs:
           - os: windows-latest
             platform: win32
             target: win
-          - os: ubuntu-latest
+          # Ubuntu 24.04: setup-python has no Python 3.12.9 for 26.04 yet.
+          - os: ubuntu-24.04
             platform: linux
             target: linux
     runs-on: ${{ matrix.os }}
