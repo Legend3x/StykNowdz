@@ -112,8 +112,10 @@ function remapVData(mesh, map) {
 function mirrorVData(mesh, map) {
   if (!hasVData(mesh)) return;
   for (const key of VDATA_KEYS) {
-    // Skin weights name one side's bones; the mirrored copy gets automatic weights.
-    const src = mesh.vdata[key]; if (!src || key === 'skin') continue;
+    const src = mesh.vdata[key]; if (!src) continue;
+    // Skin weights name one side's bones: the copy takes the same bones on the
+    // other side, marked by negated ids (armature.sideResolver turns them back).
+    if (key === 'skin') { for (const [i, value] of Object.entries({...src})) { const j = map[Number(i)]; if (j !== undefined && j !== Number(i)) src[j] = value.map(([b, w]) => [-b, w]); } continue; }
     if (EDGE_KEYED.has(key)) { for (const [k, value] of Object.entries({...src})) { const j = remapKey(k, v => map[v] ?? v); if (j !== undefined) src[j] = value; } continue; }
     for (const [i, value] of Object.entries({...src})) { const j = map[Number(i)]; if (j === undefined || j === Number(i)) continue; src[j] = key === 'normal' ? [-value[0], value[1], value[2]] : value; }
   }

@@ -2,7 +2,8 @@
  * weights. A bone is {id, name, head, tail, parent} where parent is another
  * bone's id or 0. Side bones end in ".L"/".R" as in Blender: the character
  * faces the front view, so its left (".L") is on +X. */
-import {sub, dot, add, scale, length, bounds} from './mesh.mjs';
+import {sub, dot, add, scale, length, bounds, transformMesh, objectMatrix} from './mesh.mjs';
+import {evaluatePart} from './model.mjs';
 
 export const sideOf = name => /\.L$/i.test(name) ? 'L' : /\.R$/i.test(name) ? 'R' : '';
 export const otherSide = name => name.replace(/\.L$/, '.~').replace(/\.R$/, '.L').replace(/\.~$/, '.R').replace(/\.l$/, '.~').replace(/\.r$/, '.l').replace(/\.~$/, '.r');
@@ -250,18 +251,66 @@ export function segmentDistance(p, a, b) {
  * beside it. Weights fall off with distance, skip bones on the other side of
  * the middle, and are smoothed over the surface so joints bend softly.
  */
-/** A part's skin weights: automatic (autoWeights), except points that kept
- * weights from an imported rig (mesh.vdata.skin), which use those. */
+/** A part's skin weights for `mesh` (the part evaluated: Mirror, Solidify and
+ * Smooth applied, in model space): automatic (autoWeights), except where the
+ * part's own points carry weights (part.mesh.vdata.skin), painted in Bones mode
+ * or kept from an imported rig. Those travel with the shape through Mirror
+ * (left and right bones swapped) and Smooth, and where a smoothed point lies
+ * between carried and automatic ones it blends the two by how much of it comes
+ * from carried points, so painting never changes weights away from the brush.
+ * `{cage: true}`: `mesh` is the part's own points (model space), not evaluated. */
 export function partWeights(model, mesh, part, options = {}) {
-  const skin = autoWeights(model, mesh, part, options), kept = mesh.vdata?.skin;
-  if (!kept) return skin;
-  const ids = new Set(model.bones.map(b => b.id));
-  for (const [i, list] of Object.entries(kept)) {
-    const v = Number(i), pairs = list.filter(([b, w]) => ids.has(b) && w > 0).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = pairs.reduce((t, [, w]) => t + w, 0);
-    if (!(v < mesh.verts.length) || !(sum > 0)) continue;
-    for (let k = 0; k < 4; k++) { skin.bones[v * 4 + k] = pairs[k]?.[0] ?? 0; skin.weights[v * 4 + k] = pairs[k] ? pairs[k][1] / sum : 0; }
+  const kept = part?.mesh?.vdata?.skin;
+  if (!kept || !Object.keys(kept).length) return autoWeights(model, mesh, part, options);
+  const full = completeSkin(model, part, options), n = mesh.verts.length, resolve = sideResolver(model);
+  const out = {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
+  const write = (v, pairs) => pairs.forEach(([b, w], k) => { out.bones[v * 4 + k] = b; out.weights[v * 4 + k] = w; });
+  if (options.cage) { for (let v = 0; v < n; v++) if (full[v]) write(v, full[v]); return out; }
+  // How much of each smoothed point comes from carried points: carried as a
+  // point value (0 on carried points, as Smooth averages a missing value as 1).
+  const share = Object.fromEntries(Object.keys(kept).map(v => [v, 0]));
+  const shaped = evaluatePart({...part, mesh: {...part.mesh, vdata: {...part.mesh.vdata, skin: full, line: share}}});
+  const auto = autoWeights(model, mesh, part, options);
+  // Not this part's shape after all (some other evaluation): weights from its own surface.
+  if (shaped.verts.length !== n) return auto;
+  for (let v = 0; v < n; v++) {
+    const from = shaped.vdata?.line?.[v], m = from === undefined ? 0 : Math.max(0, Math.min(1, 1 - from));
+    const own = m > 1e-6 ? cleanPairs(model, shaped.vdata?.skin?.[v], resolve) : null;
+    if (!own) { for (let k = 0; k < 4; k++) { out.bones[v * 4 + k] = auto.bones[v * 4 + k]; out.weights[v * 4 + k] = auto.weights[v * 4 + k]; } continue; }
+    const mix = own.map(([b, w]) => [b, w * m]);
+    for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] && auto.weights[v * 4 + k] > 0) mix.push([auto.bones[v * 4 + k], auto.weights[v * 4 + k] * (1 - m)]);
+    write(v, cleanPairs(model, mix, resolve) ?? []);
   }
-  return skin;
+  return out;
+}
+
+/** Bones mirrored across the middle: weights on a Mirror copy name a bone by
+ * its negated id, meaning the same bone on the other side (Arm.L for Arm.R). */
+export function sideResolver(model) {
+  const byName = new Map(model.bones.map(b => [b.name, b.id])), byId = new Map(model.bones.map(b => [b.id, b]));
+  return id => id >= 0 ? id : (byName.get(otherSide(byId.get(-id)?.name ?? '')) ?? -id);
+}
+/** A point's weights: real bones only, the four largest, adding up to 1; null when none. */
+function cleanPairs(model, list, resolve = sideResolver(model)) {
+  if (!Array.isArray(list)) return null;
+  const ids = new Set(model.bones.map(b => b.id)), sum = new Map();
+  for (const [b, w] of list) { const id = resolve(b); if (ids.has(id) && w > 0) sum.set(id, (sum.get(id) ?? 0) + w); }
+  const pairs = [...sum].sort((x, y) => y[1] - x[1]).slice(0, 4), total = pairs.reduce((t, [, w]) => t + w, 0);
+  return total > 0 ? pairs.map(([b, w]) => [b, w / total]) : null;
+}
+
+/** Weights for every point of a part's own points: those it carries, automatic
+ * for the rest (worked out on its points in model space). {[i]: [[bone, w], …]}. */
+export function completeSkin(model, part, options = {}) {
+  const cage = transformMesh(part.mesh, objectMatrix(part)), kept = part.mesh.vdata?.skin ?? {}, auto = autoWeights(model, cage, part, options), out = {};
+  for (let v = 0; v < cage.verts.length; v++) {
+    const own = cleanPairs(model, kept[v]);
+    if (own) { out[v] = own; continue; }
+    const pairs = [];
+    for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] && auto.weights[v * 4 + k] > 0) pairs.push([auto.bones[v * 4 + k], auto.weights[v * 4 + k]]);
+    if (pairs.length) out[v] = pairs;
+  }
+  return out;
 }
 
 export function autoWeights(model, mesh, part, options = {}) {

@@ -81,6 +81,29 @@ try {
     });
     assert.deepEqual(result, {inset: 'inset', thinner: true, bevel: 'bevel', more: true, valid: true});
   });
+  await step('Bones: Strength and Reach slide; painting takes a bone off the chest in one undo step', async () => {
+    const setup = await page.evaluate(async () => {
+      m.setMode('object'); m.state.parts = new Set(); m.refresh();
+      button('Juniper').click(); await wait(200); button('Replace')?.click(); await wait(500);
+      m.setMode('bones'); m.setView('front'); m.state.camera.target = [0, 1.2, 0]; m.state.camera.dist = 1.6;
+      const shoulder = m.model.bones.find(b => b.name === 'Shoulder.L'); m.state.bones = new Set([shoulder.id]); m.refresh(); await wait(200);
+      const sliders = [...document.querySelectorAll('.modeler-live input[type=range]')].length;
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
+      button('Paint weights').click(); await wait(50); button('Remove').click(); await wait(50);
+      return {sliders, from: at([.05, 1.24, .13]), to: at([.15, 1.24, .13]), undo: m.state.undo.length};
+    });
+    await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to); await page.mouse.up();
+    const result = await page.evaluate(async () => {
+      await wait(100);
+      const painted = () => m.model.parts.reduce((n, p) => n + Object.keys(p.mesh.vdata?.skin ?? {}).length, 0), torso = m.model.parts.find(p => p.name === 'Torso');
+      const after = {painted: painted() > 0, onTorso: Object.keys(torso.mesh.vdata?.skin ?? {}).length > 0, steps: m.state.undo.length};
+      press('z', {ctrlKey: true}); await wait(100);
+      return {...after, undone: painted() === 0};
+    });
+    assert.deepEqual({...result, steps: result.steps - setup.undo}, {painted: true, onTorso: true, steps: 1, undone: true});
+    assert.equal(setup.sliders, 2);
+  });
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

@@ -558,6 +558,39 @@ bounds at most once) is not a candidate; and a part centred on a root bone
 (the Hips piece) also blends with the other root bones (the thighs), since they
 meet at the figure's root.
 
+### Weight painting
+
+Bones mode, one bone selected, Weight painting > **Paint weights**: drag to
+paint how much that bone moves each point, in the colours of "Show what the
+selected bone moves" (red all, blue none), as Blender's Weight Paint mode.
+Brushes: **Add**, **Remove**, **Smooth** (towards the neighbours' average) and
+**Set** (to Amount); Size (pixels on screen) and Strength. Ctrl paints the other
+way (Add ↔ Remove), Shift+click picks another bone, and a stroke is one undo
+step. Strength and Reach are sliders, previewed live, saved on release.
+
+- The brush is a sphere around the surface point under the pointer (its radius
+  the brush circle at that depth), as Blender's default, so it never paints
+  through to the far side. It paints a part's own points (every visible part
+  in reach); on a Mirror part, the mirrored half is painted through its source
+  point with the other side's bone (`mirrorBone`).
+- `src/modeler/weight-paint.mjs`: a painted point stores complete weights in
+  `part.mesh.vdata.skin` (where an imported rig keeps its weights, saved with
+  the model) and always adds up to 1 (Auto Normalize): weight taken from the
+  bone goes to the bones already there, or where it had the point alone, to the
+  bones that would have it without it. Painted points no longer follow
+  automatic changes (Strength, Reach, moving a bone) until **Back to
+  automatic** forgets them.
+- `partWeights` (armature.mjs): a part with carried weights gets complete
+  weights on its own points (`completeSkin`: carried, automatic for the rest),
+  which travel through Mirror (the copy's bones as negated ids, read back as
+  the other side's bone by `sideResolver`) and Smooth. A smoothed point blends
+  them with the automatic weights of the shown shape by how much of it comes
+  from carried points (carried as a point value through Smooth), so points away
+  from the brush keep exactly their automatic weights; at a brush edge a few
+  percent of the painted area's neighbours can blend in, as at a Blender brush
+  edge. Open in Blender sends a painted part's own points' weights
+  (`{cage: true}`) as vertex groups.
+
 A part set to **Moves with** a bone follows it rigidly; its mirrored half
 follows the opposite-side bone. A part that lies along one bone (at least 70%
 of its points, per side for mirrored parts, project onto that bone's span

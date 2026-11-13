@@ -40,7 +40,7 @@ const closeList = (a, b, e) => Array.isArray(a) && Array.isArray(b) && a.length 
 
 /** Point weights a part gets here, by bone name: {vertex: [[name, weight]]}. */
 function weightsByName(model, mesh, part, names) {
-  const skin = partWeights(model, transformMesh(mesh, objectMatrix(part)), part), out = {};
+  const skin = partWeights(model, transformMesh(mesh, objectMatrix(part)), part, {cage: true}), out = {};
   for (let v = 0; v < mesh.verts.length; v++) {
     const pairs = [];
     for (let k = 0; k < 4; k++) { const id = skin.bones[v * 4 + k], w = skin.weights[v * 4 + k]; if (id && w > 1e-4 && names.has(id)) pairs.push([names.get(id), Math.round(w * 1e5) / 1e5]); }

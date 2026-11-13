@@ -11,6 +11,7 @@ import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
+import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES} from './weight-paint.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
@@ -206,6 +207,15 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // ---------- toon look ----------
   const slider = (label, value, min, max, step, onchange, title) => el('label', {class: 'modeler-field modeler-wide', title}, [el('span', {text: label}),
     el('input', {type: 'range', min: String(min), max: String(max), step: String(step), value: String(value), onchange: e => onchange(Number(e.target.value))})]);
+  /** A slider showing its value, previewed live as it moves and saved as one undo step when let go. */
+  const liveSlider = (label, value, min, max, step, {format = v => fmt(v), preview, title} = {}) => {
+    let before = null;
+    const shown = el('output', {class: 'modeler-slider-value', text: format(value)});
+    return el('label', {class: 'modeler-field modeler-wide modeler-live', title}, [el('span', {text: label}),
+      el('input', {type: 'range', min: String(min), max: String(max), step: String(step), value: String(value),
+        oninput: e => { before ??= snapshot(); const v = Number(e.target.value); shown.textContent = format(v); preview(v); S.cache.clear(); draw(); },
+        onchange: () => { if (before === null) return; S.undo.push(before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; before = null; touch(); }}), shown]);
+  };
   const colorRow = (selected, onpick) => el('div', {class: 'modeler-swatch-row'}, model.palette.map((c, i) => {
     const b = el('button', {type: 'button', class: 'modeler-swatch', 'aria-pressed': String(i === selected), title: t("modeler.outlineColorIndex", {index: i + 1}), onclick: () => onpick(i)}, [el('span', {class: 'modeler-swatch-fill'})]);
     b.firstChild.style.background = hex(c); return b;
@@ -370,6 +380,82 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       })])];
   }
 
+  // ---------- weight painting ----------
+  const brush = () => S.brush ??= {on: false, mode: 'add', radius: 60, strength: .5, value: 1};
+  /** Paint what the selected bone moves, in the colours of "Show what the selected bone moves". */
+  function weightPaintTools(bone) {
+    const B = brush(), painted = model.parts.reduce((n, q) => n + paintedCount(q), 0);
+    return [
+      el('p', {class: 'modeler-hint', text: t("modeler.weightPaintHint", {bone: bone.name})}),
+      el('button', {type: 'button', class: 'modeler-button modeler-toggle', 'aria-pressed': String(B.on), onclick: () => setPainting(!B.on)}, B.on ? t("modeler.weightPaintStop") : t("modeler.weightPaintStart")),
+      el('div', {class: 'modeler-segmented', role: 'group', 'aria-label': t("modeler.brushMode")}, PAINT_MODES.map(m => el('button', {type: 'button', class: 'modeler-button', 'aria-pressed': String(B.mode === m),
+        title: t(`modeler.brush.${m}Hint`), onclick: () => { B.mode = m; renderProps(); }}, t(`modeler.brush.${m}`)))),
+      B.mode === 'set' ? slider(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
+      slider(t("modeler.brushRadius"), B.radius, 4, 200, 1, v => { B.radius = v; draw(); }, t("modeler.brushRadiusHint")),
+      slider(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }),
+      actions([[t("modeler.paintedBackToAuto"), () => commit(() => { const n = model.parts.reduce((c, q) => c + clearPainted(q), 0); S.cache.clear(); toast(t("modeler.paintedCleared", {count: n})); }), t("modeler.paintedBackToAutoHint")]]),
+      painted ? el('p', {class: 'modeler-hint', text: t("modeler.paintedCount", {count: painted})}) : null,
+    ].filter(Boolean);
+  }
+  function setPainting(on) {
+    const B = brush(); B.on = on;
+    // The colours are what you paint: they show while painting.
+    if (on) S.weights = true;
+    renderProps(); setStatus(); draw();
+  }
+  const paintingNow = () => S.mode === 'bones' && brush().on && S.bones.size === 1;
+  /** The surface point under the pointer (on the shown, smoothed shape), or null. */
+  function surfaceAt(x, y) {
+    const poly = pickPolygon(S.polys, x, y); if (!poly) return null;
+    const mesh = poly.item.mesh, f = poly.face, pts = poly.pts;
+    // Screen-space barycentric weights on the face's fan, applied to its 3D corners.
+    for (let i = 1; i + 1 < f.v.length; i++) {
+      const a = pts[0], b = pts[i], c = pts[i + 1], d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+      if (Math.abs(d) < 1e-9) continue;
+      const u = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / d, v = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / d, w = 1 - u - v;
+      if (u < -1e-3 || v < -1e-3 || w < -1e-3) continue;
+      const [A, Bv, C] = [mesh.verts[f.v[0]], mesh.verts[f.v[i]], mesh.verts[f.v[i + 1]]];
+      return [0, 1, 2].map(k => A[k] * u + Bv[k] * v + C[k] * w);
+    }
+    return mesh.verts[f.v[0]].slice();
+  }
+  /** One dab of the brush at a screen point: a sphere around the surface point, as Blender's brush. */
+  function paintDab(stroke, x, y, invert) {
+    const B = brush(), hit = surfaceAt(x, y); if (!hit) return false;
+    const reach = B.radius * frame.unitsPerPixel(hit), bone = [...S.bones][0], mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
+    let changed = false;
+    for (const q of model.parts) {
+      if (q.visible === false || !q.mesh.faces.length) continue;
+      const to = M.objectTransform(q);
+      let state = stroke.parts.get(q.id);
+      for (let v = 0; v < q.mesh.verts.length; v++) {
+        const p = to(q.mesh.verts[v]);
+        // A Mirror part's other half is painted through its source point, with the other side's bone.
+        const spots = q.mirror && Math.abs(p[0]) > 1e-4 ? [[p, bone], [[-p[0], p[1], p[2]], mirrorBone(model, bone)]] : [[p, bone]];
+        for (const [at, which] of spots) {
+          const d = Math.hypot(at[0] - hit[0], at[1] - hit[1], at[2] - hit[2]); if (d > reach) continue;
+          if (!state) { state = startStroke(model, q, bone); stroke.parts.set(q.id, state); }
+          const fall = (1 - (d / reach) ** 2) ** 2;
+          if (paintPoint(state, v, mode, B.strength * fall * .5, {bone: which, value: B.value})) { changed = true; stroke.touched.add(q.id); }
+        }
+      }
+    }
+    if (changed) for (const id of stroke.touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
+    return changed;
+  }
+  function paintTo(stroke, p, invert) {
+    // Dabs along the way, a quarter of the brush apart, so a quick stroke leaves no gaps.
+    const from = stroke.last ?? p, steps = Math.max(1, Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) / Math.max(2, brush().radius / 4)));
+    for (let i = 1; i <= steps; i++) paintDab(stroke, from.x + (p.x - from.x) * i / steps, from.y + (p.y - from.y) * i / steps, invert);
+    stroke.last = p; draw();
+  }
+  function drawBrush(ctx) {
+    const p = S.pointer; if (!p) return;
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(p.x, p.y, brush().radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.arc(p.x, p.y, brush().radius + 1.5, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+
   function renderProps() {
     const blocks = [];
     const p = activePart();
@@ -441,14 +527,15 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
         actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]]),
         // How hard the bone pulls the skin: weaker, or only within a distance, so it stops tugging what is merely close to it.
-        field(t("modeler.boneStrength"), pullOf(bone).strength, v => commit(() => { setPull(bone, {strength: v}); S.cache.clear(); }), {step: .1, min: 0, max: STRENGTH_MAX}),
-        field(t("modeler.boneRange"), pullOf(bone).range, v => commit(() => { setPull(bone, {range: v}); S.cache.clear(); }), {step: .01, min: 0}),
+        liveSlider(t("modeler.boneStrength"), pullOf(bone).strength, 0, STRENGTH_MAX, .05, {preview: v => setPull(bone, {strength: v}), title: t("modeler.boneStrengthHint")}),
+        liveSlider(t("modeler.boneRange"), pullOf(bone).range, 0, 1, .01, {format: v => v > 0 ? fmt(v) : t("modeler.noLimit"), preview: v => setPull(bone, {range: v}), title: t("modeler.boneRangeHint")}),
         el('p', {class: 'modeler-hint', text: t("modeler.bonePullHint")}),
         el('label', {class: 'modeler-check', title: t("modeler.faceBoneHint")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e => commit(() => { setFace(bone, e.target.checked ? faceOf(bone) : null); S.cache.clear(); })}), t("modeler.faceBone")]),
         bone.face ? field(t("modeler.faceReach"), bone.reach, v => commit(() => { setFace(bone, {...faceOf(bone), reach: v}); S.cache.clear(); }), {step: .01, min: 0}) : null,
         bone.face ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.faceCutHint")}, [el('span', {text: t("modeler.faceCut")}), el('select', {onchange: e => commit(() => { setFace(bone, {...faceOf(bone), cut: e.target.value}); S.cache.clear(); })},
           ['', ...FACE_CUTS].map(c => el('option', {value: c, text: t(c ? `modeler.faceCut.${c}` : "modeler.faceCut.none"), selected: (bone.cut ?? '') === c})))]) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.sideNamesHint")})]));
+      if (bone) blocks.push(section(t("modeler.weightPaint"), weightPaintTools(bone)));
     }
     // Blender tools, where the desktop app can run Blender's engine.
     if (desktop()?.runBlenderEngine && S.mode === 'object') blocks.push(section(t("modeler.blenderTools"), blenderTools(p)));
@@ -489,7 +576,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
       : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '') + (m.typed ? ` · ${t("modeler.typedValue", {value: m.typed})}` : '')
       : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'bevel' ? t("modeler.bevelStatus", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind === 'knife' ? t("modeler.knifeStatus", {count: m.path.length}) : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
-      : S.mode === 'edit' ? t("modeler.editStatus") : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
+      : S.mode === 'edit' ? t("modeler.editStatus") : paintingNow() ? t("modeler.paintStatus", {bone: model.bones.find(b => S.bones.has(b.id))?.name ?? ''}) : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
     // Soft select: its radius, which the scroll wheel changes while moving.
     status.textContent = m?.target?.soft ? `${text} · ${t("modeler.softStatus", {radius: fmt(S.softRadius)})}` : text;
   }
@@ -562,6 +649,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'object') drawObjectOutline(ctx);
     if (S.mode === 'edit') drawCage(ctx);
     if (S.mode === 'bones' || S.showBones) drawBones(ctx);
+    if (paintingNow()) drawBrush(ctx);
     if (S.modal?.kind === 'loopcut' && S.modal.ring) drawRing(ctx, S.modal.ring, S.modal.cuts);
     if (S.modal?.kind === 'knife') drawKnife(ctx);
     if (S.modal?.box) drawBox(ctx, S.modal.box);
@@ -1807,6 +1895,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const orbit = e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey && S.mode !== 'edit');
     canvas.setPointerCapture(e.pointerId);
     if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p}; e.preventDefault(); return; }
+    // Weight painting: a stroke is one undo step; Ctrl paints the other way (Add ↔ Remove).
+    // While painting, Shift+click picks another bone to paint.
+    if (e.button === 0 && paintingNow() && e.shiftKey) { const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
+    if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', before: snapshot(), parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey}; paintTo(drag, p, drag.invert); return; }
     if (e.button === 0) drag = {kind: 'press', start: p, last: p, event: e, hit: e.shiftKey || (e.altKey && S.mode === 'edit') ? null : pick(p.x, p.y)};
   }, {signal});
   canvas.addEventListener('pointermove', e => {
@@ -1818,7 +1910,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'loopslide') { S.modal.mouse = p; applyLoopSlide(); return; }
     if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
-    if (!drag) return;
+    if (!drag) { if (paintingNow()) draw(); return; }
+    if (drag.kind === 'paint') { paintTo(drag, p, drag.invert); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
     if (drag.kind === 'orbit') { S.camera.yaw -= dx * .008; S.camera.pitch = Math.max(-1.55, Math.min(1.55, S.camera.pitch + dy * .008)); S.camera.ortho = false; draw(); }
     else if (drag.kind === 'pan') { const u = frame.unitsPerPixel(S.camera.target); S.camera.target = M.add(S.camera.target, M.add(M.scale(frame.right, -dx * u), M.scale(frame.up, dy * u))); draw(); }
@@ -1832,6 +1925,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('pointerup', e => {
     if (!drag) return;
     const d = drag; drag = null;
+    if (d.kind === 'paint') { if (d.touched.size) { S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
     else if (d.kind === 'press') clickSelect(d.start.x, d.start.y, e);
     else if (d.kind === 'box') { const box = S.modal?.box; S.modal = null; if (box) boxSelect(box, e.shiftKey); }
