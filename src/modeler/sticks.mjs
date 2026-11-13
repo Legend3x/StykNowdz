@@ -34,7 +34,7 @@ export const SHAPE_DEFAULTS = Object.freeze({kind: 'line', start: .04, end: .04,
 const LIMITS = {start: [.002, 2], end: [.002, 2], bulge: [-1, 2], width: [.05, 8], depth: [.02, 8], roll: [-360, 360], twist: [-720, 720], curve: [-20, 20], bend: [-360, 360], sides: [3, 12]};
 const FLAGS = ['arc', 'roundStart', 'roundEnd', 'flip', 'half'];
 
-export function emptySticks() { return {joints: [], lines: [], pieces: [], fills: [], nextId: 1}; }
+export function emptySticks() { return {joints: [], lines: [], pieces: [], fills: [], heads: [], nextId: 1}; }
 const stickId = sticks => sticks.nextId++;
 export const jointOf = (sticks, id) => sticks.joints.find(j => j.id === id);
 export const lineOf = (sticks, id) => sticks.lines.find(l => l.id === id);
@@ -63,7 +63,7 @@ export function addPiece(sticks, {name = '', at = [0, 0, 0]} = {}) {
 }
 
 /** A line from joint `from` to a new joint at `at`, in the same piece. */
-export function addLine(sticks, from, at, {shape = {}, color = 1, staticLine = false, name = ''} = {}) {
+export function addLine(sticks, from, at, {shape = {}, color = 1, staticLine = false, guide = false, name = ''} = {}) {
   const start = jointOf(sticks, from);
   if (!start) throw new Error('Start a line from a joint.');
   const joint = {id: stickId(sticks), at: at.slice(), piece: start.piece};
@@ -71,6 +71,7 @@ export function addLine(sticks, from, at, {shape = {}, color = 1, staticLine = f
   const taken = new Set(sticks.lines.map(l => l.name));
   if (!name) for (let n = sticks.lines.length + 1; ; n++) if (!taken.has(`Line ${n}`)) { name = `Line ${n}`; break; }
   const line = {id: stickId(sticks), from, to: joint.id, piece: start.piece, shape: readShape(shape), color, static: Boolean(staticLine), name};
+  if (guide) line.guide = true;
   sticks.joints.push(joint); sticks.lines.push(line);
   return line;
 }
@@ -88,9 +89,12 @@ export function parentLine(sticks, line) {
   const piece = pieceOf(sticks, line.piece);
   return piece?.root === line.from && piece.attach != null ? lineInto(sticks, piece.attach) ?? null : null;
 }
-/** The line whose bone moves this one: itself, or for a static line the nearest posable line above it. */
+/** Whether a line has a bone of its own: not static, not a guide. */
+export const posable = line => !line.static && !line.guide;
+/** The line whose bone moves this one: itself, or for a static line or a
+ * guide the nearest posable line above it. */
 export function posableLine(sticks, line) {
-  for (let l = line, guard = 0; l && guard <= sticks.lines.length; l = parentLine(sticks, l), guard++) if (!l.static) return l;
+  for (let l = line, guard = 0; l && guard <= sticks.lines.length; l = parentLine(sticks, l), guard++) if (posable(l)) return l;
   return null;
 }
 
@@ -135,6 +139,7 @@ export function deletePiece(sticks, id) {
   sticks.pieces = sticks.pieces.filter(p => p.id !== id);
   for (const p of sticks.pieces) if (joints.has(p.attach)) p.attach = null;
   tidyFills(sticks);
+  tidyHeads(sticks);
 }
 
 /** Pieces hanging (directly or not) from this piece. */
@@ -185,13 +190,13 @@ export function mirrorLines(sticks, id) {
     : sticks.joints.filter(j => j.piece === start.piece && length(sub(j.at, flip(start.at))) < 1e-4)[0];
   if (!mirrorStart) throw new Error('There is no joint on the other side to start the copy from.');
   const made = [], twin = new Map([[start.id, mirrorStart.id]]), copy = (l, from) => {
-    const next = addLine(sticks, from, flip(jointOf(sticks, l.to).at), {shape: {...l.shape, roll: -l.shape.roll, twist: -l.shape.twist, bend: -l.shape.bend, tip: -l.shape.tip}, color: l.color, staticLine: l.static, name: mirrorName(l.name)});
+    const next = addLine(sticks, from, flip(jointOf(sticks, l.to).at), {shape: {...l.shape, roll: -l.shape.roll, twist: -l.shape.twist, bend: -l.shape.bend, tip: -l.shape.tip}, color: l.color, staticLine: l.static, guide: l.guide, name: mirrorName(l.name)});
     made.push(next); twin.set(l.to, next.to);
     for (const child of linesFrom(sticks, l.to)) copy(child, next.to);
   };
   copy(line, mirrorStart.id);
   // Poly fills within the copied branch come along too.
-  for (const f of [...(sticks.fills ?? [])]) if (f.joints.every(j => twin.has(j)) && f.joints.some(j => j !== start.id)) addFill(sticks, f.joints.map(j => twin.get(j)), {color: f.color, inflate: f.inflate});
+  for (const f of [...(sticks.fills ?? [])]) if (f.joints.every(j => twin.has(j)) && f.joints.some(j => j !== start.id)) addFill(sticks, f.joints.map(j => twin.get(j)), {color: f.color, inflate: f.inflate, smooth: f.smooth});
   return made;
 }
 // Side names swap (Arm.L ↔ Arm.R); other copies get the next Line number.
@@ -354,11 +359,11 @@ export function radiusAt(line, end) {
 // ---------- poly fills ----------
 
 /** A fill through these joints, in order (Pivot's poly fill). */
-export function addFill(sticks, joints, {color = 1, inflate = .3, name = ''} = {}) {
+export function addFill(sticks, joints, {color = 1, inflate = .3, smooth = 1, name = ''} = {}) {
   const ids = joints.filter((id, i) => jointOf(sticks, id) && joints.indexOf(id) === i);
   if (ids.length < 3) throw new Error('A poly fill needs at least three joints.');
   sticks.fills ??= [];
-  const fill = {id: stickId(sticks), joints: ids, color, inflate, name};
+  const fill = {id: stickId(sticks), joints: ids, color, inflate, smooth, name};
   sticks.fills.push(fill);
   return fill;
 }
@@ -403,26 +408,204 @@ export function fillMesh(sticks, fill) {
       radii.push(rp + (rq - rp) * t);
     }
   }
+  return slabMesh(outline, radii, fill.inflate ?? 0, fill.color ?? 1);
+}
+
+/** Points along an open polyline at even spacing: `count` segments, ends kept. */
+function resample(points, radii, count) {
+  const along = [0];
+  for (let i = 1; i < points.length; i++) along.push(along[i - 1] + length(sub(points[i], points[i - 1])));
+  const total = along.at(-1), out = [], outR = [];
+  for (let k = 0, i = 1; k <= count; k++) {
+    const d = total * k / count;
+    while (i < points.length - 1 && along[i] < d) i++;
+    const span = along[i] - along[i - 1], t = span > 1e-12 ? Math.min(1, Math.max(0, (d - along[i - 1]) / span)) : 0;
+    out.push(add(points[i - 1], scale(sub(points[i], points[i - 1]), t))); outR.push(radii[i - 1] + (radii[i] - radii[i - 1]) * t);
+  }
+  return {points: out, radii: outR, total};
+}
+
+/**
+ * A closed outline made into a rounded slab of four-sided faces (Blender's
+ * Grid fill, then given thickness): the outline is split into four sides at
+ * its corners, a grid is stretched between them (a Coons patch, relaxed so
+ * dents in the outline don't fold it), both faces are lifted off the outline's
+ * plane, and a half-round rim as thick as the outline joins them.
+ */
+function slabMesh(outline, radii, inflate, color) {
   const m = outline.length, C = scale(outline.reduce((acc, p) => add(acc, p), [0, 0, 0]), 1 / m);
-  // The fill's facing (Newell's method), and each outline point's outward direction.
+  // The fill's facing (Newell's method).
   let n = [0, 0, 0];
   for (let i = 0; i < m; i++) { const p = outline[i], q = outline[(i + 1) % m]; n = add(n, [(p[1] - q[1]) * (p[2] + q[2]), (p[2] - q[2]) * (p[0] + q[0]), (p[0] - q[0]) * (p[1] + q[1])]); }
   n = length(n) > 1e-12 ? normalize(n) : [0, 0, 1];
-  const outward = outline.map((p, i) => { const e = sub(outline[(i + 1) % m], outline[(i - 1 + m) % m]); const o = cross(e, n); return length(o) > 1e-12 ? normalize(o) : normalize(sub(p, C)); });
-  const meanR = radii.reduce((a, r) => a + r, 0) / m, spread = outline.reduce((a, p) => a + length(sub(p, C)), 0) / m;
-  const middle = meanR + Math.max(0, fill.inflate ?? 0) * spread * .5;
-  const verts = [], faces = [], K = 4, M = 4, color = fill.color ?? 1;
-  const ring = f => { const first = verts.length; for (let i = 0; i < m; i++) verts.push(f(i)); return first; };
-  const lift = (k, sign) => i => { const s = k / K, ease = Math.sin(s * Math.PI / 2), h = radii[i] * (1 - ease) + middle * ease; return add(add(C, scale(sub(outline[i], C), 1 - s)), scale(n, sign * h)); };
-  const rings = [];
-  for (let k = K - 1; k >= 0; k--) rings.push(ring(lift(k, 1)));
-  for (let j = 1; j < M; j++) { const phi = j / M * Math.PI; rings.push(ring(i => add(add(outline[i], scale(outward[i], radii[i] * Math.sin(phi))), scale(n, radii[i] * Math.cos(phi))))); }
-  for (let k = 0; k < K; k++) rings.push(ring(lift(k, -1)));
-  const top = verts.length; verts.push(add(C, scale(n, middle)));
-  const bottom = verts.length; verts.push(add(C, scale(n, -middle)));
-  for (let i = 0; i < m; i++) faces.push({v: [rings[0] + i, rings[0] + (i + 1) % m, top], c: color});
-  for (let r = 1; r < rings.length; r++) for (let i = 0; i < m; i++) faces.push({v: [rings[r - 1] + i, rings[r - 1] + (i + 1) % m, rings[r] + (i + 1) % m, rings[r] + i], c: color});
-  for (let i = 0; i < m; i++) faces.push({v: [rings.at(-1) + i, rings.at(-1) + (i + 1) % m, bottom], c: color});
+  // Across and up in its plane, from the world axis least along the facing (X for a fill drawn in Front view).
+  const axis = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].sort((a, b) => Math.abs(dot(a, n)) - Math.abs(dot(b, n)))[0];
+  const e1 = normalize(sub(axis, scale(n, dot(axis, n)))), e2 = cross(n, e1);
+  // Corners: the outline points furthest toward each diagonal, in the outline's order.
+  const flat = outline.map(p => [dot(sub(p, C), e1), dot(sub(p, C), e2)]);
+  let corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => flat.reduce((best, q, i) => q[0] * a + q[1] * b > flat[best][0] * a + flat[best][1] * b ? i : best, 0));
+  corners = [...new Set(corners)].sort((a, b) => a - b);
+  if (corners.length < 4) corners = [0, 1, 2, 3].map(k => Math.floor(k * m / 4));
+  const sides = corners.map((c, k) => {
+    const to = corners[(k + 1) % 4], pts = [], rs = [];
+    for (let i = c; ; i = (i + 1) % m) { pts.push(outline[i]); rs.push(radii[i]); if (i === to) break; }
+    return {pts, rs, len: resample(pts, rs, 1).total};
+  });
+  const P = sides.reduce((a, side) => a + side.len, 0) || 1, cells = 14;
+  const A = Math.max(2, Math.min(cells - 2, Math.round(cells * (sides[0].len + sides[2].len) / P))), B = cells - A;
+  const [s0, s1, s2, s3] = sides.map((side, k) => resample(side.pts, side.rs, k % 2 ? B : A));
+  // The grid G[i][j] (i across 0..A, j up 0..B), its sides on the outline.
+  const G = [], R = [];
+  for (let i = 0; i <= A; i++) { G.push([]); R.push([]); }
+  for (let i = 0; i <= A; i++) { G[i][0] = s0.points[i]; R[i][0] = s0.radii[i]; G[i][B] = s2.points[A - i]; R[i][B] = s2.radii[A - i]; }
+  for (let j = 0; j <= B; j++) { G[A][j] = s1.points[j]; R[A][j] = s1.radii[j]; G[0][j] = s3.points[B - j]; R[0][j] = s3.radii[B - j]; }
+  const coons = (F, i, j, mix) => {
+    const u = i / A, v = j / B;
+    return mix(mix(mix(mix(F[i][0], 1 - v, F[i][B], v), 1, F[0][j], 1 - u), 1, F[A][j], u), 1,
+      mix(mix(mix(F[0][0], (1 - u) * (1 - v), F[A][0], u * (1 - v)), 1, F[0][B], (1 - u) * v), 1, F[A][B], u * v), -1);
+  };
+  const mixP = (a, wa, b, wb) => add(scale(a, wa), scale(b, wb)), mixR = (a, wa, b, wb) => a * wa + b * wb;
+  for (let i = 1; i < A; i++) for (let j = 1; j < B; j++) { G[i][j] = coons(G, i, j, mixP); R[i][j] = Math.max(.001, coons(R, i, j, mixR)); }
+  for (let pass = 0; pass < 24; pass++) for (let i = 1; i < A; i++) for (let j = 1; j < B; j++) {
+    const mean = scale(add(add(G[i - 1][j], G[i + 1][j]), add(G[i][j - 1], G[i][j + 1])), .25);
+    G[i][j] = add(scale(G[i][j], .4), scale(mean, .6));
+  }
+  // Lifted off the plane: as thick as the outline at the edge, domed toward the middle by Inflate.
+  const spread = outline.reduce((a, p) => a + length(sub(p, C)), 0) / m, dome = Math.max(0, inflate) * spread * .5;
+  const verts = [], faces = [];
+  const top = [], bottom = [];
+  for (let i = 0; i <= A; i++) { top.push([]); bottom.push([]); for (let j = 0; j <= B; j++) {
+    const bump = Math.pow(Math.max(0, Math.sin(Math.PI * i / A) * Math.sin(Math.PI * j / B)), .6), h = R[i][j] + dome * bump;
+    top[i][j] = verts.push(add(G[i][j], scale(n, h))) - 1; bottom[i][j] = verts.push(add(G[i][j], scale(n, -h))) - 1;
+  } }
+  for (let i = 0; i < A; i++) for (let j = 0; j < B; j++) {
+    faces.push({v: [top[i][j], top[i + 1][j], top[i + 1][j + 1], top[i][j + 1]], c: color});
+    faces.push({v: [bottom[i][j + 1], bottom[i + 1][j + 1], bottom[i + 1][j], bottom[i][j]], c: color});
+  }
+  // The rim: half circles from the top face round the outline to the bottom face.
+  const loop = [];
+  for (let i = 0; i < A; i++) loop.push([i, 0]);
+  for (let j = 0; j < B; j++) loop.push([A, j]);
+  for (let i = A; i > 0; i--) loop.push([i, B]);
+  for (let j = B; j > 0; j--) loop.push([0, j]);
+  const L = loop.length, M = 4, rings = [loop.map(([i, j]) => top[i][j])];
+  const outward = loop.map(([i, j], k) => { const [pi, pj] = loop[(k - 1 + L) % L], [qi, qj] = loop[(k + 1) % L]; const o = cross(sub(G[qi][qj], G[pi][pj]), n); return length(o) > 1e-12 ? normalize(o) : normalize(sub(G[i][j], C)); });
+  for (let r = 1; r < M; r++) { const phi = r / M * Math.PI; rings.push(loop.map(([i, j], k) => verts.push(add(add(G[i][j], scale(outward[k], R[i][j] * Math.sin(phi))), scale(n, R[i][j] * Math.cos(phi)))) - 1)); }
+  rings.push(loop.map(([i, j]) => bottom[i][j]));
+  for (let r = 1; r < rings.length; r++) for (let k = 0; k < L; k++) faces.push({v: [rings[r - 1][k], rings[r - 1][(k + 1) % L], rings[r][(k + 1) % L], rings[r][k]], c: color});
+  const mesh = {verts, faces}; recalculateNormals(mesh);
+  return mesh;
+}
+
+// ---------- heads from a front and a side outline ----------
+
+/** Defaults for a head: rows up, points around, how boxy the cross-section is,
+ * how far the back of the head goes, the top and bottom domes, smoothing. */
+export const HEAD_DEFAULTS = {rows: 12, around: 16, square: .25, back: 1, top: 1, bottom: 1, smooth: 1, whole: false};
+const HEAD_LIMITS = {rows: [4, 32], around: [8, 32], square: [0, 1], back: [0, 3], top: [0, 3], bottom: [0, 3], smooth: [0, 2]};
+export function readHeadShape(value = {}) {
+  const out = {};
+  for (const [key, fallback] of Object.entries(HEAD_DEFAULTS)) {
+    if (typeof fallback === 'boolean') { out[key] = Boolean(value[key] ?? fallback); continue; }
+    const v = Number(value[key]);
+    out[key] = Number.isFinite(v) ? clamp(v, HEAD_LIMITS[key]) : fallback;
+  }
+  out.rows = Math.round(out.rows); out.around = Math.round(out.around / 4) * 4; out.smooth = Math.round(out.smooth);
+  return out;
+}
+
+/** A head made from two traced pieces: `front` (its outline in Front view)
+ * and `side` (its profile in Side view). The pieces' lines become guides. */
+export function addHead(sticks, front, side, {color = 0, name = '', ...shape} = {}) {
+  if (front === side) throw new Error('Pick two different pieces: the front outline, then the side profile.');
+  for (const id of [front, side]) if (!sticks.lines.some(l => l.piece === id)) throw new Error('Each outline needs at least one line.');
+  for (const l of sticks.lines) if (l.piece === front || l.piece === side) l.guide = true;
+  sticks.heads ??= [];
+  const head = {id: stickId(sticks), front, side, color, name, ...readHeadShape(shape)};
+  sticks.heads.push(head);
+  return head;
+}
+export const headOf = (sticks, id) => sticks.heads?.find(h => h.id === id);
+export function deleteHead(sticks, id) { if (sticks.heads) sticks.heads = sticks.heads.filter(h => h.id !== id); }
+function tidyHeads(sticks) {
+  if (!sticks.heads) return;
+  const have = new Set(sticks.pieces.map(p => p.id));
+  sticks.heads = sticks.heads.filter(h => have.has(h.front) && have.has(h.side));
+}
+
+/** A piece's lines along their paths, flattened to [across, up]: X and Y (front), or Z and Y (side). */
+function traced(sticks, piece, across) {
+  const out = [];
+  for (const l of sticks.lines) {
+    if (l.piece !== piece) continue;
+    const path = linePath(jointOf(sticks, l.from).at, jointOf(sticks, l.to).at, l.shape), steps = l.shape.curve ? 8 : 1;
+    for (let k = 0; k < steps; k++) { const a = path(k / steps), b = path((k + 1) / steps); out.push([[a[across], a[1]], [b[across], b[1]]]); }
+  }
+  return out;
+}
+/** Where a traced piece crosses height y: its lowest and highest `across`. */
+function spanAt(segments, y) {
+  let lo = Infinity, hi = -Infinity;
+  for (const [a, b] of segments) {
+    if ((y - a[1]) * (y - b[1]) > 0 || a[1] === b[1]) continue;
+    const h = a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]);
+    lo = Math.min(lo, h); hi = Math.max(hi, h);
+  }
+  return lo <= hi ? {lo, hi} : null;
+}
+/** Fill gaps (heights a piece doesn't reach) from the nearest row that has a value. */
+function fillGaps(rows) {
+  const have = rows.map((r, i) => r ? i : -1).filter(i => i >= 0);
+  if (!have.length) return null;
+  return rows.map((r, i) => r ?? rows[have.reduce((best, k) => Math.abs(k - i) < Math.abs(best - i) ? k : best, have[0])]);
+}
+
+/**
+ * The head's mesh: rings of four-sided faces up the height of the front
+ * outline, as wide as the front outline at each height and as deep as the side
+ * profile, mirrored left and right, with domes at the top and bottom.
+ * Front is +Z (the side profile's front is its furthest point toward +Z).
+ * "Face only" (the default) reads the side outline as the face, from the ear
+ * line forward; "whole" reads it as the whole head, front and back.
+ */
+export function headMesh(sticks, head) {
+  const front = traced(sticks, head.front, 0), side = traced(sticks, head.side, 2);
+  if (!front.length || !side.length) return null;
+  const ys = front.flat().map(p => p[1]), yMin = Math.min(...ys), yMax = Math.max(...ys), tall = yMax - yMin;
+  if (!(tall > 1e-4)) return null;
+  // Rows run between the heights where the outline is still a third of its widest; above and
+  // below, domes close the head up to the outline's top and down to its chin.
+  const scan = Array.from({length: 121}, (_, i) => { const y = yMin + tall * (.005 + .99 * i / 120), w = spanAt(front, y); return {y, w: w ? w.hi - w.lo : 0}; });
+  const widest = Math.max(...scan.map(r => r.w)), wide = scan.filter(r => r.w >= widest / 3);
+  if (!wide.length) return null;
+  const yLo = wide[0].y, yHi = wide.at(-1).y;
+  // Rows closer together toward the ends, where the outline turns fastest.
+  const rows = head.rows, N = head.around, heights = Array.from({length: rows}, (_, i) => yLo + (yHi - yLo) * (1 - Math.cos(Math.PI * i / (rows - 1))) / 2);
+  const widths = fillGaps(heights.map(y => spanAt(front, y))), depths = fillGaps(heights.map(y => spanAt(side, y)));
+  if (!widths || !depths) return null;
+  const cx = widths.reduce((a, w) => a + (w.lo + w.hi) / 2, 0) / rows;
+  const curve = t => Math.sign(t) * Math.pow(Math.abs(t), 2 / (2 + 2 * head.square));
+  const verts = [], faces = [], color = head.color ?? 0, rings = [];
+  const ring = (y, W, zm, df, db) => { const first = verts.length; for (let k = 0; k < N; k++) { const a = 2 * Math.PI * k / N, s = Math.sin(a), c = Math.cos(a); verts.push([cx + W * curve(s), y, zm + (c >= 0 ? df : db) * curve(c)]); } return first; };
+  const sections = heights.map((y, i) => {
+    const W = Math.max(.002, (widths[i].hi - widths[i].lo) / 2), {lo, hi} = depths[i];
+    if (head.whole) { const zm = (lo + hi) / 2, d = Math.max(.002, (hi - lo) / 2); return {y, W, zm, df: d, db: d * head.back}; }
+    // Face only: the traced face runs from the ear line (its back edge) forward; an open profile line has no depth, so the ear line sits a head-width back.
+    const zm = hi - lo > W * .15 ? lo : hi - W;
+    return {y, W, zm, df: Math.max(.002, hi - zm), db: Math.max(.002, W * head.back)};
+  });
+  // Domes: three shrinking rings, then a point, above the top row and below the bottom one,
+  // reaching the outline's top and bottom (Top dome and Chin dome scale how far).
+  const dome = (sec, up, amount) => {
+    const out = [], H = amount * Math.max(1e-3, up > 0 ? yMax - sec.y : sec.y - yMin);
+    for (let k = 1; k <= 3; k++) { const a = k / 4 * Math.PI / 2, f = Math.cos(a); out.push({...sec, y: sec.y + up * H * Math.sin(a), W: sec.W * f, df: sec.df * f, db: sec.db * f}); }
+    return {rings: out, pole: [cx, sec.y + up * H, sec.zm]};
+  };
+  const below = dome(sections[0], -1, head.bottom), above = dome(sections.at(-1), 1, head.top);
+  for (const sec of [...below.rings.reverse(), ...sections, ...above.rings]) rings.push(ring(sec.y, sec.W, sec.zm, sec.df, sec.db));
+  const poleB = verts.push(below.pole) - 1, poleT = verts.push(above.pole) - 1;
+  for (let r = 1; r < rings.length; r++) for (let k = 0; k < N; k++) faces.push({v: [rings[r - 1] + k, rings[r - 1] + (k + 1) % N, rings[r] + (k + 1) % N, rings[r] + k], c: color});
+  for (let k = 0; k < N; k++) { faces.push({v: [rings[0] + (k + 1) % N, rings[0] + k, poleB], c: color}); faces.push({v: [rings.at(-1) + k, rings.at(-1) + (k + 1) % N, poleT], c: color}); }
   const mesh = {verts, faces}; recalculateNormals(mesh);
   return mesh;
 }
@@ -441,6 +624,7 @@ export function splitLine(sticks, id) {
   const taken = new Set(sticks.lines.map(l => l.name));
   let name = ''; for (let k = sticks.lines.length + 1; ; k++) if (!taken.has(`Line ${k}`)) { name = `Line ${k}`; break; }
   const second = {id: stickId(sticks), from: mid.id, to: oldTo, piece: line.piece, shape: readShape({...s, curve: s.curve / 4, start: s.kind === 'trapezoid' || s.kind === 'plane' ? halfway : s.start, roundStart: false}), color: line.color, static: line.static, name};
+  if (line.guide) second.guide = true;
   sticks.lines.push(second);
   for (const f of sticks.fills ?? []) for (let i = 0; i < f.joints.length; i++) {
     const p = f.joints[i], q = f.joints[(i + 1) % f.joints.length];
@@ -458,7 +642,7 @@ export function duplicateBranch(sticks, id, {axis = [0, 0, 1], angle = 20} = {})
   const line = lineOf(sticks, id); if (!line) return [];
   const pivot = jointOf(sticks, line.from).at, turn = p => rotateAbout(p, pivot, normalize(axis), angle * Math.PI / 180);
   const made = [], copy = (l, from) => {
-    const next = addLine(sticks, from, turn(jointOf(sticks, l.to).at), {shape: {...l.shape}, color: l.color, staticLine: l.static});
+    const next = addLine(sticks, from, turn(jointOf(sticks, l.to).at), {shape: {...l.shape}, color: l.color, staticLine: l.static, guide: l.guide});
     made.push(next);
     for (const child of linesFrom(sticks, l.to)) copy(child, next.to);
   };
@@ -502,7 +686,7 @@ export function generateSticks(model) {
   const visit = line => { if (seen.has(line.id)) return; seen.add(line.id); const up = parentLine(sticks, line); if (up) visit(up); ordered.push(line); };
   sticks.lines.forEach(visit);
   for (const line of ordered) {
-    if (line.static) continue;
+    if (!posable(line)) continue;
     const old = oldBones.get(line.id), up = parentLine(sticks, line), upPosable = up ? posableLine(sticks, up) : null;
     const bone = {...(old ?? {}), id: old?.id ?? model.nextId++, name: '', head: at(line.from).slice(), tail: at(line.to).slice(), parent: upPosable ? boneOf.get(upPosable.id) ?? 0 : 0, stick: line.id};
     bone.name = uniqueName(model, line.name || old?.name || `Line ${line.id}`);
@@ -510,9 +694,10 @@ export function generateSticks(model) {
   }
   for (const line of sticks.lines) {
     const a = at(line.from), b = at(line.to);
-    if (!(length(sub(b, a)) > 1e-6)) continue;
+    // Guides are for tracing; a line converted to a mesh keeps its bone, its shape is a part of its own now.
+    if (line.guide || line.noMesh || !(length(sub(b, a)) > 1e-6)) continue;
     const mesh = shapeMesh(a, b, line.shape, line.color);
-    const posable = posableLine(sticks, line), bone = posable ? boneOf.get(posable.id) : null;
+    const mover = posableLine(sticks, line), bone = mover ? boneOf.get(mover.id) : null;
     if (bone) mesh.vdata = {skin: Object.fromEntries(mesh.verts.map((_, i) => [i, [[bone, 1]]]))};
     const old = oldParts.get(line.id);
     model.parts.push({...(old ?? {}), id: old?.id ?? model.nextId++, name: line.name || `${shapeName(line.shape.kind)} ${line.id}`, mesh,
@@ -520,7 +705,7 @@ export function generateSticks(model) {
   }
   // Poly fills follow their joints: each point leans on the bones that move
   // the nearest joints (the line ending at a joint moves it).
-  const jointBone = joint => { const into = lineInto(sticks, joint), posable = into ? posableLine(sticks, into) : null; const from = posable ? null : linesFrom(sticks, joint).find(l => !l.static); return boneOf.get((posable ?? from)?.id) ?? null; };
+  const jointBone = joint => { const into = lineInto(sticks, joint), mover = into ? posableLine(sticks, into) : null; const from = mover ? null : linesFrom(sticks, joint).find(l => posable(l)); return boneOf.get((mover ?? from)?.id) ?? null; };
   (sticks.fills ?? []).forEach((fill, index) => {
     if (fill.joints.length < 3) return;
     const mesh = fillMesh(sticks, fill), corners = fill.joints.map(j => ({at: jointOf(sticks, j).at, bone: jointBone(j)})).filter(c => c.bone != null);
@@ -532,9 +717,37 @@ export function generateSticks(model) {
     }))};
     const old = oldParts.get(fill.id);
     model.parts.push({...(old ?? {}), id: old?.id ?? model.nextId++, name: fill.name || `Poly fill ${index + 1}`, mesh,
-      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], mirror: false, smooth: 0, visible: old?.visible !== false, stick: fill.id});
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], mirror: false, smooth: fill.smooth ?? 1, visible: old?.visible !== false, stick: fill.id});
+  });
+  // Heads follow the bone of the joint their front outline is attached to (a neck).
+  (sticks.heads ?? []).forEach((head, index) => {
+    const mesh = headMesh(sticks, head); if (!mesh) return;
+    const bone = [head.front, head.side].map(id => pieceOf(sticks, id)).map(p => p?.attach != null ? lineInto(sticks, p.attach) : null).map(l => l ? posableLine(sticks, l) : null).map(l => l ? boneOf.get(l.id) : null).find(b => b != null);
+    if (bone != null) mesh.vdata = {skin: Object.fromEntries(mesh.verts.map((_, i) => [i, [[bone, 1]]]))};
+    const old = oldParts.get(head.id);
+    model.parts.push({...(old ?? {}), id: old?.id ?? model.nextId++, name: head.name || `Head ${index + 1}`, mesh,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], mirror: false, smooth: head.smooth, visible: old?.visible !== false, stick: head.id});
   });
   return model;
+}
+
+/**
+ * Convert a part made in Build mode (a line's shape, a poly fill or a head)
+ * into an ordinary part, to edit point by point. The part keeps its weights,
+ * so it still moves with its bones. A poly fill or head is removed (its
+ * joints stay); a line keeps its bone and stops making a shape.
+ */
+export function convertToMesh(model, stickId) {
+  const sticks = model.sticks, made = model.parts.find(p => p.stick === stickId);
+  if (!sticks || !made) return null;
+  if (fillOf(sticks, stickId)) deleteFill(sticks, stickId);
+  else if (headOf(sticks, stickId)) deleteHead(sticks, stickId);
+  else { const line = lineOf(sticks, stickId); if (!line) return null; line.noMesh = true; }
+  generateSticks(model);
+  const part = structuredClone(made);
+  delete part.stick; part.id = model.nextId++;
+  model.parts.push(part);
+  return part;
 }
 const SHAPE_NAMES = {line: 'Line', squareLine: 'Square line', circle: 'Circle', circleFill: 'Filled circle', circleClear: 'Clear circle', triangle: 'Triangle', trapezoid: 'Trapezoid', ellipse: 'Ellipse', polygon: 'Polygon', plane: 'Plane'};
 const shapeName = kind => SHAPE_NAMES[kind] ?? kind;
@@ -557,7 +770,10 @@ export function readSticks(value, paletteSize = Infinity) {
     if (!Number.isInteger(l?.id) || !from || !to || from.piece !== to.piece || ends.has(to.id)) continue;
     ends.add(to.id);
     const color = Number.isInteger(l.color) && l.color >= 0 && l.color < paletteSize ? l.color : 1;
-    sticks.lines.push({id: l.id, from: from.id, to: to.id, piece: from.piece, shape: readShape(l.shape), color, static: Boolean(l.static), name: String(l.name ?? '').slice(0, 80)});
+    const line = {id: l.id, from: from.id, to: to.id, piece: from.piece, shape: readShape(l.shape), color, static: Boolean(l.static), name: String(l.name ?? '').slice(0, 80)};
+    if (l.guide) line.guide = true;
+    if (l.noMesh) line.noMesh = true;
+    sticks.lines.push(line);
   }
   // Every line must reach its piece's first joint going up (no loops, nothing floating).
   const pieceRoot = new Map(sticks.pieces.map(p => [p.id, p.root]));
@@ -572,9 +788,17 @@ export function readSticks(value, paletteSize = Infinity) {
     if (ids.length < 3) continue;
     taken.add(f.id);
     const inflate = Number(f.inflate), color = Number.isInteger(f.color) && f.color >= 0 && f.color < paletteSize ? f.color : 1;
-    sticks.fills.push({id: f.id, joints: ids, color, inflate: Number.isFinite(inflate) ? clamp(inflate, [0, 2]) : .3, name: String(f.name ?? '').slice(0, 80)});
+    const smooth = Number(f.smooth);
+    sticks.fills.push({id: f.id, joints: ids, color, inflate: Number.isFinite(inflate) ? clamp(inflate, [0, 2]) : .3, smooth: Number.isFinite(smooth) ? Math.round(clamp(smooth, [0, 2])) : 1, name: String(f.name ?? '').slice(0, 80)});
   }
-  const ids = [...sticks.joints, ...sticks.lines, ...sticks.pieces, ...sticks.fills].map(x => x.id);
+  const pieceSet = new Set(sticks.pieces.map(p => p.id));
+  for (const h of Array.isArray(value.heads) ? value.heads : []) {
+    if (!Number.isInteger(h?.id) || taken.has(h.id) || !pieceSet.has(h.front) || !pieceSet.has(h.side) || h.front === h.side) continue;
+    taken.add(h.id);
+    const color = Number.isInteger(h.color) && h.color >= 0 && h.color < paletteSize ? h.color : 0;
+    sticks.heads.push({id: h.id, front: h.front, side: h.side, color, name: String(h.name ?? '').slice(0, 80), ...readHeadShape(h)});
+  }
+  const ids = [...sticks.joints, ...sticks.lines, ...sticks.pieces, ...sticks.fills, ...sticks.heads].map(x => x.id);
   sticks.nextId = Math.max(Number.isInteger(value.nextId) ? value.nextId : 1, ...ids.map(i => i + 1), 1);
   return sticks;
 }

@@ -229,3 +229,107 @@ test('split, duplicate and flip a branch, as Build does', () => {
   assert.ok(model.parts.every(p => validateMesh(p.mesh, quiet).ok));
   void spine;
 });
+
+test('poly fills are a grid of four-sided faces (Grid fill), even round a dented outline', () => {
+  const model = emptyModel(), s = model.sticks = K.emptySticks();
+  const piece = K.addPiece(s, {at: [0, 0, 0]}), ring = [piece.root];
+  let j = piece.root;
+  for (const p of [[.5, 0, 0], [.5, .6, 0], [.3, .3, 0], [.2, .9, 0], [-.2, .8, 0]]) { j = K.addLine(s, j, p).to; ring.push(j); }
+  const fill = K.addFill(s, ring, {inflate: .5});
+  K.generateSticks(model);
+  const part = model.parts.find(p => p.stick === fill.id);
+  assert.ok(validateMesh(part.mesh, quiet).ok);
+  assert.ok(part.mesh.faces.every(f => f.v.length === 4), 'no fan of triangles');
+  assert.ok(!M.isOpenMesh(part.mesh));
+  assert.equal(part.smooth, 1, 'smoothed once by default');
+  // It stays inside its outline (no fold out past the dent).
+  const xs = part.mesh.verts.map(v => v[0]);
+  assert.ok(Math.max(...xs) < .56 && Math.min(...xs) > -.26);
+  K.fillOf(s, fill.id).smooth = 0; K.generateSticks(model);
+  assert.equal(model.parts.find(p => p.stick === fill.id).smooth, 0);
+});
+
+test('guide lines trace: no shape, no bone, and lines below hang from the bone above', () => {
+  const {model, s, spine, head} = figure();
+  const guide = K.addLine(s, head.to, [0, 2.1, 0], {guide: true});
+  const below = K.addLine(s, guide.to, [0, 2.3, 0], {name: 'Bun'});
+  K.generateSticks(model);
+  assert.ok(!model.parts.some(p => p.stick === guide.id), 'no shape');
+  assert.ok(!model.bones.some(b => b.stick === guide.id), 'no bone');
+  const bone = name => model.bones.find(b => b.name === name);
+  assert.equal(bone('Bun').parent, bone('Head').id);
+  const mirrored = K.duplicateBranch(s, guide.id);
+  assert.equal(mirrored[0].guide, true, 'copies stay guides');
+  const stored = readModel(JSON.parse(JSON.stringify(model)));
+  assert.equal(K.lineOf(stored.sticks, guide.id).guide, true);
+  void spine; void below;
+});
+
+/** A front outline (whole head) and a face-only side profile, as traced in Front and Side view. */
+function tracedHead() {
+  const model = emptyModel(), s = model.sticks = K.emptySticks();
+  const body = K.addPiece(s, {name: 'Body', at: [0, 1, 0]});
+  const neck = K.addLine(s, body.root, [0, 1.4, 0], {name: 'Neck'});
+  const front = K.addPiece(s, {name: 'Front', at: [0, 1.4, 0]});
+  let j = front.root;
+  for (const [x, y] of [[-.14, 1.5], [-.18, 1.7], [-.15, 1.85], [0, 1.92], [.15, 1.85], [.18, 1.7], [.14, 1.5], [0, 1.4]]) j = K.addLine(s, j, [x, y, 0]).to;
+  const side = K.addPiece(s, {name: 'Side', at: [0, 1.4, .02]});
+  j = side.root;
+  for (const [z, y] of [[.12, 1.5], [.17, 1.62], [.15, 1.68], [.16, 1.8], [.1, 1.9], [0, 1.92], [0, 1.4]]) j = K.addLine(s, j, [0, y, z]).to;
+  K.attachPiece(s, front.id, neck.to); K.attachPiece(s, side.id, neck.to);
+  return {model, s, neck, front, side};
+}
+
+test('a head from a front outline and a side profile matches both, mirrored, in four-sided rings', () => {
+  const {model, s, neck, front, side} = tracedHead();
+  const head = K.addHead(s, front.id, side.id);
+  assert.ok(s.lines.filter(l => l.piece === front.id || l.piece === side.id).every(l => l.guide), 'the outlines become guides');
+  K.generateSticks(model);
+  const part = model.parts.find(p => p.stick === head.id), v = part.mesh.verts;
+  assert.ok(validateMesh(part.mesh, quiet).ok); assert.ok(!M.isOpenMesh(part.mesh));
+  assert.ok(part.mesh.faces.filter(f => f.v.length === 4).length > part.mesh.faces.length * .85, 'mostly four-sided');
+  const xs = v.map(p => p[0]), ys = v.map(p => p[1]), zs = v.map(p => p[2]);
+  near(Math.max(...xs), .18, .01); near(Math.min(...xs), -.18, .01);
+  // As far forward as the profile, give or take the nose's tip falling between two rows.
+  assert.ok(Math.max(...zs) > .135 && Math.max(...zs) <= .17 + 1e-6, `front ${Math.max(...zs)}`);
+  assert.ok(Math.min(...zs) < -.12, 'a back of the head behind the ear line');
+  assert.ok(Math.max(...ys) <= 1.92 + 1e-6 && Math.max(...ys) > 1.88, 'up to the top of the outline');
+  // Mirrored: every point has a twin across the middle.
+  for (const p of v) assert.ok(v.some(q => Math.abs(q[0] + p[0]) < 1e-6 && Math.abs(q[1] - p[1]) < 1e-6 && Math.abs(q[2] - p[2]) < 1e-6));
+  // It follows the neck's bone, so it poses with it.
+  const skin = part.mesh.vdata.skin, bone = model.bones.find(b => b.stick === neck.id).id;
+  assert.ok(Object.values(skin).every(w => w.length === 1 && w[0][0] === bone));
+  // Moving the outline reshapes it; settings are clamped; stored heads are checked on open.
+  const tip = s.joints.find(jt => jt.piece === front.id && jt.at[0] === .18);
+  K.moveJoint(s, tip.id, [.25, 1.7, 0], {alone: true}); K.generateSticks(model);
+  assert.ok(Math.max(...model.parts.find(p => p.stick === head.id).mesh.verts.map(p => p[0])) > .2);
+  Object.assign(K.headOf(s, head.id), K.readHeadShape({...head, rows: 99, around: 10, whole: true}));
+  assert.equal(K.headOf(s, head.id).rows, 32); assert.equal(K.headOf(s, head.id).around % 4, 0);
+  K.generateSticks(model);
+  const stored = readModel(JSON.parse(JSON.stringify(model)));
+  assert.equal(stored.sticks.heads.length, 1); assert.ok(stored.parts.some(p => p.stick === head.id));
+  assert.throws(() => K.addHead(s, front.id, front.id));
+  K.deletePiece(s, side.id); assert.equal(s.heads.length, 0, 'gone with its profile');
+});
+
+test('convert to mesh: an ordinary part that keeps its weights; a line keeps its bone', () => {
+  const {model, s, front, side} = tracedHead();
+  const head = K.addHead(s, front.id, side.id);
+  const arm = K.addLine(s, s.pieces[0].root, [.4, 1.2, 0], {name: 'Arm'});
+  K.generateSticks(model);
+  const headPart = model.parts.find(p => p.stick === head.id);
+  const madeHead = K.convertToMesh(model, head.id);
+  assert.equal(madeHead.stick, undefined); assert.equal(s.heads.length, 0);
+  assert.deepEqual(madeHead.mesh.verts, headPart.mesh.verts);
+  assert.deepEqual(madeHead.mesh.vdata.skin, headPart.mesh.vdata.skin, 'still moves with the neck');
+  const bones = model.bones.length, madeArm = K.convertToMesh(model, arm.id);
+  assert.equal(K.lineOf(s, arm.id).noMesh, true);
+  assert.equal(model.bones.length, bones, 'the line keeps its bone');
+  assert.ok(!model.parts.some(p => p.stick === arm.id), 'and makes no shape of its own');
+  assert.equal(madeArm.mesh.vdata.skin[0][0][0], model.bones.find(b => b.stick === arm.id).id);
+  K.generateSticks(model);
+  assert.equal(model.parts.filter(p => p.stick == null).length, 2, 'converted parts stay when the sticks rebuild');
+  const stored = readModel(JSON.parse(JSON.stringify(model)));
+  assert.equal(K.lineOf(stored.sticks, arm.id).noMesh, true);
+  assert.equal(stored.parts.find(p => p.id === madeArm.id).mesh.vdata.skin[0][0][0], madeArm.mesh.vdata.skin[0][0][0]);
+});

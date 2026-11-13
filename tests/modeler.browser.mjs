@@ -69,7 +69,7 @@ try {
     const drag = async (w0, w1, button = 'left') => { const a = await sp(w0), b = await sp(w1); await page.mouse.move(a.x, a.y); await page.mouse.down({button}); await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2); await page.mouse.move(b.x, b.y); await page.mouse.up({button}); };
     await page.evaluate(async () => { m.setMode('object'); button('Start over')?.click(); await wait(50); button('Replace')?.click(); m.model.parts = []; m.model.bones = []; delete m.model.sticks; m.setMode('build'); m.setView('front'); Object.assign(m.state.camera, {target: [0, 1, 0], dist: 3}); m.refresh(); await wait(50); });
     const rail = await page.evaluate(() => ({shown: !document.querySelector('.modeler-rail').hidden, tools: [...document.querySelectorAll('.modeler-rail [data-tool]')].map(b => b.dataset.tool).join(), actions: [...document.querySelectorAll('.modeler-rail [data-action]')].map(b => b.dataset.action).join()}));
-    assert.deepEqual(rail, {shown: true, tools: 'select,line,circle,polygon,hand', actions: 'split,duplicate,flipH,flipV,delete'});
+    assert.deepEqual(rail, {shown: true, tools: 'select,line,circle,polygon,head,hand', actions: 'split,duplicate,flipH,flipV,delete'});
     await drag([0, 1, 0], [0, 1.4, 0]); // a new piece: the body
     await drag([0, 1.4, 0], [.25, 1.1, 0]); // an arm from the chest
     await page.click('.modeler-rail [data-tool="circle"]'); await drag([0, 1.4, 0], [0, 1.8, 0]); // the head
@@ -117,6 +117,34 @@ try {
     const gone = await page.evaluate(async () => { press('x'); await wait(20); press('z', {ctrlKey: true}); await wait(50); const back = m.model.sticks.fills.length; m.setMode('object'); await wait(20); return {back, railHidden: document.querySelector('.modeler-rail').hidden}; });
     assert.deepEqual(gone, {back: 1, railHidden: true});
   });
+  await step('Build mode: guide lines, a head from a front and a side outline, Convert to mesh opens it in Edit mode', async () => {
+    const sp = w => page.evaluate(w => m.screenPoint(w), w);
+    const drag = async (w0, w1) => { const a = await sp(w0), b = await sp(w1); await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2); await page.mouse.move(b.x, b.y); await page.mouse.up(); };
+    await page.evaluate(async () => { m.setMode('build'); m.model.parts = []; m.model.bones = []; delete m.model.sticks; m.state.stick.tool = 'line'; m.setView('front'); Object.assign(m.state.camera, {target: [0, 1.6, 0], dist: 1.6}); m.refresh(); await wait(50); });
+    // Guide lines on: trace the front outline by dragging, in Front view.
+    await page.click('.modeler-rail [data-toggle="guide"]');
+    const front = [[0, 1.4, 0], [-.15, 1.55, 0], [-.17, 1.75, 0], [0, 1.92, 0], [.17, 1.75, 0], [.15, 1.55, 0], [0, 1.4, 0]];
+    for (let i = 1; i < front.length; i++) await drag(front[i - 1], front[i]);
+    await page.evaluate(async () => { Object.assign(m.state.camera, {ortho: true, yaw: Math.PI / 2, pitch: 0, target: [0, 1.6, 0], dist: 1.6}); m.refresh(); await wait(30); });
+    const side = [[0, 1.34, -.08], [0, 1.55, .12], [0, 1.65, .16], [0, 1.85, .12], [0, 1.92, -.02]];
+    for (let i = 1; i < side.length; i++) await drag(side[i - 1], side[i]);
+    const traced = await page.evaluate(() => { const s = m.model.sticks; return {pieces: s.pieces.length, guides: s.lines.every(l => l.guide), parts: m.model.parts.length, bones: m.model.bones.length}; });
+    assert.deepEqual(traced, {pieces: 2, guides: true, parts: 0, bones: 0});
+    // Head: click a line of each outline.
+    await page.click('.modeler-rail [data-tool="head"]');
+    for (const w of [[-.16, 1.65, 0], [0, 1.6, .14]]) { const q = await sp(w); await page.mouse.click(q.x, q.y); }
+    const head = await page.evaluate(() => { const s = m.model.sticks, h = s.heads[0], part = m.model.parts.find(p => p.stick === h?.id); return {heads: s.heads.length, picked: m.state.stick.head === h?.id, part: Boolean(part), valid: allValid(), title: document.querySelector('.modeler-inspector-title')?.value}; });
+    assert.deepEqual(head, {heads: 1, picked: true, part: true, valid: true, title: 'Head'});
+    const converted = await page.evaluate(async () => {
+      [...document.querySelectorAll('.modeler-quick-button')].find(b => b.textContent.includes('Convert to mesh')).click(); await wait(50);
+      const part = m.model.parts.find(p => p.id === m.state.active);
+      return {mode: m.state.mode, heads: m.model.sticks.heads.length, plain: part && part.stick === undefined, valid: allValid()};
+    });
+    assert.deepEqual(converted, {mode: 'edit', heads: 0, plain: true, valid: true});
+    const undone = await page.evaluate(async () => { press('Tab'); await wait(20); const mode = m.state.mode; press('z', {ctrlKey: true}); await wait(50); return {mode, heads: m.model.sticks.heads.length}; });
+    assert.deepEqual(undone, {mode: 'object', heads: 1});
+  });
+
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

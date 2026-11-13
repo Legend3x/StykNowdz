@@ -80,7 +80,7 @@ export function readModel(value) {
   for (const ref of model.references) if (ref && typeof ref === 'object' && ref.flip !== true) delete ref.flip;
   // 3D stick building: the joints and lines the stick parts and bones are made from.
   if (model.sticks !== undefined) { const sticks = readSticks(model.sticks, model.palette.length); if (sticks) model.sticks = sticks; else delete model.sticks; }
-  const stickLines = new Set([...(model.sticks?.lines ?? []), ...(model.sticks?.fills ?? [])].map(l => l.id));
+  const stickLines = new Set([...(model.sticks?.lines ?? []), ...(model.sticks?.fills ?? []), ...(model.sticks?.heads ?? [])].map(l => l.id));
   for (const item of [...model.parts, ...model.bones]) if (item.stick !== undefined && !stickLines.has(item.stick)) delete item.stick;
   model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1));
   return model;

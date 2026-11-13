@@ -58,7 +58,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
 
   // ---------- history ----------
   const snapshot = () => JSON.stringify({model, parts: [...S.parts], active: S.active, verts: [...S.verts], bones: [...S.bones], mode: S.mode});
-  const restore = text => { const v = JSON.parse(text); model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode === 'edit' ? 'object' : v.mode; S.cache.clear(); syncRefs(); stick?.tidy(); refresh(); };
+  const restore = text => { const v = JSON.parse(text); model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode === 'edit' && !part(v.active)?.mesh ? 'object' : v.mode; S.cache.clear(); syncRefs(); stick?.tidy(); refresh(); };
   /** Run a change as one undo step. A change that would break a mesh is
    * refused: the model goes back to how it was, the full topology report is
    * printed to the console, and the reason shows in the status line. */
@@ -129,7 +129,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const badge = el('span', {class: 'modeler-title-badge'}); badge.append(glyph('ws-model'));
     header.replaceChildren(...[
       el('strong', {class: 'modeler-title'}, [badge, t("modeler.title")]),
-      segmented([['build', t("modeler.buildMode"), t("modeler.buildModeHint")], ['object', t("modeler.objectMode"), t("modeler.objectModeHint")], ['bones', t("modeler.bonesMode"), t("modeler.bonesModeHint")]], S.mode, setMode),
+      segmented([['build', t("modeler.buildMode"), t("modeler.buildModeHint")], ['object', t("modeler.objectMode"), t("modeler.objectModeHint")], ['edit', t("modeler.editMode"), t("modeler.editModeConvertedHint")], ['bones', t("modeler.bonesMode"), t("modeler.bonesModeHint")]], S.mode, setMode),
+      S.mode === 'edit' ? segmented([['vert', t("modeler.vertices"), '1'], ['edge', t("modeler.edges"), '2'], ['face', t("modeler.faces"), '3']], S.selectMode, m => { S.selectMode = m; refresh(); }) : null,
       el('span', {class: 'modeler-gap'}),
       ...[['grab', t("modeler.move"), 'G', t("modeler.moveHint")], ['rotate', t("modeler.rotate"), 'R', t("modeler.rotateHint")], ['scale', t("modeler.scale"), 'S', t("modeler.scaleHint")]].map(([kind, label, key, title]) => {
         const b = button(label, () => startTransform(kind), {icon: key, title}); b.classList.add('modeler-transform'); return b; }),
@@ -191,7 +192,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }));
   // Build mode (3D stick building): its interaction and panel live in stick-build.mjs.
   const stick = createStickBuild({S, model: () => model, frame: () => frame, commit, refresh: () => refresh(), draw: () => draw(), toast: text => toast(text), t, el, section, field, vector, actions, colorRow, segmented: (...a) => segmented(...a),
-    button: (label, fn, options) => button(label, fn, options), glyph, screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
+    button: (label, fn, options) => button(label, fn, options), glyph, editPart: id => { S.parts = new Set([id]); S.active = id; setMode('edit'); }, screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
   stage.append(stick.rail);
   /** The darkest palette colour, for new outlines. */
   const inkColor = () => model.palette.reduce((best, c, i) => c[0] + c[1] + c[2] < model.palette[best].reduce((a, v) => a + v, 0) ? i : best, 0);
@@ -268,7 +269,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (p && S.parts.size === 1 && p.stick != null) {
         // A part made from a line: its shape and place come from the line (Build mode); its look is set here.
         blocks.push(section(t("modeler.part"), [el('p', {class: 'modeler-hint', text: t("modeler.stickPartHint")}),
-          actions([[t("modeler.stickShapeInBuild"), () => { const fill = Boolean(K.fillOf(model.sticks, p.stick)); S.stick.line = fill ? null : p.stick; S.stick.fill = fill ? p.stick : null; S.stick.joint = null; setMode('build'); }]])]));
+          actions([[t("modeler.stickConvert"), () => { let made = null; commit(() => { made = K.convertToMesh(model, p.stick); S.cache.clear(); }); if (made) { S.parts = new Set([made.id]); S.active = made.id; setMode('edit'); } }, t("modeler.stickConvertHint")],
+            [t("modeler.stickShapeInBuild"), () => { const fill = Boolean(K.fillOf(model.sticks, p.stick)), head = Boolean(K.headOf(model.sticks, p.stick)); S.stick.line = fill || head ? null : p.stick; S.stick.fill = fill ? p.stick : null; S.stick.head = head ? p.stick : null; S.stick.joint = null; setMode('build'); }]])]));
         blocks.push(section(t("modeler.partLook"), partLook(p)));
       } else if (p && S.parts.size === 1) {
         blocks.push(section(t("modeler.part"), [
@@ -377,7 +379,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
       : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '') + (m.typed ? ` · ${t("modeler.typedValue", {value: m.typed})}` : '')
       : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'bevel' ? t("modeler.bevelStatus", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind === 'knife' ? t("modeler.knifeStatus", {count: m.path.length}) : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
-      : S.mode === 'build' ? (S.stick?.attachPick ? t("modeler.stickPickJoint") : t("modeler.buildStatus")) : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
+      : S.mode === 'build' ? (S.stick?.attachPick ? t("modeler.stickPickJoint") : t("modeler.buildStatus")) : S.mode === 'edit' ? t("modeler.editStatus") : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
     // Soft select: its radius, which the scroll wheel changes while moving.
     status.textContent = m?.target?.soft ? `${text} · ${t("modeler.softStatus", {radius: fmt(S.softRadius)})}` : text;
   }
@@ -607,8 +609,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // ---------- modes and selection ----------
   function setMode(mode) {
     if (S.modal) cancelModal();
-    // Shapes are built from sticks here; there is no point-by-point mesh editing.
-    if (mode === 'edit') mode = 'build';
+    // Point-by-point editing is for ordinary parts: a part made in Build mode is converted to a mesh first.
+    if (mode === 'edit') {
+      const p = activePart() ?? (S.parts.size ? null : model.parts.find(q => q.stick == null));
+      if (!p) { toast(t("modeler.selectAPartToEdit")); return; }
+      if (p.stick != null) { toast(t("modeler.editNeedsConvert")); return; }
+      S.parts = new Set([p.id]); S.active = p.id;
+    }
     S.mode = mode; S.hover = null;
     if (mode === 'edit') S.verts = new Set();
     refresh();
@@ -1588,7 +1595,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('div', {class: 'modeler-controls-grid'}, [
         group(t("modeler.controlsLook"), [[t("modeler.keysOrbitKeys"), t("modeler.keysOrbit")], [t("modeler.keysPanKeys"), t("modeler.keysPan")], [t("modeler.keysWheel"), t("modeler.keysZoom")], ['Numpad 1 / 3 / 7', t("modeler.keysViews")], ['Numpad .', t("modeler.frameSelected")]]),
         group(t("modeler.controlsSelect"), [[t("modeler.keysClickKeys"), t("modeler.keysClick")], ['A', t("modeler.selectAll")], ['Tab', t("modeler.keysTabBuild")]]),
-        group(t("modeler.controlsBuild"), [[t("modeler.keysDrawLineKeys"), t("modeler.keysDrawLine")], [t("modeler.keysNewPieceKeys"), t("modeler.keysNewPiece")], ['V L C P H', t("modeler.keysTools")], ['Right-drag', t("modeler.keysBend")], ['Enter', t("modeler.keysFillClose")], ['Alt+drag', t("modeler.keysJointAlone")], ['M', t("modeler.stickMirror")], ['X / Delete', t("modeler.deleteSelected")], ['G / R / S', t("modeler.keysTransformParts")]]),
+        group(t("modeler.controlsBuild"), [[t("modeler.keysDrawLineKeys"), t("modeler.keysDrawLine")], [t("modeler.keysNewPieceKeys"), t("modeler.keysNewPiece")], ['V L C P E H', t("modeler.keysTools")], ['Right-drag', t("modeler.keysBend")], ['Enter', t("modeler.keysFillClose")], ['Alt+drag', t("modeler.keysJointAlone")], ['M', t("modeler.stickMirror")], ['X / Delete', t("modeler.deleteSelected")], ['G / R / S', t("modeler.keysTransformParts")]]),
+        group(t("modeler.controlsShape"), [['G / R / S', t("modeler.keysTransform")], ['X Y Z', t("modeler.keysAxis")], ['E', t("modeler.extrude")], ['Ctrl+click', t("modeler.keysAddPoint")], ['F', t("modeler.fill")], ['M', t("modeler.merge")], ['Ctrl+R', t("modeler.keysLoopCut")], ['K', t("modeler.knife")], ['O', t("modeler.softSelect")], ['1 2 3', t("modeler.keysSelectMode")]]),
         group(t("modeler.controlsBones"), [[t("modeler.keysDragKeys"), t("modeler.keysDrag")], [t("modeler.keysStretchKeys"), t("modeler.keysStretch")], ['E', t("modeler.extrudeBone")], ['Ctrl+Z', t("modeler.undo")]])]),
       el('div', {class: 'modeler-controls-foot'}, [el('label', {class: 'modeler-check'}, [hide, t("modeler.controlsHide")]), ok])]);
     controls = el('div', {class: 'modeler-controls', onpointerdown: e => { if (e.target === controls) closeControls(); }}, [card]);
@@ -1763,7 +1771,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Build mode has its own keys (tools, delete, mirror); views, Tab and ? work as everywhere.
     else if (S.mode === 'build' && !ctrl && !e.code?.startsWith('Numpad') && !['Tab', '.', '?'].includes(key)) handled = stick.keydown(e);
     else if (ctrl) handled = false;
-    else if (key === 'Tab') setMode(S.mode === 'build' ? 'object' : 'build');
+    else if (key === 'Tab') setMode(S.mode === 'build' || S.mode === 'edit' ? 'object' : activePart() && activePart().stick == null ? 'edit' : 'build');
     else if (key === 'g') startTransform('grab');
     else if (key === 'r') startTransform('rotate');
     else if (key === 's') startTransform('scale');

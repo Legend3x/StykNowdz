@@ -3,9 +3,10 @@
 Branch `stick-3d`. Build mode is Styk Builder in 3D: a character is drawn as
 joints and lines, and every line is a 3D shape. The lines are the skeleton,
 so whatever is built poses on the Animate stage with no separate rigging.
-Mesh editing (Edit mode and the tools ported from Blender) is taken out of the
-interface on this branch; the mesh library stays, for imports (OBJ, glTF) and
-so the branch can be merged back.
+Detail that sticks can't give (eye hollows, a mouth) is cut in Edit mode with
+the tools ported from Blender, after **Convert to mesh**: Edit mode is only for
+ordinary parts (imported, added, or converted), never for parts Build mode
+remakes.
 
 Code: `src/modeler/sticks.mjs` (data, shapes, parts and bones),
 `src/modeler/stick-build.mjs` (interaction and panel, wired in by
@@ -19,7 +20,8 @@ left edge, and the panel is an inspector for the picked line, joint or poly
 fill. Numbers are sliders; a slider drag is one undo step.
 
 - **Tools** (rail, top): Select (V), Line (L), Circle (C), Poly fill (P),
-  Pan (H). Below them Split, Duplicate, Flip H, Flip V and Delete act on the
+  Head from outlines (E), Pan (H), and the **Guide lines** toggle: while it's
+  on, new lines are guides (lines drawn from a guide are guides too). Below them Split, Duplicate, Flip H, Flip V and Delete act on the
   picked line (also in the inspector's title row, as in Build).
 - **Line / Circle**: drag from a joint. The line starts at the joint and ends
   where you let go, on the plane through the joint facing you; turn the view
@@ -40,6 +42,17 @@ fill. Numbers are sliders; a slider drag is one undo step.
   Start/End thickness, the shape's own options, Curve, Circular arc, Bend
   direction); 3D (Width, Depth, Roll, Bulge or Curl, Twist for planes);
   Geometry (Length, **Static**).
+- **Guide** lines are for tracing: no shape and no bone (dotted teal in the
+  view). Lines hanging below a guide take their bone's parent from the nearest
+  posable line above, as below a static line. Heads and poly fills can be
+  made from guides.
+- **Head from outlines** (E): click a line of the front outline, then a line
+  of the side profile. See Heads below.
+- **Convert to mesh** (a line's Geometry, or a fill's or head's title row;
+  also in Object mode for any part made in Build mode): the shape becomes an
+  ordinary part with the same points and weights, opened in Edit mode. A
+  poly fill or head is removed (its joints and outlines stay); a line keeps
+  its bone and stops making a shape (**Make its shape again** undoes that).
 - **Static** lines get no bone: they move with the nearest posable line above
   them (a shoulder, a neck, a hair clip). They are dashed in the view.
 - **Split** puts a joint in the middle of the line (on its curve). **Duplicate**
@@ -88,6 +101,12 @@ so a bent tube doesn't twist. Thickness along a line is
 A poly fill closes the area between three or more joints, as Pivot's poly
 fill does, but as a 3D body rather than a flat plane:
 
+- It's made of four-sided faces, like Blender's Grid fill: the outline is
+  split into four sides at its corners (the points furthest toward each
+  diagonal of its plane), a grid is stretched between them (a Coons patch,
+  14 cells around the two directions), and the inside points are relaxed so a
+  dented outline doesn't fold the grid. **Smooth** (0–2, default 1) is the
+  part's subdivision.
 - Its outline follows the lines between consecutive joints along their paths
   (so a curved arm gives a curved edge), and runs straight where no line
   joins two joints.
@@ -99,10 +118,35 @@ fill does, but as a 3D body rather than a flat plane:
 - Its points are weighted to the bones of its joints (inverse distance
   squared, the four nearest), so a fill bends as the lines around it pose.
 
+## Heads
+
+A head is made from two traced pieces, the way modelers block out a head from
+front and side drawings: the **front outline** (traced in Front view) and the
+**side profile** (traced in Side view). Making one turns both pieces' lines
+into guides; moving their joints reshapes the head, and deleting either piece
+deletes it. Front is +Z.
+
+- Rows of rings go up the height where the front outline is at least a third
+  of its widest, closer together toward the ends (`rows`, default 12); each
+  ring has `around` points (multiple of 4, default 16) and is mirrored
+  across the outline's middle, so the head is symmetrical.
+- A ring is as wide as the front outline at its height and as deep as the side
+  profile: with **Side outline: Face only** (default) the profile is read as
+  the face, from its back edge (the ear line) forward, and the back of the
+  head goes `back` × the half-width behind the ear line; an open profile line
+  puts the ear line a half-width behind it. **Whole head** reads the side
+  outline as the whole head, front and back.
+- **Squareness** makes the rings boxier (a superellipse), for a flatter face.
+- **Top dome** and **Chin dome**: three shrinking rings and a point close the
+  head up to the outline's top and down to its bottom (1 reaches them exactly).
+- **Smooth** is the part's subdivision (default 1).
+- Every point is weighted to the bone of the line ending at the joint the
+  front (else the side) outline is attached to, normally the neck.
+
 ## Parts, bones and weights
 
 `generateSticks(model)` rebuilds the parts and bones made from the sticks
-(marked `stick: lineId`, or the fill's id) and keeps every other part and bone. Ids stay with
+(marked `stick:` the line's, fill's or head's id) and keeps every other part and bone. Ids stay with
 their lines, so selection, outlines and visibility set on a part, and face
 flags or names set on a bone, carry over. Bones are made parents first; a
 line's bone hangs from the bone of the nearest posable line above it (across
@@ -121,8 +165,11 @@ the animation knows a bone by it.
 ## Stored data
 
 `model.sticks = {joints: [{id, at, piece}], lines: [{id, from, to, piece,
-shape, color, static, name}], pieces: [{id, name, root, attach}], fills:
-[{id, joints, color, inflate, name}], nextId}`. Shapes written by earlier
+shape, color, static, guide?, noMesh?, name}], pieces: [{id, name, root,
+attach}], fills: [{id, joints, color, inflate, smooth, name}], heads: [{id,
+front, side, color, name, rows, around, square, back, top, bottom, smooth,
+whole}], nextId}`. Heads whose pieces are gone, or which name one piece for
+both, are dropped on open. Shapes written by earlier
 builds (capsule, tube, box, ball, ribbon) are read as round line, trapezoid,
 square line, filled circle and plane.
 `readSticks` (called by `readModel`) keeps joints with finite positions, fills

@@ -26,8 +26,10 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
 ### Modes
 
 On the `stick-3d` branch Build mode (3D stick building, see
-[STICK-BUILD.md](STICK-BUILD.md)) takes Edit mode's place: Tab switches
-Build and Object, and the mesh tools below aren't in the interface.
+[STICK-BUILD.md](STICK-BUILD.md)) comes first. Edit mode and the tools below
+are for ordinary parts only (imported, added, or made in Build mode and then
+converted with **Convert to mesh**). Tab goes from Build to Object, from
+Object to Edit when an ordinary part is selected, and back to Object.
 
 - **Object**: arrange whole parts. Start from the **Base character** (eleven
   parts with a matching 19-bone skeleton) or a cube, sphere, capsule, cylinder,

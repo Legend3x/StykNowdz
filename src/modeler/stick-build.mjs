@@ -7,6 +7,9 @@
 // - Select: click to pick; drag a joint to move it (what hangs below follows, Alt: alone).
 // - Right-drag (or Alt+right-drag) a line to bend it, as in Build; on empty space it orbits.
 // - Poly fill: click joints in turn, then the first again (or Enter), as Pivot's poly fill.
+// - Head: click the front outline, then the side profile (two traced pieces): a head made to match both.
+// - Guide lines (the rail's toggle): lines for tracing, with no shape and no bone.
+// - Convert to mesh: a line's shape, a poly fill or a head becomes an ordinary part for Edit mode.
 //
 // The sticks and the parts and bones made from them are in sticks.mjs; this
 // file is only the interaction and the panel, wired in by modeler-ui.mjs.
@@ -17,20 +20,21 @@ import {segmentPixelDistance} from './viewport.mjs';
 const ROOT_COLOR = '#ff8a00', JOINT_COLOR = '#1f6feb', LINE_COLOR = 'rgba(20,24,32,.75)', SELECTED = '#ff3b6b', FILL_LINE = 'rgba(255,59,107,.85)';
 /** The rail's tools: [tool, icon, label key, key]. */
 const TOOLS = [['select', 'cursor', "modeler.stickSelect", 'V'], ['line', 'line', "modeler.stickLineTool", 'L'], ['circle', 'circle', "modeler.stickCircleTool", 'C'],
-  ['polygon', 'polygon', "modeler.stickPolyFill", 'P'], ['hand', 'hand', "modeler.stickPan", 'H']];
+  ['polygon', 'polygon', "modeler.stickPolyFill", 'P'], ['head', 'person', "modeler.stickHeadTool", 'E'], ['hand', 'hand', "modeler.stickPan", 'H']];
 /** Actions on the picked line: [action, icon, label key]. */
 const LINE_ACTIONS = [['split', 'builder-split', "modeler.stickSplit"], ['duplicate', 'duplicate', "modeler.stickDuplicate"], ['flipH', 'flip', "modeler.stickFlipH"],
   ['flipV', 'flip-vertical', "modeler.stickFlipV"], ['delete', 'trash', "modeler.stickDelete"]];
 const ROUND_KINDS = new Set(['circle', 'circleFill', 'circleClear', 'ellipse', 'polygon']);
+const GUIDE_COLOR = 'rgba(0,150,170,.9)', HEAD_PICK = '#ff8a00';
 
 /**
  * ctx: {S, model(), frame(), commit(fn), refresh(), draw(), toast(text), t(key, params),
  *   el, section, glyph(icon), colorRow, button, screenToWorld(pt, through),
- *   snapshot(), restore(snap), pushUndo(before)}
+ *   snapshot(), restore(snap), pushUndo(before), editPart(id)}
  */
 export function createStickBuild(ctx) {
   const {S, t, el, section} = ctx;
-  S.stick ??= {tool: 'line', line: null, joint: null, fill: null, attachPick: null, fillDraft: null, lineKind: 'line'};
+  S.stick ??= {tool: 'line', line: null, joint: null, fill: null, head: null, attachPick: null, fillDraft: null, headPick: null, guide: false, lineKind: 'line'};
   if (!TOOLS.some(([tool]) => tool === S.stick.tool)) S.stick.tool = 'line';
   const sticks = () => { const m = ctx.model(); m.sticks ??= K.emptySticks(); m.sticks.fills ??= []; return m.sticks; };
   const regenerate = () => { K.generateSticks(ctx.model()); S.cache.clear(); };
@@ -64,6 +68,12 @@ export function createStickBuild(ctx) {
       const poly = f.joints.map(id => project(at(id)));
       if (poly.every(q => q.ok) && inside({x, y}, poly)) return {fill: f.id, d: 0};
     }
+    for (const h of s.heads ?? []) {
+      const part = ctx.model().parts.find(p => p.stick === h.id); if (!part) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const v of part.mesh.verts) { const q = project(v); if (!q.ok) continue; x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return {head: h.id, d: 0};
+    }
     return null;
   }
   const inside = (p, poly) => {
@@ -74,7 +84,7 @@ export function createStickBuild(ctx) {
     }
     return c;
   };
-  const select = hit => { S.stick.line = hit?.line ?? null; S.stick.joint = hit?.joint ?? null; S.stick.fill = hit?.fill ?? null; };
+  const select = hit => { S.stick.line = hit?.line ?? null; S.stick.joint = hit?.joint ?? null; S.stick.fill = hit?.fill ?? null; S.stick.head = hit?.head ?? null; };
 
   // ---------- pointer ----------
   /** A left press in the view: returns a drag ({move, up, cancel}) or null. */
@@ -82,6 +92,7 @@ export function createStickBuild(ctx) {
     const hit = pick(p.x, p.y), tool = S.stick.tool;
     if (S.stick.attachPick) { attachTo(hit); return null; }
     if (tool === 'polygon') { fillClick(hit); return null; }
+    if (tool === 'head') { headClick(hit); return null; }
     const before = ctx.snapshot(), start = {...p};
     let live = null; // what the drag made or is moving
     const begin = () => {
@@ -99,7 +110,8 @@ export function createStickBuild(ctx) {
       if (from == null && hit?.line != null) return null;
       if (from == null) { const piece = K.addPiece(s, {at: ctx.screenToWorld(start, S.camera.target)}); from = piece.root; }
       const through = at(from).slice();
-      const line = K.addLine(s, from, ctx.screenToWorld(p, through), {shape: shapeFor(tool === 'circle' ? 'circleFill' : S.stick.lineKind, s, from), color: S.stick.color ?? 1});
+      const guide = S.stick.guide || Boolean(K.lineInto(s, from)?.guide);
+      const line = K.addLine(s, from, ctx.screenToWorld(p, through), {shape: shapeFor(tool === 'circle' ? 'circleFill' : S.stick.lineKind, s, from), color: S.stick.color ?? 1, guide});
       select({line: line.id});
       return {kind: 'draw', line: line.id, joint: line.to, through};
     };
@@ -176,6 +188,31 @@ export function createStickBuild(ctx) {
     ctx.refresh();
   }
 
+  // ---------- head from outlines ----------
+  function headClick(hit) {
+    const s = ctx.model().sticks;
+    const piece = hit?.joint != null ? K.jointOf(s, hit.joint)?.piece : hit?.line != null ? K.lineOf(s, hit.line)?.piece : null;
+    if (piece == null) { ctx.toast(t(S.stick.headPick == null ? "modeler.stickHeadPickFront" : "modeler.stickHeadPickSide")); return; }
+    if (S.stick.headPick == null) { S.stick.headPick = piece; ctx.toast(t("modeler.stickHeadPickSide")); ctx.refresh(); return; }
+    if (piece === S.stick.headPick) { ctx.toast(t("modeler.stickHeadSamePiece")); return; }
+    const front = S.stick.headPick; S.stick.headPick = null;
+    let made = null;
+    try { change(st => { made = K.addHead(st, front, piece, {color: 0}); }); }
+    catch (error) { ctx.toast(error.message); ctx.refresh(); return; }
+    if (!ctx.model().parts.some(p => p.stick === made?.id)) ctx.toast(t("modeler.stickHeadEmpty"));
+    else ctx.toast(t("modeler.stickHeadMade"));
+    select({head: made.id}); S.stick.tool = 'select'; ctx.refresh();
+  }
+
+  /** A line's shape, a poly fill or a head into an ordinary part, opened in Edit mode. */
+  function convert(id) {
+    let part = null;
+    ctx.commit(() => { part = K.convertToMesh(ctx.model(), id); S.cache.clear(); });
+    if (!part) return;
+    select(null); ctx.toast(t("modeler.stickConverted", {name: part.name}));
+    ctx.editPart(part.id);
+  }
+
   function attachTo(hit) {
     const piece = S.stick.attachPick; S.stick.attachPick = null;
     if (hit?.joint != null) {
@@ -197,8 +234,8 @@ export function createStickBuild(ctx) {
     }
     for (const l of s.lines) {
       const pts = screenPath(l, 12); if (!pts.every(q => q.ok)) continue;
-      const on = S.stick.line === l.id;
-      c.strokeStyle = on ? SELECTED : LINE_COLOR; c.lineWidth = on ? 3 : 1.5; c.setLineDash(l.static ? [4, 3] : []);
+      const on = S.stick.line === l.id, picked = S.stick.headPick === l.piece;
+      c.strokeStyle = on ? SELECTED : picked ? HEAD_PICK : l.guide ? GUIDE_COLOR : LINE_COLOR; c.lineWidth = on || picked ? 3 : l.guide ? 1.25 : 1.5; c.setLineDash(l.guide ? [2, 3] : l.static ? [4, 3] : []);
       polyline(pts, false);
     }
     c.setLineDash([]);
@@ -225,27 +262,34 @@ export function createStickBuild(ctx) {
   // ---------- the tool rail (as Build's) ----------
   const toolButtons = new Map(), actionButtons = new Map();
   const railButton = (iconName, label, onclick) => el('button', {type: 'button', class: 'ui-tool-button', 'aria-label': label, title: label, onclick}, [ctx.glyph(iconName)]);
+  const guideButton = railButton('onion', t("modeler.stickGuideMode"), () => { S.stick.guide = !S.stick.guide; ctx.toast(t(S.stick.guide ? "modeler.stickGuideOn" : "modeler.stickGuideOff")); ctx.refresh(); });
+  guideButton.dataset.toggle = 'guide';
   const rail = el('div', {class: 'modeler-rail', role: 'toolbar', 'aria-orientation': 'vertical', 'aria-label': t("modeler.stickTools")}, [
     ...TOOLS.map(([tool, iconName, key, shortcut]) => { const b = railButton(iconName, `${t(key)} (${shortcut})`, () => setTool(tool)); b.dataset.tool = tool; toolButtons.set(tool, b); return b; }),
+    guideButton,
     el('span', {class: 'ui-rail-sep', 'aria-hidden': 'true'}),
     ...LINE_ACTIONS.map(([action, iconName, key]) => { const b = railButton(iconName, t(key), () => run(action)); b.dataset.action = action; actionButtons.set(action, b); return b; }),
   ]);
   function setTool(tool) {
     S.stick.tool = tool;
     if (tool !== 'polygon') S.stick.fillDraft = null;
+    if (tool !== 'head') S.stick.headPick = null;
+    else ctx.toast(t("modeler.stickHeadPickFront"));
     ctx.refresh();
   }
   /** Show the rail in Build mode, with the current tool pressed and the line actions ready when a line is picked. */
   function sync() {
     rail.hidden = S.mode !== 'build';
     for (const [tool, b] of toolButtons) b.setAttribute('aria-pressed', String(S.stick.tool === tool));
-    const lineOn = S.stick.line != null, anything = lineOn || S.stick.fill != null || S.stick.joint != null;
+    guideButton.setAttribute('aria-pressed', String(Boolean(S.stick.guide)));
+    const lineOn = S.stick.line != null, anything = lineOn || S.stick.fill != null || S.stick.joint != null || S.stick.head != null;
     for (const [action, b] of actionButtons) b.disabled = action === 'delete' ? !anything : !lineOn;
   }
 
   /** Split, Duplicate, Flip H, Flip V, Delete. */
   function run(action) {
     if (action === 'delete') { remove(); return; }
+    if (action === 'convert') { const target = S.stick.line ?? S.stick.fill ?? S.stick.head; if (target != null) convert(target); return; }
     const id = S.stick.line; if (id == null) return;
     if (action === 'split') change(s => { const made = K.splitLine(s, id); if (made) S.stick.line = made.id; });
     else if (action === 'duplicate') change(s => { const made = K.duplicateBranch(s, id, {axis: ctx.frame().back}); if (made[0]) S.stick.line = made[0].id; });
@@ -284,9 +328,11 @@ export function createStickBuild(ctx) {
     const line = s && S.stick.line != null ? K.lineOf(s, S.stick.line) : null;
     const joint = s && S.stick.joint != null ? K.jointOf(s, S.stick.joint) : null;
     const fill = s && S.stick.fill != null ? K.fillOf(s, S.stick.fill) : null;
-    if (!line && !joint && !fill) blocks.push(section(t("modeler.stickBuild"), [el('p', {class: 'modeler-hint', text: toolHint()})]));
+    const head = s && S.stick.head != null ? K.headOf(s, S.stick.head) : null;
+    if (!line && !joint && !fill && !head) blocks.push(section(t("modeler.stickBuild"), [el('p', {class: 'modeler-hint', text: toolHint()})]));
     if (line) blocks.push(...linePanel(line));
     if (fill) blocks.push(...fillPanel(fill));
+    if (head) blocks.push(...headPanel(head));
     if (joint) {
       const piece = K.pieceOf(s, joint.piece), isRoot = piece?.root === joint.id;
       blocks.push(section(t("modeler.stickJoint"), [
@@ -301,6 +347,7 @@ export function createStickBuild(ctx) {
     if (tool === 'polygon') return S.stick.fillDraft?.length ? t("modeler.stickFillGoing", {count: S.stick.fillDraft.length}) : t("modeler.stickFillHint");
     if (tool === 'select') return t("modeler.stickSelectHint");
     if (tool === 'hand') return t("modeler.stickPanHint");
+    if (tool === 'head') return S.stick.headPick != null ? t("modeler.stickHeadPickSide") : t("modeler.stickHeadHint");
     return ctx.model().sticks?.lines.length ? t("modeler.stickHint") : t("modeler.stickStartHint");
   }
 
@@ -344,17 +391,41 @@ export function createStickBuild(ctx) {
           const l = K.lineOf(st, id), p = K.jointOf(st, l.from).at, q = K.jointOf(st, l.to).at, d = q.map((x, k) => x - p[k]), n = Math.hypot(...d) || 1;
           K.moveJoint(st, l.to, p.map((x, k) => x + d[k] / n * v));
         }),
-        toggle(t("modeler.stickStatic"), line.static, st => { K.lineOf(st, id).static = !line.static; }, t("modeler.stickStaticHint"))]),
+        toggle(t("modeler.stickStatic"), line.static, st => { K.lineOf(st, id).static = !line.static; }, t("modeler.stickStaticHint")),
+        toggle(t("modeler.stickGuide"), Boolean(line.guide), st => { const l = K.lineOf(st, id); if (line.guide) delete l.guide; else l.guide = true; }, t("modeler.stickGuideHint")),
+        line.noMesh
+          ? el('div', {}, [el('p', {class: 'modeler-hint', text: t("modeler.stickConvertedHint")}), ctx.button(t("modeler.stickShapeAgain"), () => change(st => { delete K.lineOf(st, id).noMesh; }), {title: t("modeler.stickShapeAgainHint")})])
+          : line.guide ? null : ctx.button(t("modeler.stickConvert"), () => convert(id), {title: t("modeler.stickConvertHint")})]),
     ];
+  }
+
+  function headPanel(head) {
+    const id = head.id, set = patch => st => { const h = K.headOf(st, id); Object.assign(h, K.readHeadShape({...h, ...patch})); };
+    const whole = Boolean(head.whole);
+    return [
+      header(head.name || t("modeler.stickHead"), name => change(st => { K.headOf(st, id).name = name; }), [['convert', 'combine', "modeler.stickConvert"], ['delete', 'trash', "modeler.stickDelete"]]),
+      section(t("modeler.stickStyle"), [
+        ctx.colorRow(head.color, i => change(st => { K.headOf(st, id).color = i; })),
+        choose(t("modeler.stickHeadSide"), whole ? 'whole' : 'face', [['face', t("modeler.stickHeadFace")], ['whole', t("modeler.stickHeadWhole")]], (st, v) => set({whole: v === 'whole'})(st)),
+        slide(t("modeler.stickHeadSquare"), head.square, {min: 0, max: 1, step: .02, digits: 2}, (st, v) => set({square: v})(st)),
+        slide(t("modeler.stickHeadBack"), head.back, {min: 0, max: 3, step: .02, digits: 2}, (st, v) => set({back: v})(st)),
+        slide(t("modeler.stickHeadTop"), head.top, {min: 0, max: 3, step: .02, digits: 2}, (st, v) => set({top: v})(st)),
+        slide(t("modeler.stickHeadBottom"), head.bottom, {min: 0, max: 3, step: .02, digits: 2}, (st, v) => set({bottom: v})(st))]),
+      section(t("modeler.stickHeadDetail"), [
+        slide(t("modeler.stickHeadRows"), head.rows, {min: 4, max: 32, step: 1, digits: 0}, (st, v) => set({rows: v})(st)),
+        slide(t("modeler.stickHeadAround"), head.around, {min: 8, max: 32, step: 4, digits: 0}, (st, v) => set({around: v})(st)),
+        slide(t("modeler.stickSmooth"), head.smooth, {min: 0, max: 2, step: 1, digits: 0}, (st, v) => set({smooth: v})(st)),
+        el('p', {class: 'modeler-hint', text: t("modeler.stickHeadPanelHint")})])];
   }
 
   function fillPanel(fill) {
     const id = fill.id;
     return [
-      header(fill.name || t("modeler.stickPolyFill"), name => change(st => { K.fillOf(st, id).name = name; }), [['delete', 'trash', "modeler.stickDelete"]]),
+      header(fill.name || t("modeler.stickPolyFill"), name => change(st => { K.fillOf(st, id).name = name; }), [['convert', 'combine', "modeler.stickConvert"], ['delete', 'trash', "modeler.stickDelete"]]),
       section(t("modeler.stickStyle"), [
         ctx.colorRow(fill.color, i => change(st => { K.fillOf(st, id).color = i; })),
         slide(t("modeler.stickInflate"), fill.inflate ?? 0, {min: 0, max: 2, step: .02, digits: 2}, (st, v) => { K.fillOf(st, id).inflate = v; }),
+        slide(t("modeler.stickSmooth"), fill.smooth ?? 1, {min: 0, max: 2, step: 1, digits: 0}, (st, v) => { K.fillOf(st, id).smooth = v; }),
         el('p', {class: 'modeler-hint', text: t("modeler.stickFillPanelHint")})])];
   }
 
@@ -381,6 +452,7 @@ export function createStickBuild(ctx) {
     const s = ctx.model().sticks; if (!s) return false;
     const done = fn => { change(fn); select(null); ctx.refresh(); return true; };
     if (S.stick.fill != null) { const id = S.stick.fill; return done(st => K.deleteFill(st, id)); }
+    if (S.stick.head != null) { const id = S.stick.head; return done(st => K.deleteHead(st, id)); }
     if (S.stick.line != null) { const id = S.stick.line; return done(st => K.deleteLine(st, id)); }
     if (S.stick.joint != null) {
       const joint = K.jointOf(s, S.stick.joint), piece = K.pieceOf(s, joint?.piece);
@@ -395,6 +467,7 @@ export function createStickBuild(ctx) {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key, plain = !e.ctrlKey && !e.metaKey && !e.altKey;
     if (key === 'Escape') {
       if (S.stick.attachPick) { S.stick.attachPick = null; ctx.toast(t("modeler.stickAttachCancelled")); }
+      else if (S.stick.headPick != null) S.stick.headPick = null;
       else if (S.stick.fillDraft?.length) S.stick.fillDraft = null;
       else select(null);
       ctx.refresh(); return true;
@@ -403,7 +476,7 @@ export function createStickBuild(ctx) {
     if (key === 'Backspace' && S.stick.fillDraft?.length) { S.stick.fillDraft.pop(); ctx.refresh(); return true; }
     if ((key === 'x' || key === 'Delete') && plain) return remove();
     if (key === 'm' && plain && S.stick.line != null) { mirror(S.stick.line); return true; }
-    const tools = {v: 'select', l: 'line', c: 'circle', p: 'polygon', h: 'hand'};
+    const tools = {v: 'select', l: 'line', c: 'circle', p: 'polygon', e: 'head', h: 'hand'};
     if (tools[key] && plain) { setTool(tools[key]); return true; }
     return false;
   }
@@ -414,6 +487,8 @@ export function createStickBuild(ctx) {
     if (S.stick.line != null && !s?.lines.some(l => l.id === S.stick.line)) S.stick.line = null;
     if (S.stick.joint != null && !s?.joints.some(j => j.id === S.stick.joint)) S.stick.joint = null;
     if (S.stick.fill != null && !s?.fills?.some(f => f.id === S.stick.fill)) S.stick.fill = null;
+    if (S.stick.head != null && !s?.heads?.some(h => h.id === S.stick.head)) S.stick.head = null;
+    if (S.stick.headPick != null && !s?.pieces.some(p => p.id === S.stick.headPick)) S.stick.headPick = null;
     if (S.stick.fillDraft) S.stick.fillDraft = S.stick.fillDraft.filter(id => s?.joints.some(j => j.id === id));
   }
 

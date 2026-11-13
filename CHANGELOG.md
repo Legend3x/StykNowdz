@@ -10,7 +10,10 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 - 3D Nowdz Build mode builds characters from 3D lines, like Styk Builder, with Build's tools and segment shapes (Stick Nodes shapes included) plus planes for hair. Every line is a bone, so the character poses as soon as it's added.
 - Bend 3D Nowdz lines by right-dragging them, as in Build, and shape them with sliders.
-- 3D Nowdz Poly fill works like Pivot's: click joints around an area to fill it with a rounded body that matches the thickness and curves of the lines around it.
+- 3D Nowdz Poly fill works like Pivot's: click joints around an area to fill it with a smooth, rounded body that matches the thickness and curves of the lines around it.
+- 3D Nowdz Head from outlines builds a smooth, symmetrical head from a front outline and a side profile you trace over your drawings.
+- Guide lines in 3D Nowdz Build mode are for tracing: they have no shape or bone.
+- Convert to mesh turns a 3D Nowdz line, poly fill or head into a model you can shape in Edit mode with the Blender tools, and it still moves with its bones.
 - Build body parts, hair and accessories as separate pieces in 3D Nowdz and snap them onto a joint; mark a line static to have it move with the line above it.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).
@@ -29,7 +32,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Changed
 
-- 3D Nowdz now shapes characters in Build mode instead of Edit mode, and Tab switches between Build and Object mode.
+- 3D Nowdz now opens in Build mode, and Edit mode is for imported models and parts converted to a mesh.
 - Blender Lite is now called 3D Nowdz.
 - Leaving 3D Nowdz for another tab keeps your unfinished model, and it comes back where you left off the next time you open the Model tab, even after a restart.
 - Extrude, Delete and Duplicate now work on selections Blender allows, such as faces that touch only at a corner or a whole block of faces.
