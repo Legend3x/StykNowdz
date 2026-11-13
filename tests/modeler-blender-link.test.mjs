@@ -10,7 +10,7 @@ function untouched(doc) {
   const materials = [], index = new Map();
   const colorOf = c => { const rgb = doc.palette[c], k = rgb.join(); if (!index.has(k)) { index.set(k, materials.length); materials.push(rgb.slice()); } return index.get(k); };
   return {format: doc.format, version: doc.version, name: doc.name, materials,
-    parts: doc.parts.map(p => ({key: p.key, name: p.name, matrix: p.matrix.slice(), verts: p.verts.map(v => v.slice()), faces: p.faces.map(f => f.slice()), colors: p.colors.map(colorOf),
+    parts: doc.parts.map(p => ({key: p.key, name: p.name, follows: p.follows, matrix: p.matrix.slice(), verts: p.verts.map(v => v.slice()), faces: p.faces.map(f => f.slice()), colors: p.colors.map(colorOf),
       edges: p.edges, loose: p.loose, mirror: p.mirror, clip: p.clip, smooth: p.smooth, solidify: p.solidify, visible: p.visible, baked: false,
       crease: p.crease, line: p.line, normal: p.normal, weights: p.weights})),
     bones: doc.bones.map(b => ({...b}))};
