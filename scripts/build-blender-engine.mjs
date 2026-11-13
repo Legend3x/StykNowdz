@@ -38,7 +38,8 @@ if (process.platform === 'win32') {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   await pipeline(Readable.fromWeb(response.body), createWriteStream(zip));
-  run('tar', ['-xf', zip, '-C', out]);
+  // Python unpacks it (Git's tar on Windows reads "D:" as a network host).
+  run(python, ['-c', 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', zip, out]);
   await rm(zip, {force: true});
   const site = path.join(out, 'Lib', 'site-packages');
   // bpy for exactly this Python and Windows x64, binary wheels only.
