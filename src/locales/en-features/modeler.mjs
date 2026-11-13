@@ -44,6 +44,7 @@ export default Object.freeze({
   "modeler.blenderOtherModel": "Blender's changes belong to another model. Open this one in Blender to link it.",
   "modeler.blenderMerged": "From Blender: {changed} changed, {added} new, {removed} removed, {bones} bone change(s). Undo takes them back.",
   "modeler.blenderNoChanges": "Blender saved, with nothing new for this model.",
+  "modeler.blenderTooDetailed": "The model now has {points} points, more than an animation takes ({limit}); a Decimate modifier in Blender brings it down.",
   "modeler.blenderClosed": "Blender closed. Its last saved changes are in.",
   "modeler.boneStrength": "Strength",
   "modeler.boneRange": "Reach",

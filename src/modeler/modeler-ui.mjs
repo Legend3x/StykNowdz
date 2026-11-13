@@ -16,6 +16,7 @@ import * as X from './matrix.mjs';
 import {TopologyError, assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings, OUTLINE_DEFAULTS, OUTLINE_MAX, LINE_WEIGHT_MAX} from './toon.mjs';
 import {TOON_DEFAULTS} from '../toon-shading.mjs';
+import {MESH_LIMITS} from '../spatial-mesh.mjs';
 import {icon as iconMarkup} from '../icons.mjs';
 
 const el = (tag, props = {}, children = []) => {
@@ -1517,12 +1518,20 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       catch (error) { toast(error.message); return; }
       if (!report) return;
       const touched = report.changed + report.added + report.removed + report.bones.changed + report.bones.added + report.bones.removed;
-      toast(touched ? t("modeler.blenderMerged", {changed: report.changed, added: report.added, removed: report.removed, bones: report.bones.changed + report.bones.added + report.bones.removed})
-        : t("modeler.blenderNoChanges"));
+      const said = touched ? t("modeler.blenderMerged", {changed: report.changed, added: report.added, removed: report.removed, bones: report.bones.changed + report.bones.added + report.bones.removed})
+        : t("modeler.blenderNoChanges");
+      // Blender can make far more detail than the stage takes: say so now, not at Add to animation.
+      const points = stagePoints();
+      toast(points > MESH_LIMITS.vertices ? `${said} ${t("modeler.blenderTooDetailed", {points: points.toLocaleString(), limit: MESH_LIMITS.vertices.toLocaleString()})}` : said);
     } catch (error) { toast(error.message); }
     finally { pulling = false; if (blender.link === link && link.waiting > link.seen) pullBlender(); }
   }
   function blenderClosed() { toast(t("modeler.blenderClosed")); }
+  /** Points the model has on the stage: every shown part after Smooth, its ink outline counted again. */
+  function stagePoints() {
+    return model.parts.filter(p => p.visible !== false && p.mesh.faces.length)
+      .reduce((n, p) => n + evaluated(p).verts.length * (partOutline(p, model.palette.length) ? 2 : 1), 0);
+  }
   function importObjFile() {
     const input = el('input', {type: 'file', accept: '.obj,.mtl,.glb,.gltf,.bin', multiple: true});
     input.addEventListener('change', async () => {

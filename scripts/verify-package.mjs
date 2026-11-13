@@ -64,6 +64,12 @@ for (const filename of nativeFiles) {
   manifest.push({ path: `app.asar/desktop/${filename}`, sha256: hash(packaged), bytes: packaged.length });
 }
 if (!snapshot) {
+  // Open in Blender copies this script out of the archive for Blender to run.
+  const linkScript = asar.extractFile(path.join(resources, 'app.asar'), 'desktop/blender/styk_link.py');
+  if (hash(linkScript) !== hash(await readFile(path.join(appRoot, 'desktop', 'blender', 'styk_link.py')))) throw new Error('Packaged Blender link script differs from source: desktop/blender/styk_link.py');
+  manifest.push({ path: 'app.asar/desktop/blender/styk_link.py', sha256: hash(linkScript), bytes: linkScript.length });
+}
+if (!snapshot) {
   const sidecarBinary = process.platform === 'win32' ? 'styk-codec.exe' : 'styk-codec';
   for (const [relative, sourcePath] of [
     ['backend/server.py', path.join(appRoot, 'backend', 'server.py')],

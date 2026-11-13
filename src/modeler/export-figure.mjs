@@ -109,8 +109,8 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     const outline = partOutline(part, model.palette.length);
     if (outline) addSurface(outlineHull(mesh, outline.thickness, outline.color, outline), skin, `${name} outline`, true);
   }
-  if (positions.length / 3 > MESH_LIMITS.vertices) throw problem(`The model has ${positions.length / 3} vertices after smoothing; the limit is ${MESH_LIMITS.vertices}. Lower Smooth on some parts.`);
-  if (indices.length / 3 > MESH_LIMITS.triangles) throw problem(`The model has ${indices.length / 3} triangles after smoothing; the limit is ${MESH_LIMITS.triangles}. Lower Smooth on some parts.`);
+  if (positions.length / 3 > MESH_LIMITS.vertices) throw problem(`The model has ${positions.length / 3} vertices after smoothing; the limit is ${MESH_LIMITS.vertices}. Lower Smooth on some parts, or use a Decimate modifier in Blender on detailed ones.`);
+  if (indices.length / 3 > MESH_LIMITS.triangles) throw problem(`The model has ${indices.length / 3} triangles after smoothing; the limit is ${MESH_LIMITS.triangles}. Lower Smooth on some parts, or use a Decimate modifier in Blender on detailed ones.`);
   segments.forEach((s, i) => { s.z_order = i + 1; });
   const figure = {figure_type_id: figureTypeId, name: String(model.name || '3D model').slice(0, 250), segments, segment_count: segments.length, polyfills: [], image_assets: [], text_assets: [],
     _styk: {colorMode: 'segments', spatialMesh: {positions, bones: meshBones, weights, indices, colors, materials, basis: [0, surfaceX.segment_id, surfaceY.segment_id], groups,
