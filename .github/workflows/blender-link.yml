@@ -10,7 +10,7 @@ on:
         description: Pedestal Remesh voxel size (smaller = heavier)
         default: '0.006'
       dump:
-        description: Print the render and merged model into the log (newest Blender only)
+        description: Print the render and Blender's reply into the log (newest Blender only)
         type: boolean
         default: false
   push:
@@ -71,7 +71,7 @@ jobs:
       - name: Dump the render and merged model into the log
         if: inputs.dump && matrix.series == 'latest'
         run: |
-          for f in blender-render.jpg merged.json report.json; do
+          for f in blender-render.jpg incoming.json report.json; do
             [ -s "$OUT/$f" ] || continue
             gzip -9c "$OUT/$f" | base64 -w 3000 | sed "s/^/STYKDUMP $f /"
           done
