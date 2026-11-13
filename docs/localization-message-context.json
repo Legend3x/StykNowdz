@@ -7436,7 +7436,7 @@
   },
   "common.cancel": {
     "locations": [
-      "desktop/main.cjs:494",
+      "desktop/main.cjs:495",
       "src/app-dialogs.mjs:98",
       "src/app-dialogs.mjs:147",
       "src/app-dialogs.mjs:328",
@@ -7477,7 +7477,7 @@
   },
   "common.copy": {
     "locations": [
-      "desktop/main.cjs:176",
+      "desktop/main.cjs:177",
       "src/app.mjs:4510",
       "src/application-menu.mjs:37",
       "src/localization-bindings.mjs:218",
@@ -7489,7 +7489,7 @@
   },
   "common.cut": {
     "locations": [
-      "desktop/main.cjs:176",
+      "desktop/main.cjs:177",
       "src/localization-bindings.mjs:218",
       "src/touch/timeline-scrubber.mjs:53",
       "src/ui/command-catalog.mjs:103"
@@ -7498,7 +7498,7 @@
   },
   "common.delete": {
     "locations": [
-      "desktop/main.cjs:177",
+      "desktop/main.cjs:178",
       "src/camera-motion-ui.mjs:78",
       "src/color-picker.mjs:157",
       "src/localization-bindings.mjs:219",
@@ -7529,7 +7529,7 @@
   },
   "common.duplicate": {
     "locations": [
-      "desktop/main.cjs:177",
+      "desktop/main.cjs:178",
       "src/app.mjs:4513",
       "src/application-menu.mjs:61",
       "src/localization-bindings.mjs:219",
@@ -7543,7 +7543,7 @@
   },
   "common.export": {
     "locations": [
-      "desktop/main.cjs:169",
+      "desktop/main.cjs:170",
       "src/app.mjs:4354",
       "src/application-menu.mjs:33",
       "src/localization-bindings.mjs:217",
@@ -7588,7 +7588,7 @@
   },
   "common.paste": {
     "locations": [
-      "desktop/main.cjs:176",
+      "desktop/main.cjs:177",
       "src/app.mjs:4500",
       "src/app.mjs:4501",
       "src/app.mjs:4511",
@@ -7602,7 +7602,7 @@
   },
   "common.redo": {
     "locations": [
-      "desktop/main.cjs:174",
+      "desktop/main.cjs:175",
       "src/app.mjs:4348",
       "src/application-menu.mjs:36",
       "src/hotkey-labels.mjs:49",
@@ -7642,8 +7642,8 @@
   },
   "common.save": {
     "locations": [
-      "desktop/main.cjs:166",
-      "desktop/main.cjs:261",
+      "desktop/main.cjs:167",
+      "desktop/main.cjs:262",
       "src/app-dialogs.mjs:99",
       "src/app.mjs:4325",
       "src/app.mjs:4344",
@@ -7656,8 +7656,8 @@
   },
   "common.saveAs": {
     "locations": [
-      "desktop/main.cjs:167",
-      "desktop/main.cjs:582",
+      "desktop/main.cjs:168",
+      "desktop/main.cjs:592",
       "src/app.mjs:4326",
       "src/app.mjs:4345",
       "src/application-menu.mjs:21",
@@ -7681,7 +7681,7 @@
   },
   "common.undo": {
     "locations": [
-      "desktop/main.cjs:174",
+      "desktop/main.cjs:175",
       "src/app.mjs:4347",
       "src/application-menu.mjs:36",
       "src/hotkey-labels.mjs:46",
@@ -7893,7 +7893,7 @@
   },
   "desktop.blender.download": {
     "locations": [
-      "desktop/main.cjs:494"
+      "desktop/main.cjs:495"
     ],
     "context": "buttons: [t('desktop.blender.locate'), t('desktop.blender.download'), t('common.cancel')], defaultId: 0, cancelId: 2, noLink: true,"
   },
@@ -7929,27 +7929,65 @@
   },
   "desktop.blender.locate": {
     "locations": [
-      "desktop/main.cjs:494"
+      "desktop/main.cjs:495"
     ],
     "context": "buttons: [t('desktop.blender.locate'), t('desktop.blender.download'), t('common.cancel')], defaultId: 0, cancelId: 2, noLink: true,"
   },
   "desktop.blender.locateTitle": {
     "locations": [
-      "desktop/main.cjs:479"
+      "desktop/main.cjs:480"
     ],
     "context": "title: t('desktop.blender.locateTitle'), properties: ['openFile'],"
   },
   "desktop.blender.notFoundDetail": {
     "locations": [
-      "desktop/main.cjs:493"
+      "desktop/main.cjs:494"
     ],
     "context": "type: 'info', title: t('desktop.blender.notFoundTitle'), message: t('desktop.blender.notFoundTitle'), detail: t('desktop.blender.notFoundDetail'),"
   },
   "desktop.blender.notFoundTitle": {
     "locations": [
-      "desktop/main.cjs:493"
+      "desktop/main.cjs:494"
     ],
     "context": "type: 'info', title: t('desktop.blender.notFoundTitle'), message: t('desktop.blender.notFoundTitle'), detail: t('desktop.blender.notFoundDetail'),"
+  },
+  "desktop.blenderEngine.errors.didNotStart": {
+    "locations": [
+      "desktop/blender-engine.cjs:84",
+      "desktop/blender-engine.cjs:85",
+      "desktop/blender-engine.cjs:86"
+    ],
+    "context": "const timer = setTimeout(() => reject(messageError(new Error(''), 'desktop.blenderEngine.errors.didNotStart', { reason: 'timed out' })), this.startTimeout);"
+  },
+  "desktop.blenderEngine.errors.noEngine": {
+    "locations": [
+      "desktop/blender-engine.cjs:50"
+    ],
+    "context": "throw messageError(new Error(''), 'desktop.blenderEngine.errors.noEngine', {});"
+  },
+  "desktop.blenderEngine.errors.requestTooLarge": {
+    "locations": [
+      "desktop/blender-engine.cjs:104"
+    ],
+    "context": "throw messageError(new Error(''), 'desktop.blenderEngine.errors.requestTooLarge', {});"
+  },
+  "desktop.blenderEngine.errors.resultTooLarge": {
+    "locations": [
+      "desktop/blender-engine.cjs:127"
+    ],
+    "context": "if (size > MAX_RESULT_BYTES) throw messageError(new Error(''), 'desktop.blenderEngine.errors.resultTooLarge', {});"
+  },
+  "desktop.blenderEngine.errors.tookTooLong": {
+    "locations": [
+      "desktop/blender-engine.cjs:120"
+    ],
+    "context": "reject(messageError(new Error(''), 'desktop.blenderEngine.errors.tookTooLong', {}));"
+  },
+  "desktop.blenderEngine.errors.toolFailed": {
+    "locations": [
+      "desktop/blender-engine.cjs:125"
+    ],
+    "context": "if (!answer.ok) throw messageError(new Error(''), 'desktop.blenderEngine.errors.toolFailed', { reason: String(answer.error || 'unknown error').slice(0, 300) });"
   },
   "desktop.fileStreams.errors.aFileChunkMustContainBetween1ByteAnd256KB": {
     "locations": [
@@ -8305,466 +8343,466 @@
   },
   "desktop.main.aboutStykAnimate": {
     "locations": [
-      "desktop/main.cjs:190"
+      "desktop/main.cjs:191"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
   },
   "desktop.main.animation": {
     "locations": [
-      "desktop/main.cjs:180"
+      "desktop/main.cjs:181"
     ],
     "context": "{ label: t('desktop.main.animation'), submenu: ["
   },
   "desktop.main.animationAndStickFigures": {
     "locations": [
-      "desktop/main.cjs:45"
+      "desktop/main.cjs:46"
     ],
     "context": "{ name: t('desktop.main.animationAndStickFigures'), extensions: ['styk', 'stykmov', 'stkz', 'piv', 'stk', 'json', 'nodes', 'nodemc', 'stknds', 'zip'] },"
   },
   "desktop.main.cancel": {
     "locations": [
-      "desktop/main.cjs:260",
-      "desktop/main.cjs:261"
+      "desktop/main.cjs:261",
+      "desktop/main.cjs:262"
     ],
     "context": "? [t(restart ? 'desktop.main.saveAllAndRestart' : 'desktop.main.saveAll'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAllAndRestart' : 'desktop."
   },
   "desktop.main.checkForUpdates": {
     "locations": [
-      "desktop/main.cjs:190"
+      "desktop/main.cjs:191"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
   },
   "desktop.main.chromePerfettoTrace": {
     "locations": [
-      "desktop/main.cjs:348"
+      "desktop/main.cjs:349"
     ],
     "context": "const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveLocalPerformanceTraceReviewBeforeSharing'), defaultPath: 'StykNowdz-performance-"
   },
   "desktop.main.closeWindow": {
     "locations": [
-      "desktop/main.cjs:829"
+      "desktop/main.cjs:839"
     ],
     "context": "buttons: [t('desktop.main.reopenEditor'), t('desktop.main.keepWindowOpen'), t('desktop.main.closeWindow')], defaultId: 0, cancelId: 1,"
   },
   "desktop.main.discard": {
     "locations": [
-      "desktop/main.cjs:261"
+      "desktop/main.cjs:262"
     ],
     "context": ": [t(restart ? 'desktop.main.saveAndRestart' : 'common.save'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAndRestart' : 'desktop.main.discard')]"
   },
   "desktop.main.discardAll": {
     "locations": [
-      "desktop/main.cjs:260"
+      "desktop/main.cjs:261"
     ],
     "context": "? [t(restart ? 'desktop.main.saveAllAndRestart' : 'desktop.main.saveAll'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAllAndRestart' : 'desktop."
   },
   "desktop.main.discardAllAndRestart": {
     "locations": [
-      "desktop/main.cjs:260"
+      "desktop/main.cjs:261"
     ],
     "context": "? [t(restart ? 'desktop.main.saveAllAndRestart' : 'desktop.main.saveAll'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAllAndRestart' : 'desktop."
   },
   "desktop.main.discardAndRestart": {
     "locations": [
-      "desktop/main.cjs:261"
+      "desktop/main.cjs:262"
     ],
     "context": ": [t(restart ? 'desktop.main.saveAndRestart' : 'common.save'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAndRestart' : 'desktop.main.discard')]"
   },
   "desktop.main.edit": {
     "locations": [
-      "desktop/main.cjs:173"
+      "desktop/main.cjs:174"
     ],
     "context": "{ label: t('desktop.main.edit'), submenu: ["
   },
   "desktop.main.editorStopped": {
     "locations": [
-      "desktop/main.cjs:827"
+      "desktop/main.cjs:837"
     ],
     "context": "type: 'error', title: t('desktop.main.editorStopped'), message: t('desktop.main.theAnimationEditorStoppedUnexpectedly'),"
   },
   "desktop.main.errors.aPerformanceRecordingIsAlreadyRunning": {
     "locations": [
-      "desktop/main.cjs:341"
+      "desktop/main.cjs:342"
     ],
     "context": "if (traceRunning) throw messageError(new Error(''), 'desktop.main.errors.aPerformanceRecordingIsAlreadyRunning', {});"
   },
   "desktop.main.errors.aProjectSaveIsAlreadyInProgress": {
     "locations": [
-      "desktop/main.cjs:576"
+      "desktop/main.cjs:586"
     ],
     "context": "if (projectRequestPending || projectTransfers.size) throw messageError(new Error(''), 'desktop.main.errors.aProjectSaveIsAlreadyInProgress', {});"
   },
   "desktop.main.errors.attachmentCouldNotBeDownloaded": {
     "locations": [
-      "desktop/main.cjs:314"
+      "desktop/main.cjs:315"
     ],
     "context": "if (!result.ok) throw messageError(new Error(''), 'desktop.main.errors.attachmentCouldNotBeDownloaded', {});"
   },
   "desktop.main.errors.chooseAnAnimationOrStickFigureFile": {
     "locations": [
-      "desktop/main.cjs:201"
+      "desktop/main.cjs:202"
     ],
     "context": "if (!stat.isFile()) throw messageError(new Error(''), 'desktop.main.errors.chooseAnAnimationOrStickFigureFile', {});"
   },
   "desktop.main.errors.chooseAStykAnimatePivotOrStickNodesFile": {
     "locations": [
-      "desktop/main.cjs:198"
+      "desktop/main.cjs:199"
     ],
     "context": "if (!['.piv', '.stk', '.styk', '.stkz', '.stykmov', '.json', '.nodes', '.nodemc', '.stknds', '.zip'].includes(extension)) throw messageError(new Error(''), 'des"
   },
   "desktop.main.errors.invalidAttachment": {
     "locations": [
-      "desktop/main.cjs:312",
+      "desktop/main.cjs:313",
       "desktop/support.cjs:23"
     ],
     "context": "if (!/^[a-f0-9]{32}$/.test(value?.threadId || '') || !/^[a-f0-9]{32}$/.test(value?.fileId || '')) throw messageError(new Error(''), 'desktop.main.errors.invalid"
   },
   "desktop.main.errors.privacySettingsAreUnavailablePleaseRestartStykAnimate": {
     "locations": [
-      "desktop/main.cjs:300"
+      "desktop/main.cjs:301"
     ],
     "context": "const withTelemetry = handler => async (event, value) => { trusted(event); await telemetryReady; if (!telemetry) throw messageError(new Error(''), 'desktop.main"
   },
   "desktop.main.errors.recoveryDataIsEmpty": {
     "locations": [
-      "desktop/main.cjs:640",
+      "desktop/main.cjs:650",
       "desktop/recovery.cjs:110"
     ],
     "context": "if (!options.size) throw messageError(new Error(''), 'desktop.main.errors.recoveryDataIsEmpty', {});"
   },
   "desktop.main.errors.saveOptionsAreRequired": {
     "locations": [
-      "desktop/main.cjs:725"
+      "desktop/main.cjs:735"
     ],
     "context": "if (!options || typeof options !== 'object') throw messageError(new Error(''), 'desktop.main.errors.saveOptionsAreRequired', {});"
   },
   "desktop.main.errors.segmentClipboardTextMustContainAtMost100Characters": {
     "locations": [
-      "desktop/main.cjs:408"
+      "desktop/main.cjs:409"
     ],
     "context": "if (typeof text !== 'string' || text.length > 100) throw messageError(new Error(''), 'desktop.main.errors.segmentClipboardTextMustContainAtMost100Characters', {"
   },
   "desktop.main.errors.theClipboardDoesNotContainAShortSegmentValue": {
     "locations": [
-      "desktop/main.cjs:403"
+      "desktop/main.cjs:404"
     ],
     "context": "if (text.length > 100) throw messageError(new Error(''), 'desktop.main.errors.theClipboardDoesNotContainAShortSegmentValue', {});"
   },
   "desktop.main.errors.theFileMustContainTextOrBytes": {
     "locations": [
-      "desktop/main.cjs:731"
+      "desktop/main.cjs:741"
     ],
     "context": "else throw messageError(new Error(''), 'desktop.main.errors.theFileMustContainTextOrBytes', {});"
   },
   "desktop.main.errors.theFrameClipboardIsEmpty": {
     "locations": [
-      "desktop/main.cjs:529"
+      "desktop/main.cjs:539"
     ],
     "context": "if (!options.size) throw messageError(new Error(''), 'desktop.main.errors.theFrameClipboardIsEmpty', {});"
   },
   "desktop.main.errors.thePublicWebsiteIsNotConfiguredYetContactAleRipresoGmailCom": {
     "locations": [
-      "desktop/main.cjs:336"
+      "desktop/main.cjs:337"
     ],
     "context": "if (!telemetry.siteUrl) throw messageError(new Error(''), 'desktop.main.errors.thePublicWebsiteIsNotConfiguredYetContactAleRipresoGmailCom', {});"
   },
   "desktop.main.errors.thisExportExceedsThe256MBLimit": {
     "locations": [
-      "desktop/main.cjs:732"
+      "desktop/main.cjs:742"
     ],
     "context": "if (data.byteLength > MAX_FILE_BYTES) throw messageError(new Error(''), 'desktop.main.errors.thisExportExceedsThe256MBLimit', {});"
   },
   "desktop.main.errors.thisFileExceedsTheValueMBImportLimit": {
     "locations": [
-      "desktop/main.cjs:202"
+      "desktop/main.cjs:203"
     ],
     "context": "if (stat.size > limit) throw messageError(new Error(''), 'desktop.main.errors.thisFileExceedsTheValueMBImportLimit', {value: limit / 1024 / 1024});"
   },
   "desktop.main.errors.thisFileGrewPastTheImportLimitWhileBeingRead": {
     "locations": [
-      "desktop/main.cjs:204"
+      "desktop/main.cjs:205"
     ],
     "context": "if (bytes.length > limit) throw messageError(new Error(''), 'desktop.main.errors.thisFileGrewPastTheImportLimitWhileBeingRead', {});"
   },
   "desktop.main.errors.thisOperationIsRestrictedToTheStykAnimateWorkspace": {
     "locations": [
-      "desktop/main.cjs:131"
+      "desktop/main.cjs:132"
     ],
     "context": "throw messageError(new Error(''), 'desktop.main.errors.thisOperationIsRestrictedToTheStykAnimateWorkspace', {});"
   },
   "desktop.main.errors.unknownStykAnimatePage": {
     "locations": [
-      "desktop/main.cjs:335"
+      "desktop/main.cjs:336"
     ],
     "context": "if (!route) throw messageError(new Error(''), 'desktop.main.errors.unknownStykAnimatePage', {});"
   },
   "desktop.main.errors.unknownWindowAction": {
     "locations": [
-      "desktop/main.cjs:758"
+      "desktop/main.cjs:768"
     ],
     "context": "else throw messageError(new Error(''), 'desktop.main.errors.unknownWindowAction', {});"
   },
   "desktop.main.errors.unsupportedFileEncoding": {
     "locations": [
-      "desktop/main.cjs:728"
+      "desktop/main.cjs:738"
     ],
     "context": "if (!['base64', 'utf8', undefined].includes(options.encoding)) throw messageError(new Error(''), 'desktop.main.errors.unsupportedFileEncoding', {});"
   },
   "desktop.main.file": {
     "locations": [
-      "desktop/main.cjs:161"
+      "desktop/main.cjs:162"
     ],
     "context": "{ label: t('desktop.main.file'), submenu: ["
   },
   "desktop.main.fitCanvas": {
     "locations": [
-      "desktop/main.cjs:187"
+      "desktop/main.cjs:188"
     ],
     "context": "item(t('desktop.main.fitCanvas'), 'zoom-reset'), { type: 'separator' }, { role: 'togglefullscreen', accelerator: '' },"
   },
   "desktop.main.help": {
     "locations": [
-      "desktop/main.cjs:190"
+      "desktop/main.cjs:191"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
   },
   "desktop.main.jsonReport": {
     "locations": [
-      "desktop/main.cjs:329"
+      "desktop/main.cjs:330"
     ],
     "context": "const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveOptionalTelemetryReport'), defaultPath: 'StykNowdz-telemetry.json', filters: [{ "
   },
   "desktop.main.keepWindowOpen": {
     "locations": [
-      "desktop/main.cjs:829"
+      "desktop/main.cjs:839"
     ],
     "context": "buttons: [t('desktop.main.reopenEditor'), t('desktop.main.keepWindowOpen'), t('desktop.main.closeWindow')], defaultId: 0, cancelId: 1,"
   },
   "desktop.main.newWindow": {
     "locations": [
-      "desktop/main.cjs:163"
+      "desktop/main.cjs:164"
     ],
     "context": "item(t('desktop.main.newWindow'), 'new-window'),"
   },
   "desktop.main.nextFrame": {
     "locations": [
-      "desktop/main.cjs:182"
+      "desktop/main.cjs:183"
     ],
     "context": "item(t('desktop.main.previousFrame'), 'previous-frame'), item(t('desktop.main.nextFrame'), 'next-frame'),"
   },
   "desktop.main.openAnimationOrStickFigure": {
     "locations": [
-      "desktop/main.cjs:720"
+      "desktop/main.cjs:730"
     ],
     "context": "const result = await dialog.showOpenDialog(window, { title: t('desktop.main.openAnimationOrStickFigure'), properties: ['openFile'], filters: fileFilters() });"
   },
   "desktop.main.pivotAnimation": {
     "locations": [
-      "desktop/main.cjs:48"
+      "desktop/main.cjs:49"
     ],
     "context": "{ name: t('desktop.main.pivotAnimation'), extensions: ['piv'] },"
   },
   "desktop.main.pivotStickFigure": {
     "locations": [
-      "desktop/main.cjs:49"
+      "desktop/main.cjs:50"
     ],
     "context": "{ name: t('desktop.main.pivotStickFigure'), extensions: ['stk'] },"
   },
   "desktop.main.playPause": {
     "locations": [
-      "desktop/main.cjs:181"
+      "desktop/main.cjs:182"
     ],
     "context": "item(t('desktop.main.playPause'), 'play'), item(t('timeline.addFrame'), 'add-frame'),"
   },
   "desktop.main.previousFrame": {
     "locations": [
-      "desktop/main.cjs:182"
+      "desktop/main.cjs:183"
     ],
     "context": "item(t('desktop.main.previousFrame'), 'previous-frame'), item(t('desktop.main.nextFrame'), 'next-frame'),"
   },
   "desktop.main.reopenEditor": {
     "locations": [
-      "desktop/main.cjs:829"
+      "desktop/main.cjs:839"
     ],
     "context": "buttons: [t('desktop.main.reopenEditor'), t('desktop.main.keepWindowOpen'), t('desktop.main.closeWindow')], defaultId: 0, cancelId: 1,"
   },
   "desktop.main.restartToUpdate": {
     "locations": [
-      "desktop/main.cjs:287"
+      "desktop/main.cjs:288"
     ],
     "context": "type: 'question', title: t('desktop.main.restartToUpdate'), message: prompt.message,"
   },
   "desktop.main.saveAll": {
     "locations": [
-      "desktop/main.cjs:260"
+      "desktop/main.cjs:261"
     ],
     "context": "? [t(restart ? 'desktop.main.saveAllAndRestart' : 'desktop.main.saveAll'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAllAndRestart' : 'desktop."
   },
   "desktop.main.saveAllAndRestart": {
     "locations": [
-      "desktop/main.cjs:260"
+      "desktop/main.cjs:261"
     ],
     "context": "? [t(restart ? 'desktop.main.saveAllAndRestart' : 'desktop.main.saveAll'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAllAndRestart' : 'desktop."
   },
   "desktop.main.saveAndRestart": {
     "locations": [
-      "desktop/main.cjs:261"
+      "desktop/main.cjs:262"
     ],
     "context": ": [t(restart ? 'desktop.main.saveAndRestart' : 'common.save'), t('desktop.main.cancel'), t(restart ? 'desktop.main.discardAndRestart' : 'desktop.main.discard')]"
   },
   "desktop.main.saveAnimation": {
     "locations": [
-      "desktop/main.cjs:582",
-      "desktop/main.cjs:628",
-      "desktop/main.cjs:738"
+      "desktop/main.cjs:592",
+      "desktop/main.cjs:638",
+      "desktop/main.cjs:748"
     ],
     "context": "title: t(options.saveAs ? 'common.saveAs' : 'desktop.main.saveAnimation'),"
   },
   "desktop.main.saveChangesToName": {
     "locations": [
-      "desktop/main.cjs:257"
+      "desktop/main.cjs:258"
     ],
     "context": ": t('desktop.main.saveChangesToName', {name: documentState.unsavedName || documentState.name}),"
   },
   "desktop.main.saveChangesToProjects": {
     "locations": [
-      "desktop/main.cjs:256"
+      "desktop/main.cjs:257"
     ],
     "context": "message: several ? t('desktop.main.saveChangesToProjects', {count: documentState.unsaved})"
   },
   "desktop.main.savedFilesAndAnyRecoverySnapshotRemainOnDiskReopenTheEditorToUseTheRecoveryOptionOrOpenYourSavedProjectChangesMadeAfterT": {
     "locations": [
-      "desktop/main.cjs:828"
+      "desktop/main.cjs:838"
     ],
     "context": "detail: t('desktop.main.savedFilesAndAnyRecoverySnapshotRemainOnDiskReopenTheEditorToUseTheRecoveryOptionOrOpenYourSavedProjectChangesMadeAfterT'),"
   },
   "desktop.main.saveFigure": {
     "locations": [
-      "desktop/main.cjs:168"
+      "desktop/main.cjs:169"
     ],
     "context": "item(t('desktop.main.saveFigure'), 'export-stkz'),"
   },
   "desktop.main.saveLocalPerformanceTraceReviewBeforeSharing": {
     "locations": [
-      "desktop/main.cjs:348"
+      "desktop/main.cjs:349"
     ],
     "context": "const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveLocalPerformanceTraceReviewBeforeSharing'), defaultPath: 'StykNowdz-performance-"
   },
   "desktop.main.saveOptionalTelemetryReport": {
     "locations": [
-      "desktop/main.cjs:329"
+      "desktop/main.cjs:330"
     ],
     "context": "const result = await dialog.showSaveDialog(window, { title: t('desktop.main.saveOptionalTelemetryReport'), defaultPath: 'StykNowdz-telemetry.json', filters: [{ "
   },
   "desktop.main.saveReportAttachment": {
     "locations": [
-      "desktop/main.cjs:317"
+      "desktop/main.cjs:318"
     ],
     "context": "const destination = await dialog.showSaveDialog(window, { title: t('desktop.main.saveReportAttachment'), defaultPath: name });"
   },
   "desktop.main.saveVideo": {
     "locations": [
-      "desktop/main.cjs:424",
-      "desktop/main.cjs:440"
+      "desktop/main.cjs:425",
+      "desktop/main.cjs:441"
     ],
     "context": "title: t('desktop.main.saveVideo'), defaultPath: path.basename(String(options?.defaultPath || 'video.webm')), filters,"
   },
   "desktop.main.selectAll": {
     "locations": [
-      "desktop/main.cjs:178"
+      "desktop/main.cjs:179"
     ],
     "context": "{ type: 'separator' }, item(t('desktop.main.selectAll'), 'select-all'),"
   },
   "desktop.main.stykanimateCouldNotStart": {
     "locations": [
-      "desktop/main.cjs:123"
+      "desktop/main.cjs:124"
     ],
     "context": "dialog.showErrorBox(t('desktop.main.stykanimateCouldNotStart'), error.message);"
   },
   "desktop.main.stykanimateFigure": {
     "locations": [
-      "desktop/main.cjs:47"
+      "desktop/main.cjs:48"
     ],
     "context": "{ name: t('desktop.main.stykanimateFigure'), extensions: ['stkz'] },"
   },
   "desktop.main.stykanimateMovieclip": {
     "locations": [
-      "desktop/main.cjs:46"
+      "desktop/main.cjs:47"
     ],
     "context": "{ name: t('desktop.main.stykanimateMovieclip'), extensions: ['stykmov'] },"
   },
   "desktop.main.stykanimateProject": {
     "locations": [
-      "desktop/main.cjs:50",
-      "desktop/main.cjs:584",
-      "desktop/main.cjs:621",
-      "desktop/main.cjs:736"
+      "desktop/main.cjs:51",
+      "desktop/main.cjs:594",
+      "desktop/main.cjs:631",
+      "desktop/main.cjs:746"
     ],
     "context": "{ name: t('desktop.main.stykanimateProject'), extensions: ['styk', 'json'] },"
   },
   "desktop.main.stykanimateWillCloseInstallTheDownloadedUpdateAndReopen": {
     "locations": [
-      "desktop/main.cjs:288"
+      "desktop/main.cjs:289"
     ],
     "context": "detail: t('desktop.main.stykanimateWillCloseInstallTheDownloadedUpdateAndReopen'),"
   },
   "desktop.main.supportDevelopment": {
     "locations": [
-      "desktop/main.cjs:190"
+      "desktop/main.cjs:191"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
   },
   "desktop.main.theAnimationEditorStoppedUnexpectedly": {
     "locations": [
-      "desktop/main.cjs:827"
+      "desktop/main.cjs:837"
     ],
     "context": "type: 'error', title: t('desktop.main.editorStopped'), message: t('desktop.main.theAnimationEditorStoppedUnexpectedly'),"
   },
   "desktop.main.theseProjectsHaveChangesThatHaveNotBeenSaved": {
     "locations": [
-      "desktop/main.cjs:868"
+      "desktop/main.cjs:878"
     ],
     "context": "detail: t(prompt.several ? 'desktop.main.theseProjectsHaveChangesThatHaveNotBeenSaved' : 'desktop.main.yourAnimationHasChangesThatHaveNotBeenSaved'),"
   },
   "desktop.main.unableToOpenFile": {
     "locations": [
-      "desktop/main.cjs:233"
+      "desktop/main.cjs:234"
     ],
     "context": "catch (error) { dialog.showErrorBox(t('desktop.main.unableToOpenFile'), error.message); }"
   },
   "desktop.main.unsavedAnimation": {
     "locations": [
-      "desktop/main.cjs:867"
+      "desktop/main.cjs:877"
     ],
     "context": "type: 'question', title: t('desktop.main.unsavedAnimation'), message: prompt.message,"
   },
   "desktop.main.view": {
     "locations": [
-      "desktop/main.cjs:185"
+      "desktop/main.cjs:186"
     ],
     "context": "{ label: t('desktop.main.view'), submenu: ["
   },
   "desktop.main.whatSNew": {
     "locations": [
-      "desktop/main.cjs:190"
+      "desktop/main.cjs:191"
     ],
     "context": "{ label: t('desktop.main.help'), submenu: [item(t('menu.shortcuts'), 'help'), item(t('desktop.main.checkForUpdates'), 'check-updates'), item(t('desktop.main.wha"
   },
   "desktop.main.yourAnimationHasChangesThatHaveNotBeenSaved": {
     "locations": [
-      "desktop/main.cjs:868"
+      "desktop/main.cjs:878"
     ],
     "context": "detail: t(prompt.several ? 'desktop.main.theseProjectsHaveChangesThatHaveNotBeenSaved' : 'desktop.main.yourAnimationHasChangesThatHaveNotBeenSaved'),"
   },
   "desktop.main.zoomIn": {
     "locations": [
-      "desktop/main.cjs:186"
+      "desktop/main.cjs:187"
     ],
     "context": "item(t('desktop.main.zoomIn'), 'zoom-in'), item(t('desktop.main.zoomOut'), 'zoom-out'),"
   },
   "desktop.main.zoomOut": {
     "locations": [
-      "desktop/main.cjs:186"
+      "desktop/main.cjs:187"
     ],
     "context": "item(t('desktop.main.zoomIn'), 'zoom-in'), item(t('desktop.main.zoomOut'), 'zoom-out'),"
   },
@@ -8901,7 +8939,7 @@
   },
   "desktop.projectLibrary.errors.unknownFolderChange": {
     "locations": [
-      "desktop/main.cjs:399"
+      "desktop/main.cjs:400"
     ],
     "context": "throw messageError(new Error(''), 'desktop.projectLibrary.errors.unknownFolderChange', {});"
   },
@@ -8999,7 +9037,7 @@
   },
   "desktop.recovery.errors.thisRecoveryCopyIsNoLongerAvailable": {
     "locations": [
-      "desktop/main.cjs:554",
+      "desktop/main.cjs:564",
       "desktop/recovery.cjs:45"
     ],
     "context": "if (!record) throw messageError(new Error(''), 'desktop.recovery.errors.thisRecoveryCopyIsNoLongerAvailable', {});"
@@ -29532,7 +29570,7 @@
   },
   "menu.newAnimation": {
     "locations": [
-      "desktop/main.cjs:162",
+      "desktop/main.cjs:163",
       "src/hotkey-labels.mjs:4",
       "src/localization-bindings.mjs:213",
       "src/ui/command-catalog.mjs:61"
@@ -29541,7 +29579,7 @@
   },
   "menu.openProject": {
     "locations": [
-      "desktop/main.cjs:164",
+      "desktop/main.cjs:165",
       "src/localization-bindings.mjs:213",
       "src/ui/command-catalog.mjs:63"
     ],
@@ -29570,7 +29608,7 @@
   },
   "menu.shortcuts": {
     "locations": [
-      "desktop/main.cjs:190",
+      "desktop/main.cjs:191",
       "src/hotkey-labels.mjs:40",
       "src/localization-bindings.mjs:201",
       "src/localization-bindings.mjs:217",
@@ -38844,7 +38882,7 @@
   },
   "timeline.addFrame": {
     "locations": [
-      "desktop/main.cjs:181",
+      "desktop/main.cjs:182",
       "src/timeline-header.mjs:127",
       "src/timeline-header.mjs:129",
       "src/timeline-header.mjs:518",
@@ -39135,7 +39173,7 @@
   },
   "timeline.onion": {
     "locations": [
-      "desktop/main.cjs:183",
+      "desktop/main.cjs:184",
       "src/timeline-header.mjs:225"
     ],
     "context": "{ type: 'separator' }, item(t('timeline.onion'), 'toggle-onion'),"

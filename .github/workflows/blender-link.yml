@@ -1,4 +1,6 @@
 name: Blender link
+# Also the Blender tools (Remesh, Decimate, Boolean, smoothing, text, tubes) through the
+# engine with no window: in each installed Blender, and as the bpy module the Windows app ships.
 # Open in Blender (docs/BLENDER-LITE.md) against real Blender releases: Juniper goes
 # to Blender, gets detail no 3D Nowdz tool makes (Bevel, Boolean, Remesh + Displace,
 # text, curves, Array), comes back, becomes a posable figure, and then makes an
@@ -18,7 +20,10 @@ on:
     paths:
       - desktop/blender/**
       - desktop/blender-bridge.cjs
+      - desktop/blender-engine.cjs
       - src/modeler/blender-link.mjs
+      - src/modeler/blender-engine.mjs
+      - scripts/blender-engine-check.mjs
       - scripts/blender-link-stress.*
       - scripts/blender-link-ui-check.py
       - .github/workflows/blender-link.yml
@@ -88,6 +93,8 @@ jobs:
             "$BLENDER" --python-exit-code 1 --python desktop/blender/styk_link.py --python scripts/blender-link-ui-check.py -- --styk-session "$ui"
           test -s "$ui/incoming.json"
           node scripts/blender-link-stress.mjs merge "$ui" --expect-unchanged
+      - name: Blender tools through this Blender with no window
+        run: node scripts/blender-engine-check.mjs "$OUT/engine.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -100,4 +107,43 @@ jobs:
             ${{ env.OUT }}/blender-log.txt
             ${{ env.OUT }}/*.blend
             ${{ env.OUT }}/next/report.json
+            ${{ env.OUT }}/engine.json
+          if-no-files-found: warn
+
+  bpy-engine:
+    # The engine as the Windows app ships it: Python 3.13 with Blender's bpy module, no Blender install.
+    name: Blender tools on bpy ${{ matrix.bpy }}
+    strategy:
+      fail-fast: false
+      matrix:
+        bpy: ['5.3.0']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: npm ci --no-audit --no-fund
+      - name: Install bpy ${{ matrix.bpy }} beside its own Python
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libegl1 libxkbcommon0 libsm6 libice6 >/dev/null
+          python -m venv build/blender-engine
+          build/blender-engine/bin/python -m pip install --quiet --disable-pip-version-check "bpy==${{ matrix.bpy }}"
+          du -sh build/blender-engine
+      - name: Every Blender tool, merged into Juniper
+        run: STYK_ENGINE_ROOT=build/blender-engine node scripts/blender-engine-check.mjs "$RUNNER_TEMP/engine.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blender-engine-bpy-${{ matrix.bpy }}
+          path: ${{ runner.temp }}/engine*.json
           if-no-files-found: warn

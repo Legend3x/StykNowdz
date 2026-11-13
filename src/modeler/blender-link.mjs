@@ -164,6 +164,40 @@ function keepPaintedWeights(model, part) {
   return painted;
 }
 
+/** One object of a reply as a 3D Nowdz part: its mesh (object space, rules
+ * checked), placement, and the settings that ride along (Mirror, Smooth,
+ * Solidify, clipping). Throws a TopologyError when the shape can't be used. */
+export function readBlenderPart(back, colorOf, boneId = new Map()) {
+  const mesh = meshFrom(back, colorOf, boneId);
+  let transform;
+  try { transform = decomposeTRS(back.matrix); }
+  catch {
+    // A skewed transform (a parent scaled unevenly in Blender) is baked into the points.
+    transform = {position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1]};
+    mesh.verts = transformMesh({verts: mesh.verts, faces: []}, back.matrix).verts;
+    if (mesh.vdata?.normal) mesh.vdata.normal = Object.fromEntries(Object.entries(mesh.vdata.normal).map(([i, n]) => [i, normalize([0, 4, 8].map(r => back.matrix[r] * n[0] + back.matrix[r + 1] * n[1] + back.matrix[r + 2] * n[2]))]));
+  }
+  // Blender can hand back faces that break 3D Nowdz's rules (a Boolean's leftovers,
+  // a Remesh's inner shell): split those apart as an import does, then check.
+  repairImportedMesh(mesh);
+  try { recalculateNormals(mesh); }
+  catch (error) {
+    if (!(error instanceof TopologyError)) throw error;
+    const check = validateMesh(mesh, {label: `object “${back.name}” from Blender`, print: false});
+    throw new TopologyError(`Bringing back “${back.name}” from Blender`, check.ok ? error.result : check);
+  }
+  const settings = {mirror: Boolean(back.mirror) && !back.baked, smooth: back.baked ? 0 : Math.max(0, Math.min(3, Math.round(back.smooth ?? 0))), visible: back.visible !== false};
+  const placed = {position: [...transform.position], rotation: [...transform.rotation], scale: [...transform.scale]};
+  const extra = {solidify: !back.baked && Number.isFinite(back.solidify) && back.solidify !== 0 ? Math.max(-1, Math.min(1, back.solidify)) : 0, clip: back.clip !== false};
+  return {mesh, placed, settings, extra};
+}
+
+/** Solidify and clipping are stored only when they differ from the default. */
+export function setExtras(part, {solidify, clip}) {
+  if (solidify) part.solidify = solidify; else delete part.solidify;
+  if (clip === false) part.clip = false; else delete part.clip;
+}
+
 /** Merge Blender's reply into the model. Returns what happened:
  * {changed, added, removed, kept, baked, painted, bones: {changed, added, removed}}. */
 export function applyBlenderLink(model, rawReply, session) {
@@ -219,31 +253,11 @@ export function applyBlenderLink(model, rawReply, session) {
       remember(known.id);
       continue;
     }
-    const mesh = meshFrom(back, colorOf, boneId);
-    let transform;
-    try { transform = decomposeTRS(back.matrix); }
-    catch {
-      // A skewed transform (a parent scaled unevenly in Blender) is baked into the points.
-      transform = {position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1]};
-      mesh.verts = transformMesh({verts: mesh.verts, faces: []}, back.matrix).verts;
-      if (mesh.vdata?.normal) mesh.vdata.normal = Object.fromEntries(Object.entries(mesh.vdata.normal).map(([i, n]) => [i, normalize([0, 4, 8].map(r => back.matrix[r] * n[0] + back.matrix[r + 1] * n[1] + back.matrix[r + 2] * n[2]))]));
-    }
-    // Blender can hand back faces that break 3D Nowdz's rules (a Boolean's leftovers,
-    // a Remesh's inner shell): split those apart as an import does, then check.
-    repairImportedMesh(mesh);
-    try { recalculateNormals(mesh); }
-    catch (error) {
-      if (!(error instanceof TopologyError)) throw error;
-      const check = validateMesh(mesh, {label: `object “${back.name}” from Blender`, print: false});
-      throw new TopologyError(`Bringing back “${back.name}” from Blender`, check.ok ? error.result : check);
-    }
-    const settings = {mirror: Boolean(back.mirror) && !back.baked, smooth: back.baked ? 0 : Math.max(0, Math.min(3, Math.round(back.smooth ?? 0))), visible: back.visible !== false};
-    const placed = {position: [...transform.position], rotation: [...transform.rotation], scale: [...transform.scale]};
+    const {mesh, placed, settings, extra} = readBlenderPart(back, colorOf, boneId);
     if (part) { Object.assign(part, {name: back.name, mesh}, placed, settings); report.changed++; }
     else { part = addPart(model, {name: back.name, mesh, ...placed, ...settings}); model.parts.pop(); report.added++; }
     if (back.baked) report.baked++;
-    if (!back.baked && Number.isFinite(back.solidify) && back.solidify !== 0) part.solidify = Math.max(-1, Math.min(1, back.solidify)); else delete part.solidify;
-    if (back.clip === false) part.clip = false; else delete part.clip;
+    setExtras(part, extra);
     // Following the skeleton as it did in Blender: parented to a bone moves with that bone; an
     // object not attached to the armature at all stays with the body's root; otherwise weights.
     const follows = back.follows ?? 'skin', root = boneOrder(model).find(b => !b.parent);

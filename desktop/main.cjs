@@ -20,6 +20,7 @@ const { SupportService } = require('./support.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
 const { FontService } = require('./font-service.cjs');
 const { BlenderBridge } = require('./blender-bridge.cjs');
+const { BlenderEngine } = require('./blender-engine.cjs');
 const { VideoExportService } = require('./video-export-service.cjs');
 const { AudioService } = require('./audio-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
@@ -504,6 +505,15 @@ function registerIpc() {
   handle('styk:blender-locate', async event => { trusted(event); const found = await locateBlender(); return found ? { path: found.path } : null; });
   handle('styk:blender-read', (event, token) => { trusted(event); return blender.read(String(token)); });
   handle('styk:blender-end', (event, token) => { trusted(event); blender.end(String(token)); return true; });
+  // 3D Nowdz Blender tools: Blender's engine with no window, the one shipped with
+  // the Windows app (resources/blender-engine) or else the person's own Blender.
+  const engine = new BlenderEngine({
+    bundledRoot: app.isPackaged ? path.join(process.resourcesPath, 'blender-engine') : path.join(APP_ROOT, 'build', 'blender-engine'),
+    tempRoot: app.getPath('temp'), findBlender: () => blender.find(),
+  });
+  app.on('will-quit', () => engine.dispose());
+  handle('styk:engine-status', event => { trusted(event); return engine.status(); });
+  handle('styk:engine-run', (event, text) => { trusted(event); return engine.run(text); });
   const fonts = new FontService();
   handle('styk:fonts-list', event => { trusted(event); return fonts.listFonts(); });
   handle('styk:fonts-read', async (event, id) => {

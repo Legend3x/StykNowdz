@@ -133,6 +133,9 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   readBlenderChanges: token => ipcRenderer.invoke('styk:blender-read', token),
   endBlenderLink: token => ipcRenderer.invoke('styk:blender-end', token),
   onBlenderChanged: callback => subscribe('styk:blender-changed', callback),
+  // 3D Nowdz Blender tools (desktop/blender-engine.cjs): a tool request as JSON text in, the result as JSON text out.
+  blenderEngineStatus: () => ipcRenderer.invoke('styk:engine-status'),
+  runBlenderEngine: text => ipcRenderer.invoke('styk:engine-run', text),
   listFonts: () => ipcRenderer.invoke('styk:fonts-list'),
   readFont: (id) => ipcRenderer.invoke('styk:fonts-read', id),
   readClipboardText: () => ipcRenderer.invoke('styk:clipboard-text-read'),
