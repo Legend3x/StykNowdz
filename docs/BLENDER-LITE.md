@@ -265,6 +265,38 @@ posable figure whose sword follows the forearm, and a second untouched round
 trip must change nothing. Under Xvfb it also saves with Ctrl+S's operator in a
 real Blender window.
 
+### Blender tools
+
+Blender's own tools, run inside 3D Nowdz with no Blender window (desktop app):
+**Remesh** (voxel), **Decimate** (keep a share of points, or merge flat areas),
+**Boolean** (Cut, Join, Keep overlap; select the part to change, then the other),
+**Smooth and sculpt** (Smooth, Laplacian smooth that keeps volume, Corrective
+smooth to relax points, and Displace bumps with a Clouds, Cells, Marble or Grain
+pattern), **3D text**, and in Edit mode a **Tube** through a selected row of
+points (closed loops make rings; Taper thins it towards the end). Each is one
+undo step.
+
+- The engine is `desktop/blender/styk_engine.py`, run by
+  `desktop/blender-engine.cjs`: on Windows it is Python 3.13 with Blender's
+  `bpy` module shipped in the app (`resources/blender-engine`, built by
+  `scripts/build-blender-engine.mjs`); elsewhere, or without it, the person's own
+  Blender (`blender -b --factory-startup`, found as Open in Blender finds it).
+  One process stays running and answers one request at a time: a request is a
+  JSON line on stdin naming a request and a result file, the answer one
+  `@@styk-engine {...}` line on stdout. A tool running past 10 minutes is
+  stopped; a stopped engine restarts on the next request.
+- A request is the link document above with only the parts the tool needs (no
+  bones or reference images), built by `styk_link.build`; the result is read by
+  `styk_link.collect`, so tools and Open in Blender share one conversion
+  (`src/modeler/blender-engine.mjs` merges it with `readBlenderPart`). A changed
+  part keeps its name and its 3D Nowdz-only settings (outline, shadows, Moves
+  with) and comes back baked (Mirror, Smooth and Solidify applied, since a
+  Remesh or Boolean works on the finished shape); painted weights go back to
+  automatic. A Boolean's cutting part is removed, or kept hidden.
+- `scripts/blender-engine-check.mjs` runs every tool on Juniper through the real
+  engine; `.github/workflows/blender-link.yml` runs it in Blender 3.6–newest and
+  on `bpy` alone, and `build-windows.yml` runs it on the packaged app's engine.
+
 ### Depth buffer
 
 The viewport works out every face's colour on the CPU (lighting, toon shadows

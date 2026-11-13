@@ -30,7 +30,8 @@ class BlenderEngine {
   /** @param {{bundledRoot?: string, tempRoot: string, findBlender(): Promise<{path: string}|null>, scriptsRoot?: string, startTimeout?: number, runTimeout?: number}} options */
   constructor({ bundledRoot, tempRoot, findBlender, scriptsRoot = path.join(__dirname, 'blender'), platform = process.platform,
     spawnProcess = spawn, startTimeout = 180_000, runTimeout = 600_000 }) {
-    Object.assign(this, { bundledRoot, tempRoot, findBlender, scriptsRoot, platform, spawnProcess, startTimeout, runTimeout });
+    // Absolute: the engine runs from its own temp folder.
+    Object.assign(this, { bundledRoot: bundledRoot ? path.resolve(bundledRoot) : null, tempRoot, findBlender, scriptsRoot, platform, spawnProcess, startTimeout, runTimeout });
     this.process = null; this.starting = null; this.queue = Promise.resolve(); this.waiting = new Map(); this.folder = null; this.counter = 0;
   }
 
@@ -46,7 +47,7 @@ class BlenderEngine {
     const python = bundledPython(this.bundledRoot, this.platform);
     if (python) return { file: python, args: ['-I', script] };
     const found = await this.findBlender().catch(() => null);
-    if (found) return { file: found.path, args: ['-b', '--factory-startup', '--python', script, '--', '--styk-engine'] };
+    if (found) return { file: path.resolve(found.path), args: ['-b', '--factory-startup', '--python', script, '--', '--styk-engine'] };
     throw messageError(new Error(''), 'desktop.blenderEngine.errors.noEngine', {});
   }
 

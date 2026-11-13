@@ -10,6 +10,7 @@ import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, base
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
+import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
@@ -45,6 +46,9 @@ const rgbOf = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
 // changes saved in Blender while the tab is closed wait for it to open again.
 const desktop = () => (typeof window !== 'undefined' ? window.stykDesktop : null);
 const blender = {link: null, open: null, subscribed: false};
+// Blender tools (desktop only): which engine runs them, asked once per window.
+let engineInfo = null;
+const engineStatus = () => engineInfo ??= desktop()?.blenderEngineStatus ? desktop().blenderEngineStatus().catch(() => ({available: false})) : Promise.resolve(null);
 function listenToBlender() {
   if (blender.subscribed || !desktop()?.onBlenderChanged) return;
   blender.subscribed = true;
@@ -269,6 +273,103 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     ];
   }
 
+  // ---------- Blender tools ----------
+  /** Run one Blender tool in Blender's engine (no window) and merge the result as one undo step. */
+  async function runEngine(tool, {parts = [], params = {}, keepCutter = false, select = true} = {}) {
+    if (S.engineBusy) return;
+    let req;
+    try { req = engineRequest(model, tool, {parts, params}); } catch (error) { toast(error.message); return; }
+    S.engineBusy = tool; renderProps(); toast(t("modeler.engineWorking"));
+    try {
+      const answer = await desktop().runBlenderEngine(JSON.stringify(req.request));
+      // Parts deleted while Blender was working: the result has nowhere to go.
+      if (parts.some(id => !part(id))) { toast(t("modeler.engineGone")); return; }
+      const report = commit(() => {
+        const merged = applyEngineResult(model, JSON.parse(answer.text), req.session, {tool, parts, keepCutter});
+        // A Boolean's cutter may be gone: the selection keeps only parts that are still here.
+        S.parts = new Set([...S.parts].filter(id => part(id)));
+        if (!part(S.active)) S.active = [...S.parts].at(-1) ?? null;
+        if (select && merged.addedIds.length) { S.parts = new Set(merged.addedIds); S.active = merged.addedIds[0]; }
+        return merged;
+      });
+      if (!report) return;
+      S.cache.clear();
+      const points = stagePoints(), done = t("modeler.engineDone", {tool: t(`modeler.engine.${tool}`), seconds: fmt(answer.seconds ?? 0)});
+      toast(points > MESH_LIMITS.vertices ? `${done} ${t("modeler.blenderTooDetailed", {points: points.toLocaleString(), limit: MESH_LIMITS.vertices.toLocaleString()})}` : done);
+    } catch (error) { toast(error.message); }
+    finally { S.engineBusy = null; refresh(); }
+  }
+  /** A voxel size that keeps a part's detail without exploding its point count (about 80 across). */
+  const autoVoxel = q => { const box = M.bounds(evaluated(q).verts), size = Math.max(...[0, 1, 2].map(k => box.max[k] - box.min[k])); return Number(Math.max(.001, size / 80).toPrecision(2)); };
+  const engineSettings = () => S.engine ??= {ratio: .5, how: 'smooth', factor: .5, iterations: 5, bumpSize: .25, bumpHeight: .02, texture: 'clouds', boolHow: 'difference', keepCutter: false, swap: false,
+    text: '', textSize: .15, textDepth: .02, radius: .01, taper: 0, color: 0};
+  const engineColor = () => model.palette[engineSettings().color] ?? model.palette[0] ?? [200, 200, 200];
+  const toolBlock = (title, children) => el('div', {class: 'modeler-tool'}, [el('span', {class: 'modeler-label', text: title}), ...children.filter(Boolean)]);
+  const engineButton = (label, run, title) => el('button', {type: 'button', class: 'modeler-button', title: title ?? label, disabled: Boolean(S.engineBusy), onclick: run}, label);
+  /** Object mode: Remesh, Decimate and smoothing on the selected part; Boolean on two; 3D text any time. */
+  function blenderTools(p) {
+    const E = engineSettings(), info = S.engineInfo, out = [el('p', {class: 'modeler-hint', text: t("modeler.blenderToolsHint")})];
+    if (info && !info.available) return [el('p', {class: 'modeler-hint', text: t("modeler.engineUnavailable")})];
+    if (S.engineBusy) out.push(el('p', {class: 'modeler-hint', text: t("modeler.engineWorking")}));
+    if (p && S.parts.size === 1) {
+      E.voxelFor !== p.id && Object.assign(E, {voxel: autoVoxel(p), voxelFor: p.id});
+      out.push(toolBlock(t("modeler.engine.remesh"), [
+        field(t("modeler.voxelSize"), E.voxel, v => { E.voxel = Math.max(.0005, v); }, {step: .001, min: .0005}),
+        engineButton(t("modeler.remeshApply"), () => runEngine('remesh', {parts: [p.id], params: {size: E.voxel}}), t("modeler.remeshHint"))]),
+        toolBlock(t("modeler.engine.decimate"), [
+        slider(t("modeler.decimateKeep"), E.ratio, .02, 1, .02, v => { E.ratio = v; }, t("modeler.decimateHint")),
+        actions([[t("modeler.decimateApply"), () => runEngine('decimate', {parts: [p.id], params: {how: 'collapse', ratio: E.ratio, symmetry: Boolean(p.mirror)}}), t("modeler.decimateHint")],
+          [t("modeler.decimatePlanar"), () => runEngine('decimate', {parts: [p.id], params: {how: 'planar', angle: 5}}), t("modeler.decimatePlanarHint")]])]),
+        toolBlock(t("modeler.engine.smooth"), [
+        el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.smoothHow")}), el('select', {onchange: e => { E.how = e.target.value; renderProps(); }},
+          ['smooth', 'laplacian', 'corrective', 'displace'].map(k => el('option', {value: k, text: t(`modeler.smoothHow.${k}`), selected: E.how === k})))]),
+        ...(E.how === 'displace' ? [
+          el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.bumpPattern")}), el('select', {onchange: e => { E.texture = e.target.value; }},
+            ['clouds', 'voronoi', 'marble', 'noise'].map(k => el('option', {value: k, text: t(`modeler.bumpPattern.${k}`), selected: E.texture === k})))]),
+          field(t("modeler.bumpSize"), E.bumpSize, v => { E.bumpSize = Math.max(.001, v); }, {step: .01, min: .001}),
+          field(t("modeler.bumpHeight"), E.bumpHeight, v => { E.bumpHeight = v; }, {step: .002})]
+          : [slider(t("modeler.smoothStrength"), E.factor, 0, 1, .05, v => { E.factor = v; }), field(t("modeler.smoothRepeat"), E.iterations, v => { E.iterations = Math.max(1, Math.min(200, Math.round(v))); }, {step: 1, min: 1, max: 200})]),
+        engineButton(t("modeler.smoothApply"), () => runEngine('smooth', {parts: [p.id], params: E.how === 'displace' ? {how: 'displace', texture: E.texture, size: E.bumpSize, strength: E.bumpHeight} : {how: E.how, factor: E.factor, iterations: E.iterations}}), t(`modeler.smoothHow.${E.how}Hint`))]));
+    } else if (S.parts.size === 2) {
+      let [target, cutter] = [...S.parts].map(part);
+      if (E.swap) [target, cutter] = [cutter, target];
+      out.push(toolBlock(t("modeler.engine.boolean"), [
+        el('p', {class: 'modeler-hint', text: t("modeler.booleanPair", {target: target.name, cutter: cutter.name})}),
+        actions([[t("modeler.booleanCut"), () => runEngine('boolean', {parts: [target.id, cutter.id], params: {how: 'difference'}, keepCutter: E.keepCutter, select: false}), t("modeler.booleanCutHint")],
+          [t("modeler.booleanJoin"), () => runEngine('boolean', {parts: [target.id, cutter.id], params: {how: 'union'}, keepCutter: E.keepCutter, select: false}), t("modeler.booleanJoinHint")],
+          [t("modeler.booleanOverlap"), () => runEngine('boolean', {parts: [target.id, cutter.id], params: {how: 'intersect'}, keepCutter: E.keepCutter, select: false}), t("modeler.booleanOverlapHint")],
+          [t("modeler.booleanSwap"), () => { E.swap = !E.swap; renderProps(); }]]),
+        el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: E.keepCutter, onchange: e => { E.keepCutter = e.target.checked; }}), t("modeler.keepCutter")])]));
+    } else out.push(el('p', {class: 'modeler-hint', text: t("modeler.blenderToolsSelect")}));
+    out.push(toolBlock(t("modeler.engine.text"), [
+      el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.textBody")}), el('input', {type: 'text', value: E.text, maxlength: '200', placeholder: t("modeler.textPlaceholder"), oninput: e => { E.text = e.target.value; }})]),
+      field(t("modeler.textSize"), E.textSize, v => { E.textSize = Math.max(.005, v); }, {step: .01, min: .005}),
+      field(t("modeler.textDepth"), E.textDepth, v => { E.textDepth = Math.max(0, v); }, {step: .005, min: 0}),
+      ...newPartColor(),
+      engineButton(t("modeler.textApply"), () => runEngine('text', {params: {text: E.text, size: E.textSize, depth: E.textDepth, at: spawnPoint(), color: engineColor()}}), t("modeler.textHint"))]));
+    return out;
+  }
+  /** The colour new parts (text, tubes) are made in. */
+  function newPartColor() {
+    const E = engineSettings();
+    return [el('span', {class: 'modeler-label', text: t("modeler.newPartColor")}), colorRow(E.color, i => { E.color = i; renderProps(); })];
+  }
+  /** Edit mode: a tube through the selected row of points. */
+  function blenderEditTools(p) {
+    const E = engineSettings(), info = S.engineInfo;
+    if (info && !info.available) return [el('p', {class: 'modeler-hint', text: t("modeler.engineUnavailable")})];
+    return [toolBlock(t("modeler.engine.tube"), [el('p', {class: 'modeler-hint', text: t("modeler.tubeHint")}),
+      field(t("modeler.tubeRadius"), E.radius, v => { E.radius = Math.max(.0005, v); }, {step: .002, min: .0005}),
+      slider(t("modeler.tubeTaper"), E.taper, 0, 1, .05, v => { E.taper = v; }, t("modeler.tubeTaperHint")),
+      ...newPartColor(),
+      engineButton(t("modeler.tubeApply"), () => {
+        const chain = chainOf(p.mesh, [...S.verts]);
+        if (chain.error) { toast(chain.error); return; }
+        const to = M.objectTransform(p);
+        runEngine('tube', {params: {points: chain.order.map(v => to(p.mesh.verts[v])), closed: chain.closed, radius: E.radius, taper: E.taper, color: engineColor(), name: `${p.name} tube`}, select: false});
+      })])];
+  }
+
   function renderProps() {
     const blocks = [];
     const p = activePart();
@@ -349,6 +450,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           ['', ...FACE_CUTS].map(c => el('option', {value: c, text: t(c ? `modeler.faceCut.${c}` : "modeler.faceCut.none"), selected: (bone.cut ?? '') === c})))]) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.sideNamesHint")})]));
     }
+    // Blender tools, where the desktop app can run Blender's engine.
+    if (desktop()?.runBlenderEngine && S.mode === 'object') blocks.push(section(t("modeler.blenderTools"), blenderTools(p)));
+    if (desktop()?.runBlenderEngine && S.mode === 'edit' && p) blocks.push(section(t("modeler.blenderTools"), blenderEditTools(p)));
     if (S.mode === 'object') blocks.push(section(t("modeler.toonLook"), toonLook()));
     blocks.push(section(t("modeler.view"), [
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.toonPreview, onchange: e => { S.toonPreview = e.target.checked; refresh(); }}), t("modeler.toonPreview")]),
@@ -1847,6 +1951,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
   // This tab now takes Blender's changes, including any saved while it was closed.
   blender.open = {owner: close, pullBlender, blenderClosed};
+  // Whether Blender's tools can run here (the bundled engine, or an installed Blender).
+  if (desktop()?.runBlenderEngine) engineStatus().then(info => { S.engineInfo = info; if (!finished) renderProps(); });
   if (blender.link && blender.link.waiting > blender.link.seen) queueMicrotask(pullBlender);
   syncRefs();
   if (!model.parts.length) S.camera = defaultCamera();

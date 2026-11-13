@@ -52,6 +52,8 @@ test('the bundled engine is used when this build has one, else an installed Blen
   assert.equal(bundledPython(bundled, 'win32'), path.join(bundled, 'python.exe'));
   assert.deepEqual(await installed.status(), {available: true, runtime: 'bundled'});
   assert.deepEqual(await installed.command('x.py'), {file: path.join(bundled, 'python.exe'), args: ['-I', 'x.py']});
+  // The engine runs from its own temp folder, so a relative engine folder must not stay relative.
+  assert.ok(path.isAbsolute(new BlenderEngine({bundledRoot: 'build/blender-engine', tempRoot: root, findBlender: async () => null}).bundledRoot));
 }));
 
 test('one engine answers requests in turn, ignoring what else Blender prints, and cleans up', () => withTemp(async root => {

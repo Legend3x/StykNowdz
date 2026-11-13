@@ -235,6 +235,10 @@
   .modeler-vector { display: grid; grid-template-columns: 64px repeat(3, 1fr); gap: var(--space-1); align-items: center; margin: var(--space-1-5) 0; color: var(--text-3); font: var(--type-small); }
   .modeler-vector .modeler-field input { width: 100%; }
   .modeler-label { color: var(--text-3); font: var(--type-small); }
+  /* Blender tools: each tool its own block, its name above its settings. */
+  .modeler-tool { display: grid; gap: var(--space-1); margin: var(--space-2) 0 var(--space-3); justify-items: start; }
+  .modeler-tool > .modeler-label { color: var(--text-2); font-weight: 600; }
+  .modeler-tool > .modeler-field, .modeler-tool > .modeler-actions, .modeler-tool > .modeler-swatch-row, .modeler-tool > .modeler-hint { justify-self: stretch; }
   .modeler-check { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-1-5) 0; cursor: pointer; }
   .modeler-check input { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: 0; }
   .modeler-ref { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); margin: var(--space-2) 0; }

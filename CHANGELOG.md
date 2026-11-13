@@ -8,6 +8,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- 3D Nowdz has Blender's tools built in, run by Blender itself with no Blender window: Remesh, Decimate, Boolean (cut, join, overlap), Smooth, Relax and Bumps, 3D text, and tubes through selected points for cables, straps and hair strands. Find them under Blender tools.
 - 3D Nowdz File > Open in Blender sends your model to Blender and brings your changes back each time you save there, with bones, mirror and smoothing kept. Blender's other tools, such as Boolean, Remesh, text and curves, come back as finished shapes.
 - 3D Nowdz Front, Back and Side views show a grid with a line up the middle and along the ground, as in Blender, so you can see where your model lines up and where Mirror reflects it. The grid gets finer as you zoom in.
 - 3D Nowdz bones have Strength and Reach, so a bone stops tugging nearby parts it shouldn't move, such as a shoulder pulling the back. The weight colours show the change as you type.
