@@ -45,6 +45,22 @@ async function tool(label, name, options, check = () => true, merge = {}) {
   }
 }
 
+/** A tool that must be refused with a reason (and leave the model as it was). */
+async function refused(label, name, options, pattern) {
+  const before = JSON.stringify(model);
+  try {
+    const {request, session} = engineRequest(model, name, options);
+    const answer = await engine.run(JSON.stringify(request));
+    applyEngineResult(model, JSON.parse(answer.text), session, {tool: name, parts: options.parts ?? []});
+    failures.push(`${label}: was not refused`); steps.push({label, ok: false}); console.log(`FAILED ${label}: was not refused`);
+  } catch (error) {
+    const ok = pattern.test(error.message);
+    if (!ok) failures.push(`${label}: ${error.message}`);
+    model.parts = JSON.parse(before).parts;
+    steps.push({label, ok, refused: error.message}); console.log(`${ok ? 'ok' : 'FAILED'} ${label}: ${error.message}`);
+  }
+}
+
 const points = id => model.parts.find(p => p.id === id).mesh.verts.length;
 const status = await engine.status();
 console.log('engine:', JSON.stringify(status));
@@ -65,8 +81,7 @@ await tool('Boolean: cut the torso with a box (kept hidden)', 'boolean', {parts:
 const belt = addPart(model, {name: 'Belt buckle', mesh: cube(.06), position: [0, .9, .12]});
 await tool('Boolean: join a buckle to the hips (cutter removed)', 'boolean', {parts: [part('Hips').id, belt.id], params: {how: 'union'}}, r => r.changed === 1 && r.removed === 1 && !part('Belt buckle'));
 const ball = addPart(model, {name: 'Far ball', mesh: cube(.05), position: [3, 3, 3]});
-await tool('Boolean: intersect with a part far away is refused', 'boolean', {parts: [part('Neck').id, ball.id], params: {how: 'intersect'}}, () => false);
-if (failures.at(-1)?.includes('Nothing is left')) { failures.pop(); steps.at(-1).ok = true; steps.at(-1).expected = 'refused'; console.log('ok (refused as expected)'); }
+await refused('Boolean: intersect with a part far away is refused', 'boolean', {parts: [part('Neck').id, ball.id], params: {how: 'intersect'}}, /Nothing is left/);
 model.parts = model.parts.filter(p => p.name !== 'Far ball');
 // Smoothing family.
 await tool('Smooth the forearm', 'smooth', {parts: [part('Forearm').id], params: {how: 'smooth', factor: .6, iterations: 8}}, r => r.changed === 1);
@@ -79,8 +94,7 @@ const collar = part('Collar'), chain = chainOf(collar.mesh, collar.mesh.faces[0]
 await tool('Tube through a row of points (a face border, closed)', 'tube', {params: {points: (chain.order ?? []).map(v => to(collar.mesh.verts[v])), closed: chain.closed, radius: .006, color: [200, 40, 60]}}, r => r.added === 1);
 await tool('Tube: a tapered strand', 'tube', {params: {points: [[0, 1.6, -.05], [.05, 1.4, -.12], [.02, 1.2, -.15], [.08, 1.0, -.1]], radius: .02, taper: .9, color: [40, 160, 170]}}, r => r.added === 1);
 // Bad requests are refused with a reason, and the engine keeps going.
-await tool('Text with no text is refused', 'text', {params: {text: '  '}}, () => false);
-if (/type the text/.test(failures.at(-1) ?? '')) { failures.pop(); steps.at(-1).ok = true; steps.at(-1).expected = 'refused'; console.log('ok (refused as expected)'); }
+await refused('Text with no text is refused', 'text', {params: {text: '  '}}, /type the text/);
 await tool('Still working after a refusal: decimate the shoe', 'decimate', {parts: [part('Shoe').id], params: {ratio: .8}}, r => r.changed === 1);
 
 let figure = null;
