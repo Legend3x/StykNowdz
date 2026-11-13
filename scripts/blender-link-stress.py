@@ -19,6 +19,9 @@ scene = bpy.context.scene
 middle = bpy.data.objects["3D Nowdz Middle"]
 arm = bpy.data.objects["Armature"]
 log = []
+# The link shows 3D Nowdz colours as they are (Standard, not AgX).
+if scene.view_settings.view_transform != "Standard":
+    raise SystemExit("view transform is %s, not Standard" % scene.view_settings.view_transform)
 
 
 def note(text):

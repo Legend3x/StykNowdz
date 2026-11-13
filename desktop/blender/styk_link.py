@@ -145,6 +145,12 @@ def build(doc, folder):
         bpy.data.objects.remove(obj, do_unlink=True)
     scene.unit_settings.system = "METRIC"
     scene["styk_link"] = True
+    # Standard, not Blender 4's AgX default: the palette shows the same colours as in 3D Nowdz.
+    try:
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.look = "None"
+    except (TypeError, AttributeError):
+        pass
 
     middle = bpy.data.objects.new(MIDDLE, None)
     middle.empty_display_type = "PLAIN_AXES"
