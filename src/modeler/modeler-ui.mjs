@@ -10,6 +10,7 @@ import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, base
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {createStickBuild} from './stick-build.mjs';
+import {createPolyBuild} from './poly-build.mjs';
 import * as K from './sticks.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
@@ -192,8 +193,22 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }));
   // Build mode (3D stick building): its interaction and panel live in stick-build.mjs.
   const stick = createStickBuild({S, model: () => model, frame: () => frame, commit, refresh: () => refresh(), draw: () => draw(), toast: text => toast(text), t, el, section, field, vector, actions, colorRow, segmented: (...a) => segmented(...a),
-    button: (label, fn, options) => button(label, fn, options), glyph, editPart: id => { S.parts = new Set([id]); S.active = id; setMode('edit'); }, screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
+    button: (label, fn, options) => button(label, fn, options), glyph, editPart: id => { S.parts = new Set([id]); S.active = id; setMode('edit'); }, drawOn: () => drawFacesOn(), screenToWorld: (pt, through) => screenToWorld(pt, through), snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; }});
   stage.append(stick.rail);
+  // Edit mode's drawing tools (snap to surface, Poly build): poly-build.mjs.
+  const poly = createPolyBuild({S, part: () => activePart(), frame: () => frame, model: () => model, evaluate: q => evaluatePart(q), commit, snapshot, restore, pushUndo: before => { S.undo.push(before); S.redo = []; },
+    refresh: () => refresh(), draw: () => draw(), toast: text => toast(text), t, el, glyph, screenToWorld: (pt, through) => screenToWorld(pt, through), cage: () => cage(),
+    setMirror: (q, on) => setMirror(q, on), paintColor: q => paintColor(q), localFacing: q => localFacing(q)});
+  stage.append(poly.rail);
+  /** Retopology: a new mirrored part to draw faces on top of the others (a head made in
+   * Build mode), opened in Edit mode with Poly build and snapping on. */
+  function drawFacesOn() {
+    let made = null;
+    commit(() => { made = addPart(model, {name: t("modeler.drawnFace"), mesh: {verts: [], faces: []}, mirror: true, smooth: 0}); });
+    if (!made) return;
+    S.parts = new Set([made.id]); S.active = made.id; S.snap = true; S.polyBuild = true; S.selectMode = 'vert';
+    setMode('edit'); toast(t("modeler.drawOnHint"));
+  }
   /** The darkest palette colour, for new outlines. */
   const inkColor = () => model.palette.reduce((best, c, i) => c[0] + c[1] + c[2] < model.palette[best].reduce((a, v) => a + v, 0) ? i : best, 0);
   const setOutline = (targets, on) => { if (on) S.toonPreview = true; commit(() => { for (const q of targets) q.outline = {...(q.outline ?? {thickness: OUTLINE_DEFAULTS.thickness, color: inkColor()}), on}; }); };
@@ -389,7 +404,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Hidden points can't stay selected.
     const hide = S.mode === 'edit' ? activePart()?.mesh.vdata?.hide : null;
     if (hide && S.verts.size) for (const v of S.verts) if (hide[v]) S.verts.delete(v);
-    renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); stick.sync(); draw();
+    renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); stick.sync(); poly.sync(); draw();
   }
   /** Edit mode H / Shift+H / Alt+H, as Blender: hide the selection, hide everything
    * else, or show all again (selecting what comes back). Only shape is unaffected. */
@@ -450,7 +465,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth}).filter(poly => !poly.item.hull);
     drawAllWires(ctx);
     if (S.mode === 'object') drawObjectOutline(ctx);
-    if (S.mode === 'edit') drawCage(ctx);
+    if (S.mode === 'edit') { drawCage(ctx); poly.drawOverlay(ctx); }
     if (S.mode === 'bones' || S.showBones) drawBones(ctx);
     if (S.mode === 'build') stick.drawOverlay(ctx);
     if (S.modal?.kind === 'loopcut' && S.modal.ring) drawRing(ctx, S.modal.ring, S.modal.cuts);
@@ -859,6 +874,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         for (const [v, w] of target.soft) { const q = Math.round(w * 64) / 64; if (!q) continue; if (!shared.has(q)) shared.set(q, local(q)); matrices.set(v, shared.get(q)); }
         mesh = M.transformMeshEach(target.startMesh, matrices); moved = [...matrices.keys()];
       } else mesh = M.transformMesh(target.startMesh, local(1), target.verts);
+      // Snap to surface: moved points land on the other parts where they are seen.
+      if (m.kind === 'grab' && !m.axis) mesh = poly.snapMoved(target, mesh, moved);
       // Mirror clipping: the middle stays joined to the mirrored half.
       if (target.part.mirror && target.part.clip !== false) mesh = M.clipToMirror(target.startMesh, mesh, target.objectMatrix, moved);
       if (m.grown) M.faceViewerDuringMove(mesh, m.grown, localFacing(target.part));
@@ -984,7 +1001,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.verts.size > 1) { toast(t("modeler.ctrlClickFromOnePoint")); return; }
     const from = S.verts.size ? [...S.verts][0] : null, transform = M.objectTransform(p);
     const through = from !== null ? transform(p.mesh.verts[from]) : transform([0, 0, 0]);
-    const local = M.objectInverse(p)(screenToWorld(pt, through));
+    const local = poly.placeLocal(p, pt, through);
     commit(() => {
       let at = local;
       // Mirrored parts: a point can't cross the middle line.
@@ -1677,6 +1694,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p}; e.preventDefault(); return; }
     if (e.button === 0 && S.mode === 'build' && S.stick.tool === 'hand') { drag = {kind: 'pan', last: p}; return; }
     if (e.button === 0 && S.mode === 'build') { const handler = stick.press(p, e); drag = handler ? {kind: 'stick', handler, last: p} : null; return; }
+    if (e.button === 0 && S.mode === 'edit' && S.polyBuild && !e.altKey && !e.ctrlKey && !e.metaKey) { const handler = poly.press(p, e); drag = handler ? {kind: 'stick', handler, last: p} : null; return; }
     if (e.button === 0) drag = {kind: 'press', start: p, last: p, event: e, hit: e.shiftKey || (e.altKey && S.mode === 'edit') ? null : pick(p.x, p.y)};
   }, {signal});
   canvas.addEventListener('pointermove', e => {
@@ -1688,7 +1706,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'loopslide') { S.modal.mouse = p; applyLoopSlide(); return; }
     if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
-    if (!drag && S.mode === 'build' && S.stick.fillDraft?.length) { draw(); return; }
+    if (!drag && ((S.mode === 'build' && S.stick.fillDraft?.length) || (S.mode === 'edit' && S.polyBuild))) { draw(); return; }
     if (!drag) return;
     if (drag.kind === 'stick') { drag.handler.move(p, e); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
@@ -1770,6 +1788,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (ctrl && (key === '+' || key === '=')) { if (S.mode === 'edit' && activePart()) { S.verts = M.growSelection(activePart().mesh, S.verts); refresh(); } }
     // Build mode has its own keys (tools, delete, mirror); views, Tab and ? work as everywhere.
     else if (S.mode === 'build' && !ctrl && !e.code?.startsWith('Numpad') && !['Tab', '.', '?'].includes(key)) handled = stick.keydown(e);
+    else if (S.mode === 'edit' && !ctrl && !e.altKey && !S.modal && (key === 'q' || (key === 'Tab' && e.shiftKey) || (key === 'Escape' && S.polyBuild && S.verts.size))) handled = poly.keydown(e, key);
     else if (ctrl) handled = false;
     else if (key === 'Tab') setMode(S.mode === 'build' || S.mode === 'edit' ? 'object' : activePart() && activePart().stick == null ? 'edit' : 'build');
     else if (key === 'g') startTransform('grab');

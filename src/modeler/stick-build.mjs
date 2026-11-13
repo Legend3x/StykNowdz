@@ -30,7 +30,7 @@ const GUIDE_COLOR = 'rgba(0,150,170,.9)', HEAD_PICK = '#ff8a00';
 /**
  * ctx: {S, model(), frame(), commit(fn), refresh(), draw(), toast(text), t(key, params),
  *   el, section, glyph(icon), colorRow, button, screenToWorld(pt, through),
- *   snapshot(), restore(snap), pushUndo(before), editPart(id)}
+ *   snapshot(), restore(snap), pushUndo(before), editPart(id), drawOn()}
  */
 export function createStickBuild(ctx) {
   const {S, t, el, section} = ctx;
@@ -415,7 +415,8 @@ export function createStickBuild(ctx) {
         slide(t("modeler.stickHeadRows"), head.rows, {min: 4, max: 32, step: 1, digits: 0}, (st, v) => set({rows: v})(st)),
         slide(t("modeler.stickHeadAround"), head.around, {min: 8, max: 32, step: 4, digits: 0}, (st, v) => set({around: v})(st)),
         slide(t("modeler.stickSmooth"), head.smooth, {min: 0, max: 2, step: 1, digits: 0}, (st, v) => set({smooth: v})(st)),
-        el('p', {class: 'modeler-hint', text: t("modeler.stickHeadPanelHint")})])];
+        el('p', {class: 'modeler-hint', text: t("modeler.stickHeadPanelHint")})]),
+      section(t("modeler.drawOn"), [el('p', {class: 'modeler-hint', text: t("modeler.drawOnPanelHint")}), ctx.button(t("modeler.drawOn"), () => ctx.drawOn(), {title: t("modeler.drawOnPanelHint")})])];
   }
 
   function fillPanel(fill) {

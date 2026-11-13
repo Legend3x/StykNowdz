@@ -333,3 +333,12 @@ test('convert to mesh: an ordinary part that keeps its weights; a line keeps its
   assert.equal(K.lineOf(stored.sticks, arm.id).noMesh, true);
   assert.equal(stored.parts.find(p => p.id === madeArm.id).mesh.vdata.skin[0][0][0], madeArm.mesh.vdata.skin[0][0][0]);
 });
+
+test('snapping casts from the eye onto the nearest surface, facing back toward the eye', async () => {
+  const {snapTriangles, castOnto} = await import('../src/modeler/poly-build.mjs');
+  const quad = z => ({verts: [[-1, -1, z], [1, -1, z], [1, 1, z], [-1, 1, z]], faces: [{v: [0, 1, 2, 3], c: 0}]});
+  const tris = snapTriangles([quad(0), quad(.5)]);
+  const hit = castOnto(tris, [.2, .3, 5], [0, 0, -1]);
+  near(hit.point[2], .5, 1e-9); assert.deepEqual(hit.normal.map(v => Math.round(v)), [0, 0, 1]);
+  assert.equal(castOnto(tris, [3, 0, 5], [0, 0, -1]), null);
+});

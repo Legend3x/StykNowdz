@@ -149,6 +149,31 @@ duplicates, joins and symmetrize carry them. Evaluation (`evaluatePart`)
 takes only the surface, so traced lines never reach the stage, the outline
 shell or export.
 
+### Drawing faces (Poly build, snapping)
+
+Edit mode has a tool rail (`src/modeler/poly-build.mjs`): Select, **Poly
+build** (Q), then **Snap to surface** (Shift+Tab, the magnet), Mirror and
+X-ray toggles.
+
+- **Poly build**: click empty space to place a point joined to the last one
+  (the selected point); click another point to join it to the last one, and
+  every ring of four joined points through the new line that has no face yet
+  becomes a face (quads only; F still makes triangles); click a point already
+  joined to the last one to go on from it; drag a point to move it;
+  Shift+click a point to delete it; Esc starts a new strip. Drawing rows: lay
+  a row of points, Esc, click its first point, then alternate a new point
+  below and the point above it.
+- **Snap to surface**: new points (Poly build, Ctrl+click) and points moved
+  with G (not axis-locked) land where the view's ray through them meets
+  another part, lifted 0.004 toward the eye so the new faces show in front.
+  The surfaces are every other part with faces that is showing, plus heads
+  made in Build mode even when hidden.
+- On a mirrored part with clipping, a point within 8 pixels of the middle
+  lands on it, and one placed on the other side is mirrored over.
+- **Draw faces on it** (a Build-mode head's panel) is Blender's retopology
+  set-up: a new empty mirrored part opens in Edit mode with Poly build and
+  snapping on, unsmoothed while you draw.
+
 ### Loops, loop cuts and slides
 
 | Tool | How |

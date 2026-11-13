@@ -14,6 +14,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - 3D Nowdz Head from outlines builds a smooth, symmetrical head from a front outline and a side profile you trace over your drawings.
 - Guide lines in 3D Nowdz Build mode are for tracing: they have no shape or bone.
 - Convert to mesh turns a 3D Nowdz line, poly fill or head into a model you can shape in Edit mode with the Blender tools, and it still moves with its bones.
+- Draw clean faces over a 3D Nowdz head point by point, as in Blender: Poly build (Q) joins points into faces, and Snap to surface (Shift+Tab) puts each point on the head where you click.
 - Build body parts, hair and accessories as separate pieces in 3D Nowdz and snap them onto a joint; mark a line static to have it move with the line above it.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).

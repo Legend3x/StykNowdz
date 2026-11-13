@@ -145,6 +145,45 @@ try {
     assert.deepEqual(undone, {mode: 'object', heads: 1});
   });
 
+  await step('Edit mode: Draw faces on a head with Poly build, snapped onto it and mirrored', async () => {
+    const sp = w => page.evaluate(w => m.screenPoint(w), w);
+    const click = async w => { const q = await sp(w); await page.mouse.click(q.x, q.y); };
+    await page.evaluate(async () => {
+      const K = await import('/src/modeler/sticks.mjs');
+      m.setMode('object'); m.model.parts = []; m.model.bones = [];
+      const s = m.model.sticks = K.emptySticks();
+      const F = K.addPiece(s, {at: [0, 1.4, 0]}); let j = F.root;
+      for (const [x, y] of [[-.15, 1.55], [-.18, 1.7], [-.15, 1.85], [0, 1.92], [.15, 1.85], [.18, 1.7], [.15, 1.55], [0, 1.4]]) j = K.addLine(s, j, [x, y, 0]).to;
+      const P = K.addPiece(s, {at: [0, 1.4, .02]}); j = P.root;
+      for (const [z, y] of [[.12, 1.55], [.16, 1.7], [.12, 1.85], [0, 1.92], [0, 1.4]]) j = K.addLine(s, j, [0, y, z]).to;
+      const head = K.addHead(s, F.id, P.id); K.generateSticks(m.model);
+      m.state.stick.head = head.id; m.setMode('build'); m.setView('front'); Object.assign(m.state.camera, {target: [0, 1.65, 0], dist: 1.2}); m.refresh(); await wait(50);
+      [...document.querySelectorAll('.modeler-side button')].find(b => b.textContent === 'Draw faces on it').click(); await wait(50);
+    });
+    const started = await page.evaluate(() => ({mode: m.state.mode, build: m.state.polyBuild, snap: m.state.snap, mirror: m.model.parts.find(p => p.id === m.state.active).mirror, rail: !document.querySelectorAll('.modeler-rail')[1].hidden}));
+    assert.deepEqual(started, {mode: 'edit', build: true, snap: true, mirror: true, rail: true});
+    // Row A across the brow, then row B below it joined back to A: two faces.
+    for (const w of [[.04, 1.78, 0], [.09, 1.78, 0], [.14, 1.76, 0]]) await click(w);
+    await page.evaluate(() => press('Escape'));
+    await click([.04, 1.78, 0]);
+    for (const w of [[.04, 1.72, 0], [.09, 1.72, 0], [.09, 1.78, 0], [.14, 1.7, 0], [.14, 1.76, 0]]) await click(w);
+    const drawn = await page.evaluate(() => {
+      const p = m.model.parts.find(q => q.id === m.state.active), headPart = m.model.parts.find(q => q.stick != null);
+      const front = Math.max(...headPart.mesh.verts.filter(v => Math.abs(v[0] - .09) < .04 && Math.abs(v[1] - 1.75) < .05).map(v => v[2]));
+      return {verts: p.mesh.verts.length, faces: p.mesh.faces.length, quads: p.mesh.faces.every(f => f.v.length === 4), valid: T.validateMesh(p.mesh, {print: false}).ok,
+        onHead: p.mesh.verts.every(v => v[2] > .05), nearFront: p.mesh.verts.every(v => v[2] <= front + .03)};
+    });
+    assert.deepEqual(drawn, {verts: 6, faces: 2, quads: true, valid: true, onHead: true, nearFront: true});
+    // A point clicked on the other side is mirrored over; one near the middle lands on it.
+    await page.evaluate(() => press('Escape'));
+    await click([-.06, 1.6, 0]); await click([.004, 1.6, 0]);
+    const mirrored = await page.evaluate(() => m.model.parts.find(q => q.id === m.state.active).mesh.verts.slice(-2).map(v => +v[0].toFixed(3)));
+    assert.ok(mirrored[0] > .05 && mirrored[1] === 0, JSON.stringify(mirrored));
+    // Q leaves Poly build; Shift+Tab turns snapping off.
+    const keys = await page.evaluate(() => { press('q'); press('Tab', {shiftKey: true}); return {build: m.state.polyBuild, snap: m.state.snap}; });
+    assert.deepEqual(keys, {build: false, snap: false});
+  });
+
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

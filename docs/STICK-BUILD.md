@@ -140,6 +140,9 @@ deletes it. Front is +Z.
 - **Top dome** and **Chin dome**: three shrinking rings and a point close the
   head up to the outline's top and down to its bottom (1 reaches them exactly).
 - **Smooth** is the part's subdivision (default 1).
+- **Draw faces on it** opens a new mirrored part in Edit mode with Poly build
+  and Snap to surface on, to draw clean faces over the head point by point
+  (BLENDER-LITE.md, "Drawing faces").
 - Every point is weighted to the bone of the line ending at the joint the
   front (else the side) outline is attached to, normally the neck.
 
