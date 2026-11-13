@@ -1831,7 +1831,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (ids.has(w.active)) S.active = w.active;
     S.parts = new Set((w.parts ?? []).filter(id => ids.has(id)));
     if (['vert', 'edge', 'face'].includes(w.selectMode)) S.selectMode = w.selectMode;
-    if (w.mode === 'edit' && activePart()) { S.mode = 'edit'; const n = activePart().mesh.verts.length; S.verts = new Set((w.verts ?? []).filter(v => Number.isInteger(v) && v >= 0 && v < n)); }
+    if (w.mode === 'edit' && activePart() && activePart().stick == null) { S.mode = 'edit'; const n = activePart().mesh.verts.length; S.verts = new Set((w.verts ?? []).filter(v => Number.isInteger(v) && v >= 0 && v < n)); }
     else if (w.mode === 'bones') S.mode = 'bones';
   }
   // A draft with one part is ready to edit: select it so Tab works straight away.
