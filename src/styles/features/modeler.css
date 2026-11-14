@@ -213,6 +213,14 @@
   .modeler-menu-line { block-size: 1px; margin: var(--space-1) var(--space-1-5); background: var(--line-control); }
   .modeler-menu-danger { color: var(--danger-text); }
   .modeler-confirm-check { margin: 0 0 var(--space-2); }
+  .modeler-badge-swap { background: var(--surface-hover); color: var(--text-1); border: 1px solid var(--line-control); }
+  .modeler-choice { flex: none; inline-size: 18px; padding: 0; border: 0; background: none; color: var(--text-3); font-size: 13px; line-height: 1; cursor: pointer; }
+  .modeler-choice-on { color: var(--accent-text); }
+  /* The second view: a small read-only view in the corner of the stage. */
+  .modeler-second { position: absolute; inset-block-end: var(--space-3); inset-inline-end: var(--space-3); inline-size: min(32%, 300px); aspect-ratio: 4 / 3;
+    border: 1px solid var(--line-control); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-stage); pointer-events: none; box-shadow: var(--shadow-thumb); }
+  .modeler-second[hidden] { display: none; }
+  .modeler-second-canvas { display: block; inline-size: 100%; block-size: 100%; }
   .modeler-rename { flex: 1; min-width: 0; font: inherit; }
   .modeler-row, .modeler-actions { display: flex; flex-wrap: wrap; gap: var(--space-1-5); margin-top: var(--space-2); }
   .modeler-hint { margin: var(--space-2) 0; color: var(--text-3); font: var(--type-small); font-weight: 400; line-height: 1.45; }
