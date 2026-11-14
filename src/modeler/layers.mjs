@@ -178,3 +178,75 @@ export function otherEnd(mesh, v) {
   if (!line || line.closed || line.ends.length !== 2 || !line.ends.includes(v) || line.points.length < 3) return null;
   return line.ends.find(e => e !== v);
 }
+
+// ---------- Swap sets ----------
+// A swap set is a folder whose direct parts and folders are its choices (a
+// mouth's Closed, Open, A, O, Smile), one shown at a time, like a 2D puppet's
+// replaceable mouths. On the stage each choice hangs from the set's bone (the
+// head) and the face badge picks which one shows in each frame.
+
+/** A choice's key: `p<id>` for a part, `f<id>` for a folder. */
+export const choiceKey = item => `${item.mesh ? 'p' : 'f'}${item.id}`;
+/** The folders around a folder or part, nearest first. */
+function foldersAbove(model, start) {
+  const out = [], byId = new Map((model.folders ?? []).map(f => [f.id, f]));
+  let at = byId.get(start), guard = 0;
+  while (at && guard++ < 256) { out.push(at); at = byId.get(at.parent); }
+  return out;
+}
+/** A swap set's choices, in order: its direct parts, then its direct folders. */
+export function choicesOf(model, set) {
+  const parts = model.parts.filter(p => p.folder === set.id), folders = (model.folders ?? []).filter(f => f.parent === set.id);
+  return [...parts.map(p => ({key: choiceKey(p), label: p.name, item: p, parts: [p]})),
+    ...folders.map(f => ({key: choiceKey(f), label: f.name, item: f, parts: partsIn(model, f.id)}))];
+}
+/** The key of the choice a set shows (its first choice unless one was picked). */
+export function shownChoice(model, set) {
+  const choices = choicesOf(model, set);
+  return choices.some(c => c.key === set.shown) ? set.shown : choices[0]?.key ?? null;
+}
+/** Every swap set with its choices and which one shows. */
+export const swapSets = model => (model.folders ?? []).filter(f => f.swap).map(set => ({set, choices: choicesOf(model, set), shown: shownChoice(model, set)}));
+/** The swap set a part belongs to and its choice in it, or null. */
+export function swapChoiceOf(model, part) {
+  if (!part.folder) return null;
+  const chain = foldersAbove(model, part.folder), at = chain.findIndex(f => f.swap);
+  if (at < 0) return null;
+  const set = chain[at], key = at === 0 ? choiceKey(part) : choiceKey(chain[at - 1]);
+  return {set, key};
+}
+/** Whether a part is in a choice its swap set isn't showing (left out of the view, not the figure). */
+export function hiddenBySwap(model, part) {
+  const choice = swapChoiceOf(model, part);
+  return Boolean(choice && shownChoice(model, choice.set) !== choice.key);
+}
+/** Show a choice of its set (the one shown in the view and first on the stage). */
+export function showChoice(model, key) {
+  const id = Number(key.slice(1)), item = key[0] === 'p' ? model.parts.find(p => p.id === id) : folderOf(model, id);
+  const set = item && folderOf(model, key[0] === 'p' ? item.folder : item.parent);
+  if (!set?.swap) return false;
+  set.shown = key;
+  return true;
+}
+/** Why a folder can't be a swap set, or null: one inside another swap set (or holding one) means nothing on the stage. */
+export function swapSetProblem(model, id) {
+  const folder = folderOf(model, id); if (!folder) return 'missing';
+  if (foldersAbove(model, folder.parent).some(f => f.swap)) return 'inside';
+  if ((model.folders ?? []).some(f => f.swap && f.id !== id && foldersWithin(model, id).has(f.id))) return 'holds';
+  if (choicesOf(model, folder).length < 1) return 'empty';
+  return null;
+}
+/** Make a folder a swap set attached to `bone` (0: the head, found when it goes to the stage). */
+export function makeSwapSet(model, id, {bone = 0} = {}) {
+  if (swapSetProblem(model, id)) return false;
+  const folder = folderOf(model, id);
+  folder.swap = true;
+  if (bone) folder.bone = bone; else delete folder.bone;
+  folder.shown = shownChoice(model, folder);
+  return true;
+}
+/** A swap set back to a plain folder. */
+export function plainFolder(model, id) {
+  const folder = folderOf(model, id); if (!folder) return;
+  delete folder.swap; delete folder.shown; delete folder.bone;
+}

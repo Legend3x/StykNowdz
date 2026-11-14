@@ -1424,8 +1424,10 @@ export class Editor extends EventTarget {
   }
   /** Replace a reusable definition while retaining every instance's pose and identity. */
   /** `moveRoot(object, oldFigure)` may return {x, y}: how far that placed figure's
-   * root moves (a 3D model whose origin moved stays where it is on the stage). */
-  replaceFigureDefinition(figureTypeId, definition, {label = 'Edit figure definition', moveRoot = null} = {}) {
+   * root moves (a 3D model whose origin moved stays where it is on the stage).
+   * `newLengths` (segment ID → length) sets joints that are new to a placed
+   * figure (a 3D model's added swap choices start hidden). */
+  replaceFigureDefinition(figureTypeId, definition, {label = 'Edit figure definition', moveRoot = null, newLengths = null} = {}) {
     const index = this.report.figure_types.findIndex(f => f.figure_type_id === figureTypeId);
     if (index < 0) throw messageError(new Error(''), "errors.editor.theFigureDefinitionDoesNotExist", {});
     if (!definition || !Array.isArray(definition.segments) || !definition.segments.length) throw messageError(new Error(''), "errors.editor.aFigureNeedsAtLeastOneSegment", {});
@@ -1453,10 +1455,12 @@ export class Editor extends EventTarget {
             const i = oldIndices.get(s.segment_id);
             return i === undefined ? s.angle_rad : s.angle_rad + oldAngles[i] - oldFigure.segments[i].angle_rad;
           });
-          if (obj.len_flag) {
-            const lengths = obj.lengths;
+          const added = newLengths?.size ? replacement.segments.filter(s => !oldIndices.has(s.segment_id) && newLengths.has(s.segment_id)) : [];
+          if (obj.len_flag || added.length) {
+            const lengths = obj.len_flag ? obj.lengths : oldFigure.segments.map(s => s.length);
             obj.lengths = replacement.segments.map(s => { const i = oldIndices.get(s.segment_id), base = oldFigure.segments[i]?.length;
-              return i === undefined ? s.length : Math.abs(base) > 1e-9 ? s.length * lengths[i] / base : lengths[i]; });
+              return i === undefined ? newLengths?.get(s.segment_id) ?? s.length : Math.abs(base) > 1e-9 ? s.length * lengths[i] / base : lengths[i]; });
+            obj.len_flag = 1;
           }
           if (obj.bend_flag) {
             const bends = obj.bends;

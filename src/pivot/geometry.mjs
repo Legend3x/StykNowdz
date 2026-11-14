@@ -400,6 +400,9 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
           out[flag] = 1;
           const read = (item, i, fallback) => item[flag] ? item[field][i] : fallback;
           out[field] = fig.segments.map((s, i) => sampleRecords(report, index, t, record, read, false, i, s[base] ?? 0, presence));
+          // A swap choice (rig-pose-choices.mjs) is shown or hidden, never part-way:
+          // it changes at the next key instead of growing or shrinking between them.
+          if (field === 'lengths') fig.segments.forEach((s, i) => { if (s._stykPoseChoice) out.lengths[i] = read(o, i, s.length); });
         }
       }
       const originLayout = animationOriginLayout(fig);

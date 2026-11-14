@@ -142,3 +142,97 @@ test('splitting a traced line opens a ring, or breaks a line in two, and stays v
   assert.ok(validateMesh(stub, {print: false}).ok);
   assert.deepEqual([...stub.loose].sort(), [0, 1]); assert.equal(tracedLines(stub).length, 0);
 });
+
+// ---------- Swap sets on the stage ----------
+import {makeSwapSet, swapSets, hiddenBySwap, showChoice, swapSetProblem, plainFolder, choiceKey} from '../src/modeler/layers.mjs';
+import {uvSphere} from '../src/modeler/primitives.mjs';
+import {evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
+import {poseChoiceGroups} from '../src/rig-pose-choices.mjs';
+
+/** The Base character with a Mouth swap set: three small discs in front of the face. */
+function mouthModel() {
+  const model = characterModel(), head = model.bones.find(b => b.name === 'Head') ?? model.bones.at(-1);
+  const at = head.head.map((v, k) => (v + head.tail[k]) / 2), set = addFolder(model, {name: 'Mouth'});
+  for (const [k, name] of ['Closed', 'Open', 'O'].entries()) {
+    const p = addPart(model, {name, mesh: uvSphere(.03 + k * .01, 8, 4, 5), position: [at[0], at[1] - .05, at[2] + .2]});
+    p.folder = set.id;
+  }
+  assert.ok(makeSwapSet(model, set.id));
+  return {model, set};
+}
+const meshOf = (e, uid = e.selectedUid) => { const g = buildGeometry(e.report, e.frame); for (const o of g.objects.values()) if (o.obj.unique_id === uid) return o.spatialMesh; };
+/** How spread out a named group of the stage mesh is on screen (stage positions are x, y per point; 0 when collapsed). */
+function spreadOf(e, figure, name) {
+  const mesh = meshOf(e), group = figure._styk.spatialMesh.groups.find(g => g.name === name), xs = [], ys = [];
+  for (let t = group.start; t < group.start + group.count; t++) for (let k = 0; k < 3; k++) { const v = figure._styk.spatialMesh.indices[t * 3 + k]; xs.push(mesh.positions[v * 2]); ys.push(mesh.positions[v * 2 + 1]); }
+  return Math.max(...xs) - Math.min(...xs) + Math.max(...ys) - Math.min(...ys);
+}
+
+test('a swap set: one choice shows in the view; the rest are left out of the view only', () => {
+  const {model, set} = mouthModel(), [closed, open, o] = model.parts.filter(p => p.folder === set.id);
+  assert.deepEqual(swapSets(model).map(x => [x.set.name, x.choices.length, x.shown]), [['Mouth', 3, choiceKey(closed)]]);
+  assert.equal(hiddenBySwap(model, closed), false); assert.equal(hiddenBySwap(model, open), true);
+  showChoice(model, choiceKey(o));
+  assert.equal(hiddenBySwap(model, o), false); assert.equal(hiddenBySwap(model, closed), true);
+  // Saved and reopened, the set and its shown choice stay.
+  const again = readModel(JSON.parse(JSON.stringify(model)));
+  assert.equal(swapSets(again)[0].shown, choiceKey(o));
+  // A swap set can't sit inside another one.
+  const inner = addFolder(model, {name: 'Inner', parent: set.id}); moveToFolder(model, [open.id], inner.id);
+  assert.equal(swapSetProblem(model, inner.id), 'inside');
+  plainFolder(model, set.id); assert.equal(swapSets(model).length, 0);
+});
+
+test('on the stage a swap set is a choice: only the shown one is drawn, picking another swaps them in one undo step', () => {
+  const {model} = mouthModel(), e = new Editor({demo: false}); e.load({...emptyDocument()});
+  const {document} = modelDocument(model); e.importFigure(document, {position: {x: 400, y: 400}});
+  const figure = e.figure, groups = poseChoiceGroups(e.figure, e.object).filter(g => g.kind === 'visibility');
+  assert.deepEqual(groups.map(g => [g.name, g.choices.map(c => c.label)]), [['Mouth', ['Closed', 'Open', 'O']]]);
+  const closed = groups[0].choices.find(c => c.label === 'Closed');
+  assert.equal(groups[0].value, closed.id, 'the shown choice is picked at first');
+  assert.ok(spreadOf(e, figure, 'Closed') > 1); assert.ok(spreadOf(e, figure, 'Open') < 1e-6); assert.ok(spreadOf(e, figure, 'O') < 1e-6);
+  // The choice bones have no handles on the stage (the badge picks).
+  const open = groups[0].choices.find(c => c.label === 'Open');
+  assert.ok(e.setPoseChoice('Mouth', open.id));
+  assert.ok(spreadOf(e, figure, 'Open') > 1); assert.ok(spreadOf(e, figure, 'Closed') < 1e-6);
+  e.undo();
+  assert.ok(spreadOf(e, figure, 'Closed') > 1); assert.ok(spreadOf(e, figure, 'Open') < 1e-6);
+  // The mouth turns with the head: tilt the head and the choice moves with it.
+  const before = meshOf(e).positions.slice();
+  e.select(e.selectedUid, e.figure.segments.findIndex(s => s.name === 'Head'));
+  const pose = e.getSpatialPose(); e.setSpatialPose({bend: pose.bend + .6, turn: pose.turn + .5, pitch: pose.pitch});
+  const group = figure._styk.spatialMesh.groups.find(g => g.name === 'Closed'), v = figure._styk.spatialMesh.indices[group.start * 3];
+  assert.ok(Math.hypot(meshOf(e).positions[v * 2] - before[v * 2], meshOf(e).positions[v * 2 + 1] - before[v * 2 + 1]) > 1, 'the mouth follows the head');
+});
+
+test('between two keys a swap changes at the next key, never growing or shrinking', () => {
+  const {model} = mouthModel(), e = new Editor({demo: false}); e.load({...emptyDocument()});
+  e.importFigure(modelDocument(model).document, {position: {x: 400, y: 400}});
+  const g = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Mouth'), open = g.choices.find(c => c.label === 'Open');
+  e.duplicateFrame(); e.setPoseChoice('Mouth', open.id);
+  const index = e.figure.segments.findIndex(s => s._stykPoseChoice?.label === 'Open'), uid = e.selectedUid, rest = e.figure.segments[index].length;
+  // Keys hold by default; with the key eased (linear or auto) everything else blends, the swap doesn't.
+  for (const interpolation of ['hold', 'linear', 'auto']) {
+    e.report.keyframes[0]._styk = {...e.report.keyframes[0]._styk, easing: {interpolation}};
+    for (const t of [.1, .5, .9]) {
+      const sampled = evaluatedNativeFrame(e.report, 0, t).objects.find(o => o.unique_id === uid);
+      assert.equal(sampled.lengths[index], 0, `still hidden at ${t} (${interpolation})`);
+    }
+  }
+  assert.equal(evaluatedNativeFrame(e.report, 1, 0).objects.find(o => o.unique_id === uid).lengths[index], rest);
+});
+
+test('updating a placed figure keeps each frame\'s choice and hides choices it didn\'t have', () => {
+  const {model, set} = mouthModel(), e = new Editor({demo: false}); e.load({...emptyDocument()});
+  e.importFigure(modelDocument(model).document, {position: {x: 400, y: 400}});
+  const typeId = e.figure.figure_type_id, g = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Mouth');
+  e.setPoseChoice('Mouth', g.choices.find(c => c.label === 'O').id);
+  // Add a Smile choice and update the figure.
+  const head = model.bones.find(b => b.name === 'Head');
+  const smile = addPart(model, {name: 'Smile', mesh: uvSphere(.06, 8, 4, 5), position: head.tail.map((v, k) => k === 2 ? v + .2 : v)}); smile.folder = set.id;
+  const previous = e.report.figure_types.find(f => f.figure_type_id === typeId), {figure, hiddenChoices} = modelToFigure(model, {figureTypeId: typeId, previous});
+  e.replaceFigureDefinition(typeId, figure, {newLengths: new Map([...hiddenChoices].map(id => [id, 0]))});
+  const after = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Mouth');
+  assert.deepEqual(after.choices.map(c => c.label), ['Closed', 'Open', 'O', 'Smile']);
+  assert.equal(after.choices.find(c => c.id === after.value)?.label, 'O', 'the frame keeps its O; Smile starts hidden');
+});

@@ -7,7 +7,7 @@ import {t as interfaceText} from './localization.mjs';
 
 import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGizmo,spatialControlMode} from './spatial-controls.mjs';
 import {rigDetailsShown,rigFaceShownUids} from './rig-control-details.mjs';
-import {drawFaceBadges,pickFaceBadge,toggleFaceControls} from './face-badges.mjs';
+import {drawFaceBadges,pickFaceBadge,toggleFaceControls,faceMenuItems} from './face-badges.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
@@ -2572,7 +2572,12 @@ overlay.addEventListener(
     if(e.button===0&&state.handles&&!builderMode?.active&&['select','pose'].includes(state.tool)){
       // The face badge on a head opens or closes that figure's face controls.
       const badge=pickFaceBadge(editor,screenPoint(p),screenPoint,{hidden:effectiveHidden()});
-      if(badge){releaseCanvasPointer();toggleFaceControls(editor,badge.uid);handleCache=null;requestRender();return;}
+      if(badge){releaseCanvasPointer();
+        // With swap choices (mouths, eyes) the badge opens their menu; with face joints only it shows or hides them.
+        if(badge.choices){const box=viewport.getBoundingClientRect(),sx=box.width/(viewport.clientWidth||box.width),sy=box.height/(viewport.clientHeight||box.height);
+          const items=faceMenuItems(editor,badge.uid,{text:interfaceText,changed:()=>{handleCache=null;requestRender();}});
+          handleCache=null;requestRender();showCommandMenu(items,{left:box.left+badge.x*sx,bottom:box.top+(badge.y+10)*sy,invoker:viewport},{label:interfaceText("spatialControls.faceMenu"),labelKey:"spatialControls.faceMenu"});return;}
+        toggleFaceControls(editor,badge.uid);handleCache=null;requestRender();return;}
       const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
       if(spatial){if(!editor.beginDrag('Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
     }
@@ -4642,11 +4647,12 @@ async function openBlenderLite(editing = false) {
     onDone: (model) => {
       if (editing) {
         const previous = editor.report.figure_types.find((f) => f.figure_type_id === typeId);
-        const {figure} = modelToFigure(model, {figureTypeId: typeId, previous});
+        const {figure, hiddenChoices} = modelToFigure(model, {figureTypeId: typeId, previous});
         // A moved origin moves the root handle, never the model: each placed figure is shifted back.
         const from = previous?._styk?.modelSource?.origin ?? [0, 0, 0], to = model.origin ?? [0, 0, 0];
         const moveRoot = from.some((v, i) => Math.abs(v - to[i]) > 1e-9) ? (obj, oldFigure) => originShift(oldFigure, obj, from, to, {spatialQuaternion, quatRotate, animationRotation}) : null;
-        editor.replaceFigureDefinition(typeId, figure, {label: "Edit 3D model", moveRoot});
+        // Swap choices new to a placed figure start hidden, as in a newly added one.
+        editor.replaceFigureDefinition(typeId, figure, {label: "Edit 3D model", moveRoot, newLengths: new Map([...hiddenChoices].map(id => [id, 0]))});
         notify(interfaceText("modeler.modelUpdated", {name: figure.name}), "modeler.modelUpdated", {name: figure.name});
       } else {
         const {document: incoming, stats} = modelDocument(model);

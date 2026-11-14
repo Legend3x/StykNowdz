@@ -175,6 +175,8 @@ export function getPivotHandles(geometry, {
       const id = segmentId(segment), joined = Boolean(joinedVertices?.has(id));
       if (rigControlIsDetail(segment.seg) && !showDetailed && !builder && !attaching &&
           !joined && !(uid === selectedUid && index === selectedJoint)) continue;
+      // A swap choice's bone has no handle: the face badge picks the choice.
+      if (segment.seg?._stykPoseChoice && !builder && !attaching && !joined) continue;
       // Face controls stay hidden until the figure's face badge opens them.
       if (rigControlIsFace(segment.seg) && !faceShown && !builder && !attaching &&
           !joined && !(uid === selectedUid && index === selectedJoint)) continue;

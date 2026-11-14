@@ -1,6 +1,9 @@
 export default Object.freeze({
   "spatialControls.detailedControls": "Detailed controls",
   "spatialControls.faceControls": "Face controls",
+  "spatialControls.faceMenu": "Face",
+  "spatialControls.showFaceJoints": "Show face joints",
+  "spatialControls.hideFaceJoints": "Hide face joints",
   "spatialControls.faceControlsHint": "Show the face joints (jaw, lips, brows, eyelids, eyes). The face badge on the head does the same.",
   "spatialControls.ikDisabledFoot": "IK off: dragging the foot swings only the shin.",
   "spatialControls.ikDisabledHand": "IK off: dragging the hand swings only the forearm.",

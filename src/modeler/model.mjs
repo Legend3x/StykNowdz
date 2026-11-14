@@ -88,11 +88,16 @@ export function readModel(value) {
   // folder, folders inside folders; a locked part can't be picked in the view.
   const folders = Array.isArray(model.folders) ? model.folders.filter(f => f && Number.isInteger(f.id) && f.id > 0) : [];
   const folderIds = new Set(folders.map(f => f.id));
-  model.folders = folders.map(f => ({id: f.id, name: String(f.name ?? 'Folder').slice(0, 120) || 'Folder', ...(folderIds.has(f.parent) && f.parent !== f.id ? {parent: f.parent} : {}), ...(f.open === true ? {open: true} : {})}));
+  // A swap set (layers.mjs) is a folder whose direct parts and folders are choices, one shown at a time.
+  model.folders = folders.map(f => ({id: f.id, name: String(f.name ?? 'Folder').slice(0, 120) || 'Folder', ...(folderIds.has(f.parent) && f.parent !== f.id ? {parent: f.parent} : {}), ...(f.open === true ? {open: true} : {}),
+    ...(f.swap === true ? {swap: true, ...(typeof f.shown === 'string' && /^[pf]\d+$/.test(f.shown) ? {shown: f.shown} : {}), ...(Number.isInteger(f.bone) && f.bone > 0 ? {bone: f.bone} : {})} : {})}));
   // No folder inside itself, however deep.
   const byFolder = new Map(model.folders.map(f => [f.id, f]));
   for (const f of model.folders) { const seen = new Set([f.id]); let up = byFolder.get(f.parent); while (up) { if (seen.has(up.id)) { delete f.parent; break; } seen.add(up.id); up = byFolder.get(up.parent); } }
   if (!model.folders.length) delete model.folders;
+  // A swap set inside another swap set has no meaning on the stage: the inner one becomes a plain folder.
+  for (const f of model.folders ?? []) if (f.swap) { let up = byFolder.get(f.parent), guard = 0; while (up && guard++ < 256) { if (up.swap) { delete f.swap; delete f.shown; delete f.bone; break; } up = byFolder.get(up.parent); } }
+  for (const f of model.folders ?? []) if (f.bone && !model.bones.some(b => b.id === f.bone)) delete f.bone;
   for (const part of model.parts) {
     if (!folderIds.has(part.folder)) delete part.folder;
     if (part.locked !== true) delete part.locked;

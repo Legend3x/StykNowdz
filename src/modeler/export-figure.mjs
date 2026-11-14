@@ -10,8 +10,8 @@ import {assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings} from './toon.mjs';
 import {toonLight, toonThreshold, inkColor} from '../toon-shading.mjs';
 import {evaluateModel, readModel} from './model.mjs';
-import {boneOrder, partWeights, addBone} from './armature.mjs';
-import {originOf} from './layers.mjs';
+import {boneOrder, partWeights, addBone, headBone} from './armature.mjs';
+import {originOf, swapSets, swapChoiceOf} from './layers.mjs';
 import {MESH_LIMITS} from '../spatial-mesh.mjs';
 import {createObject, createFrame} from '../demo.mjs';
 
@@ -80,6 +80,31 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
         ...(bone.face ? {_stykControl: {level: 'face'}} : {})});
     segments.push(s); boneSegment.set(bone.id, s);
   }
+  // Swap sets: each choice hangs from the set's bone (the head unless another was
+  // chosen) on a hidden choice bone; the stage shows one choice of each set at a
+  // time by giving the others no length (rig-pose-choices.mjs, `_stykPoseChoice`).
+  const choiceSegment = new Map(), hiddenChoices = new Set(), groupNames = new Set();
+  const unique = (name, taken) => { let out = name, n = 2; while (taken.has(out)) out = `${name} ${n++}`; taken.add(out); return out; };
+  const evaluatedOf = new Map(parts.map(x => [x.part, x.mesh]));
+  for (const {set, choices, shown} of swapSets(model)) {
+    const attached = boneSegment.get(set.bone) ?? boneSegment.get(headBone(model)?.id) ?? boneSegment.get(bones[0].id);
+    const group = unique(String(set.name).slice(0, 72) || 'Face', groupNames), labels = new Set();
+    for (const choice of choices) {
+      const meshes = choice.parts.map(q => evaluatedOf.get(q)).filter(Boolean), points = meshes.flatMap(m => m.verts);
+      if (!points.length) continue;
+      const lo = [0, 1, 2].map(k => Math.min(...points.map(q => q[k]))), hi = [0, 1, 2].map(k => Math.max(...points.map(q => q[k])));
+      const centre = lo.map((v, k) => (v + hi[k]) / 2), size = Math.max(.02, ...hi.map((v, k) => v - lo[k]));
+      const label = unique(String(choice.label).slice(0, 72) || 'Choice', labels), name = `${group} › ${label}`;
+      const origin = place(centre), tip = place([centre[0], centre[1] + size / 2, centre[2]]), length = Math.hypot(...[0, 1, 2].map(k => tip[k] - origin[k]));
+      const turn = push(0, 0, 0, `${name} turn`), tilt = push(0, 0, 0, `${name} tilt`);
+      const seg = segment(idFor(name), attached.segment_id, length, -Math.PI / 2, name, {aux_code: 0, flags: 0, is_static: false,
+        _stykRig: {spatial: {parent: attached.segment_id, origin, tip, turn: turn.segment_id, pitch: tilt.segment_id}},
+        _stykPoseChoice: {group, label, shown: length, hidden: 0}});
+      segments.push(seg);
+      choiceSegment.set(choice.key, seg);
+      if (choice.key !== shown) hiddenChoices.add(seg.segment_id);
+    }
+  }
   // The mesh: every part's triangles, in part order, skinned to the bones.
   const positions = [], meshBones = [], weights = [], indices = [], materials = [], groups = [], normals = [];
   let customNormals = false;
@@ -94,12 +119,14 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   // One surface (the part, or its outline shell) skinned like the part. Model faces
   // wind counter-clockwise seen from outside; the engine shows triangles that
   // look clockwise on screen (positive area with Y down), so each is reversed.
-  const addSurface = (surface, skin, name, noShadow) => {
+  const addSurface = (surface, skin, name, noShadow, direct = null) => {
     const base = positions.length / 3, start = indices.length / 3;
     for (const p of surface.verts) positions.push(...place(p).map(v => Math.fround(v)));
     // Custom shading normals, in figure space (Y flips as positions do); zero = smooth.
     surface.verts.forEach((_, i) => { const n = surface.vdata?.normal?.[i]; if (n) customNormals = true; normals.push(...(n ? [n[0], -n[1], n[2]].map(v => Math.fround(v)) : [0, 0, 0])); });
-    for (let k = 0; k < skin.bones.length; k++) { const id = skin.bones[k]; meshBones.push(id ? boneSegment.get(id).segment_id : 0); weights.push(skin.weights[k]); }
+    // A swap choice's part rides its choice bone whole.
+    if (direct) for (let v = 0; v < surface.verts.length; v++) { meshBones.push(direct, 0, 0, 0); weights.push(1, 0, 0, 0); }
+    else for (let k = 0; k < skin.bones.length; k++) { const id = skin.bones[k]; meshBones.push(id ? boneSegment.get(id).segment_id : 0); weights.push(skin.weights[k]); }
     for (const [a, b, c, fi] of triangulate(surface)) { indices.push(base + a, base + c, base + b); materials.push(color(surface.faces[fi].c, surface.faces[fi].ink)); }
     const count = indices.length / 3 - start;
     if (count) { if (noShadow) flat.push(groups.length); groups.push({name: String(name).slice(0, 256), start, count}); }
@@ -107,11 +134,12 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   for (const {part, mesh} of parts) {
     // The final, modified surface must be valid too (mirror and smooth included).
     assertValidMesh(mesh, `Adding part “${part.name}”`, {paletteSize: model.palette.length});
-    const skin = partWeights(model, mesh, part), name = part.name || 'Part';
-    addSurface(mesh, skin, name, part.shadows === false);
+    const choice = swapChoiceOf(model, part), direct = choice ? choiceSegment.get(choice.key)?.segment_id ?? null : null;
+    const skin = direct ? null : partWeights(model, mesh, part), name = part.name || 'Part';
+    addSurface(mesh, skin, name, part.shadows === false, direct);
     // Its ink outline: an inverted hull sharing the part's skin, never shaded.
     const outline = partOutline(part, model.palette.length);
-    if (outline) addSurface(outlineHull(mesh, outline.thickness, outline.color, outline), skin, `${name} outline`, true);
+    if (outline) addSurface(outlineHull(mesh, outline.thickness, outline.color, outline), skin, `${name} outline`, true, direct);
   }
   if (positions.length / 3 > MESH_LIMITS.vertices) throw problem(`The model has ${positions.length / 3} vertices after smoothing; the limit is ${MESH_LIMITS.vertices}. Lower Smooth on some parts, or use a Decimate modifier in Blender on detailed ones.`);
   if (indices.length / 3 > MESH_LIMITS.triangles) throw problem(`The model has ${indices.length / 3} triangles after smoothing; the limit is ${MESH_LIMITS.triangles}. Lower Smooth on some parts, or use a Decimate modifier in Blender on detailed ones.`);
@@ -120,13 +148,22 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     _styk: {colorMode: 'segments', spatialMesh: {positions, bones: meshBones, weights, indices, colors, materials, basis: [0, surfaceX.segment_id, surfaceY.segment_id], groups,
       ...(toon.shadows ? {toon: {light: [...toonLight(toon.turn, toon.height)], threshold: toonThreshold(toon.size), strength: toon.strength, flat}} : {}),
       ...(toon.shadows && customNormals ? {normals} : {})}, modelSource: source}};
-  return {figure, stats: {vertices: positions.length / 3, triangles: indices.length / 3, bones: bones.length, parts: parts.length}};
+  return {figure, hiddenChoices, stats: {vertices: positions.length / 3, triangles: indices.length / 3, bones: bones.length, parts: parts.length}};
+}
+
+/** A placed figure's lengths with the swap choices that aren't shown first given no length. */
+export function withChoicesHidden(figure, object, hidden) {
+  if (!hidden.size) return object;
+  object.lengths = object.len_flag ? object.lengths.slice() : figure.segments.map(s => s.length);
+  figure.segments.forEach((s, i) => { if (hidden.has(s.segment_id)) object.lengths[i] = 0; });
+  object.len_flag = 1;
+  return object;
 }
 
 /** A one-figure document for Editor.importFigure. */
 export function modelDocument(model) {
-  const {figure, stats} = modelToFigure(model);
-  const object = createObject(figure, 1, 0, 0);
+  const {figure, stats, hiddenChoices} = modelToFigure(model);
+  const object = withChoicesHidden(figure, createObject(figure, 1, 0, 0), hiddenChoices);
   return {document: {figure_types: [figure], keyframes: [createFrame([object])]}, stats};
 }
 

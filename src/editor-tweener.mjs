@@ -134,8 +134,8 @@ export const editorTweenerMethods = {
           for (const [flag,field,base] of [['len_flag','lengths','length'],['bend_flag','bends','bend_rad']]) {
             if (value[flag] || start[flag]) {
               object[flag] = 1;
-              object[field] = figure.segments.map((segment,i) => 2 * (start[flag] ? start[field][i] : segment[base] ?? 0) -
-                (value[flag] ? value[field][i] : segment[base] ?? 0));
+              object[field] = figure.segments.map((segment,i) => field === 'lengths' && segment._stykPoseChoice ? (start[flag] ? start[field][i] : segment[base] ?? 0) :
+                2 * (start[flag] ? start[field][i] : segment[base] ?? 0) - (value[flag] ? value[field][i] : segment[base] ?? 0));
             }
           }
           if (object._stykAnimationOrigin && start._stykAnimationOrigin) {
