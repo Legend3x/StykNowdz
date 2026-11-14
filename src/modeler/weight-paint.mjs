@@ -59,6 +59,31 @@ export function withWeight(pairs, bone, w, fallback = () => []) {
   return kept.map(([b, x]) => [b, Math.round(x / total * 1e5) / 1e5]);
 }
 
+/** The bones that ride on `bone` (below it in the skeleton): they move whenever it turns. */
+export function ridersOf(model, bone) {
+  const out = new Set([bone]);
+  for (let grew = true; grew;) { grew = false; for (const b of model.bones) if (out.has(b.parent) && !out.has(b.id)) { out.add(b.id); grew = true; } }
+  out.delete(bone);
+  return out;
+}
+
+/** A point's weights with `amount` taken from `bone` and given to bones that stay
+ * still when it turns: never to a bone below it (a shoulder's upper arm), which
+ * would carry the point along anyway. Bones below it keep what they had. Null
+ * when no such bone can take it. */
+function lowered(model, pairs, bone, amount, fallback) {
+  const riders = ridersOf(model, bone), still = ([b, x]) => b !== bone && !riders.has(b) && x > 0;
+  let takers = (pairs ?? []).filter(still);
+  if (!takers.length) takers = fallback().filter(still);
+  if (!takers.length) { const parent = model.bones.find(b => b.id === bone)?.parent; if (model.bones.some(b => b.id === parent)) takers = [[parent, 1]]; }
+  if (!takers.length) return null;
+  const total = takers.reduce((t, [, x]) => t + x, 0), out = new Map((pairs ?? []).filter(([, x]) => x > 0));
+  out.set(bone, Math.max(0, (out.get(bone) ?? 0) - amount));
+  for (const [b, x] of takers) out.set(b, (out.get(b) ?? 0) + amount * x / total);
+  const kept = [...out].filter(([, x]) => x > 1e-4).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = kept.reduce((t, [, x]) => t + x, 0);
+  return kept.map(([b, x]) => [b, Math.round(x / sum * 1e5) / 1e5]);
+}
+
 /** Paint one point: `amount` (0–1) of the way towards all (add), none (remove),
  * its neighbours' average (smooth) or `value` (set). `bone` defaults to the
  * stroke's bone (a Mirror copy paints the other side's bone). True if it changed. */
@@ -76,7 +101,7 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
   const next = now + (target - now) * clamp01(amount);
   if (Math.abs(next - now) < 1e-4) return false;
   const fallback = () => stroke.fallback(v, bone);
-  skin[v] = withWeight(pairs, bone, next, fallback);
+  skin[v] = next < now ? lowered(stroke.model, pairs, bone, now - next, fallback) ?? withWeight(pairs, bone, next, fallback) : withWeight(pairs, bone, next, fallback);
   part.mesh.vdata ??= {};
   part.mesh.vdata.skin ??= {};
   part.mesh.vdata.skin[v] = skin[v].map(pair => pair.slice());

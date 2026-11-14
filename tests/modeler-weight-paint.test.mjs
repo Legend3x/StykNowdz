@@ -81,3 +81,27 @@ test('smooth and set brushes', async () => {
   assert.ok(Math.abs((stroke.skin[v].find(([b]) => b === shoulder.id)?.[1] ?? 0) - mean) < 1e-3);
   assert.throws(() => paintPoint(stroke, v, 'blur', 1), /Unknown paint mode/);
 });
+
+test('erasing a shoulder gives the points to bones that stay still, not to the upper arm it carries', async () => {
+  const {poseFrames, posedMesh, turnBone, axisAngle} = await import('../src/modeler/pose.mjs');
+  const {ridersOf} = await import('../src/modeler/weight-paint.mjs');
+  const model = await juniper(), shoulder = named(model, 'bones', 'Shoulder.L'), upper = named(model, 'bones', 'UpperArm.L');
+  assert.ok(ridersOf(model, shoulder.id).has(upper.id));
+  assert.ok(!ridersOf(model, shoulder.id).has(shoulder.parent));
+  for (const part of model.parts) {
+    const before = partWeights(model, evaluatePart(part, {smooth: false}), part);
+    const pts = part.mesh.verts.map((_, v) => v).filter(v => weightAt(before, v, shoulder.id) > .3 && weightAt(before, v, upper.id) < 1e-3);
+    if (!pts.length) continue;
+    const stroke = startStroke(model, part, shoulder.id);
+    for (const v of pts) paintPoint(stroke, v, 'remove', 1);
+    for (const v of pts) {
+      assert.equal(stroke.skin[v].find(([b]) => b === shoulder.id), undefined);
+      assert.equal(stroke.skin[v].find(([b]) => b === upper.id), undefined, 'the upper arm would carry the point along with the shoulder');
+    }
+    // Turned in Pose mode, the shoulder no longer moves the erased points (the part's own points; a
+    // Smooth modifier blends the brush's edge, as tested above).
+    const mesh = evaluatePart(part, {smooth: false}), skin = partWeights(model, mesh, part, {cage: true});
+    const bent = posedMesh(mesh, skin, poseFrames(model, turnBone(model, new Map(), shoulder.id, axisAngle([0, 0, 1], .6))));
+    for (const v of pts) assert.ok(Math.hypot(...[0, 1, 2].map(k => bent.verts[v][k] - mesh.verts[v][k])) < 1e-9);
+  }
+});

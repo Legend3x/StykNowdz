@@ -597,7 +597,12 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   `part.mesh.vdata.skin` (where an imported rig keeps its weights, saved with
   the model) and always adds up to 1 (Auto Normalize): weight taken from the
   bone goes to the bones already there, or where it had the point alone, to the
-  bones that would have it without it. Painted points no longer follow
+  bones that would have it without it. Weight taken away (Remove, or Set and
+  Smooth lowering it) goes only to bones that don't ride on the painted bone
+  (`ridersOf`: everything below it), else to its parent, so an erased spot
+  really stops moving when the bone turns: erasing Shoulder.L from the chest
+  gives it to the Chest, not to UpperArm.L, which the shoulder carries along.
+  Bones below it keep what they had. Painted points no longer follow
   automatic changes (Strength, Reach, moving a bone) until **Back to
   automatic** forgets them.
 - `partWeights` (armature.mjs): a part with carried weights gets complete
