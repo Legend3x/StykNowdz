@@ -144,7 +144,7 @@ test('splitting a traced line opens a ring, or breaks a line in two, and stays v
 });
 
 // ---------- Swap sets on the stage ----------
-import {makeSwapSet, swapSets, hiddenBySwap, showChoice, swapSetProblem, plainFolder, choiceKey} from '../src/modeler/layers.mjs';
+import {makeSwapSet, swapSets, hiddenBySwap, showChoice, swapSetProblem, plainFolder, choiceKey, swapChoiceOf} from '../src/modeler/layers.mjs';
 import {uvSphere} from '../src/modeler/primitives.mjs';
 import {evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
 import {poseChoiceGroups} from '../src/rig-pose-choices.mjs';
@@ -235,4 +235,105 @@ test('updating a placed figure keeps each frame\'s choice and hides choices it d
   const after = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Mouth');
   assert.deepEqual(after.choices.map(c => c.label), ['Closed', 'Open', 'O', 'Smile']);
   assert.equal(after.choices.find(c => c.id === after.value)?.label, 'O', 'the frame keeps its O; Smile starts hidden');
+});
+
+// ---------- Face sets ----------
+import {starterFace, stickToFace, facePart, faceFrame} from '../src/modeler/face-sets.mjs';
+
+test('starter face: mouths and eyes on the face, valid, in swap sets on the head, and saved', () => {
+  const model = characterModel(), out = starterFace(model);
+  assert.deepEqual(Object.keys(out), ['mouth', 'eyes']);
+  const sets = Object.fromEntries(swapSets(model).map(s => [s.set.name, s.choices.map(c => c.label)]));
+  assert.deepEqual(sets, {Mouth: ['Closed', 'Open', 'A', 'O', 'Smile'], Eyes: ['Open', 'Closed', 'Happy']});
+  const head = model.bones.find(b => b.name === 'Head'), f = faceFrame(model), face = facePart(model);
+  assert.equal(face?.name, 'Head');
+  for (const {set, choices} of swapSets(model)) {
+    assert.equal(set.bone, head.id, `${set.name} rides the head`);
+    for (const c of choices) for (const p of c.parts) {
+      const mesh = evaluatePart(p);
+      assert.ok(validateMesh(mesh, {print: false}).ok, `${p.name} is a valid mesh`);
+      // On the face: inside the head's height, in front of its middle.
+      for (const v of mesh.verts) { assert.ok(v[1] > f.y0 && v[1] < f.y0 + f.H, `${p.name} within the face's height`); assert.ok(v[2] > 0, `${p.name} on the front`); }
+    }
+  }
+  // Mouths below eyes.
+  const mid = name => { const p = model.parts.find(q => q.name === name), v = evaluatePart(p).verts; return v.reduce((t, q) => t + q[1], 0) / v.length; };
+  assert.ok(mid('Smile') < mid('Happy'));
+  // Saved and opened again (the model rides in the figure), the sets come back as they were.
+  const {figure} = modelToFigure(model), again = readModel(JSON.parse(JSON.stringify(figure._styk.modelSource)));
+  assert.deepEqual(Object.fromEntries(swapSets(again).map(s => [s.set.name, s.choices.map(c => c.label)])), sets);
+  // A second starter face makes its own folders beside the first.
+  starterFace(model);
+  assert.deepEqual(swapSets(model).map(s => s.set.name), ['Mouth', 'Eyes', 'Mouth 2', 'Eyes 2']);
+});
+
+test('adopting a model\'s own eyes, mouth and brows keeps them as the first choice, without their face bones', async () => {
+  const j = readModel((await import('../src/modeler/examples/juniper.mjs')).default);
+  const eye = j.parts.find(p => p.name === 'Open' && swapChoiceOf(j, p)?.set.name === 'Eyes');
+  assert.ok(eye?.mirror, 'her own mirrored eye is the Open choice');
+  assert.ok(eye.mesh.faces.some(f => f.c !== eye.mesh.faces[0].c), 'with its own colours');
+  // Angry turns the inner ends of the brows down, Worried up (as seen from the front, both sides).
+  const brow = name => { const p = j.parts.find(q => q.name === name && swapChoiceOf(j, q)?.set.name === 'Brows'), v = evaluatePart(p).verts.filter(q => q[0] > 0);
+    const xm = v.reduce((t, q) => t + q[0], 0) / v.length, mean = side => { const w = v.filter(q => (q[0] - xm) * side > 0); return w.reduce((t, q) => t + q[1], 0) / w.length; };
+    return mean(-1) - mean(1); };
+  assert.ok(brow('Angry') < brow('Normal') - .005, 'angry: inner end lower');
+  assert.ok(brow('Worried') > brow('Normal') + .005, 'worried: inner end higher');
+});
+
+test('Stick to face presses a part onto the face from the view, just in front of the skin', () => {
+  const model = characterModel(), f = faceFrame(model), face = facePart(model);
+  const disc = addPart(model, {name: 'Freckles', mesh: uvSphere(.02, 6, 3, 5), position: [f.xc + .05, f.y0 + f.H * .35, f.zFront + .3]});
+  const ray = p => ({origin: [p[0], p[1], p[2] + 10], direction: [0, 0, -1]});
+  const before = evaluatePart(disc).verts.map(v => v[2]);
+  assert.ok(stickToFace(model, [disc], ray, .004) > 0);
+  const after = evaluatePart(disc).verts;
+  assert.ok(Math.max(...after.map(v => v[2])) < Math.min(...before), 'it moved back onto the face');
+  // Every point sits just in front of the face part (about the lift away).
+  const surface = evaluatePart(face);
+  const nearest = p => Math.min(...surface.verts.map(q => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2])));
+  assert.ok(after.every(p => nearest(p) < f.H * .15), 'on the face');
+  assert.ok(validateMesh(disc.mesh, {print: false}).ok);
+  // Nothing behind it: points stay put.
+  const off = addPart(model, {name: 'Off', mesh: uvSphere(.02, 6, 3, 5), position: [5, 5, 5]});
+  assert.equal(stickToFace(model, [off], ray, .004), 0);
+});
+
+test('a project with face sets saves and opens again with each frame\'s choices', () => {
+  const {model} = mouthModel(), e = new Editor({demo: false}); e.load({...emptyDocument()});
+  e.importFigure(modelDocument(model).document, {position: {x: 400, y: 400}});
+  const g = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Mouth');
+  e.duplicateFrame(); e.setPoseChoice('Mouth', g.choices.find(c => c.label === 'O').id);
+  const saved = JSON.parse(JSON.stringify(e.report)), again = new Editor({demo: false}); again.load(saved);
+  const label = index => { again.selectFrame(index); again.select(again.frame.objects.find(o => o.figure_type_id === e.figure.figure_type_id).unique_id, -1); const x = poseChoiceGroups(again.figure, again.object).find(y => y.name === 'Mouth'); return x.choices.find(c => c.id === x.value)?.label; };
+  assert.equal(label(0), 'Closed'); assert.equal(label(1), 'O');
+});
+
+test('renaming a choice or its set keeps the choice in every frame', () => {
+  const {model, set} = mouthModel(), e = new Editor({demo: false}); e.load({...emptyDocument()});
+  e.importFigure(modelDocument(model).document, {position: {x: 400, y: 400}});
+  const typeId = e.figure.figure_type_id, g = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Mouth');
+  e.setPoseChoice('Mouth', g.choices.find(c => c.label === 'Open').id);
+  model.parts.find(p => p.folder === set.id && p.name === 'Open').name = 'Wide open'; set.name = 'Lips';
+  const previous = e.report.figure_types.find(f => f.figure_type_id === typeId), {figure, hiddenChoices} = modelToFigure(model, {figureTypeId: typeId, previous});
+  e.replaceFigureDefinition(typeId, figure, {newLengths: new Map([...hiddenChoices].map(id => [id, 0]))});
+  const after = poseChoiceGroups(e.figure, e.object).find(x => x.name === 'Lips');
+  assert.equal(after.choices.find(c => c.id === after.value)?.label, 'Wide open');
+});
+
+test('a folder inside a swap set is one choice (both its parts swap together); a deleted shown choice falls back to the first', () => {
+  const {model, set} = mouthModel(), head = model.bones.find(b => b.name === 'Head');
+  const pair = addFolder(model, {name: 'Fangs', parent: set.id});
+  for (const x of [-.03, .03]) { const p = addPart(model, {name: 'Fang', mesh: uvSphere(.01, 6, 3, 8), position: [head.head[0] + x, head.head[1], head.head[2] + .2]}); p.folder = pair.id; }
+  assert.deepEqual(swapSets(model)[0].choices.map(c => c.label), ['Closed', 'Open', 'O', 'Fangs']);
+  showChoice(model, choiceKey(pair));
+  const {figure, hiddenChoices} = modelToFigure(model), bones = figure.segments.filter(s => s._stykPoseChoice);
+  assert.equal(bones.length, 4); assert.equal(hiddenChoices.size, 3);
+  const fangs = bones.find(s => s._stykPoseChoice.label === 'Fangs');
+  assert.ok(!hiddenChoices.has(fangs.segment_id), 'the folder choice is the one shown');
+  const mesh = figure._styk.spatialMesh, groups = mesh.groups.filter(g => g.name === 'Fang');
+  assert.equal(groups.length, 2);
+  for (const g of groups) { const v = mesh.indices[g.start * 3]; assert.equal(mesh.bones[v * 4], fangs.segment_id); assert.equal(mesh.weights[v * 4], 1); }
+  // Delete the shown choice: the set shows its first again.
+  model.parts = model.parts.filter(p => p.folder !== pair.id); dropEmptyFolders(model);
+  assert.equal(swapSets(model)[0].shown, swapSets(model)[0].choices[0].key);
 });

@@ -14,6 +14,10 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - 3D Nowdz bones have Strength and Reach sliders, and you can paint exactly what each bone moves with Add, Remove, Smooth and Set brushes, so a shoulder no longer tugs the chest or back. Find them in Bones mode with a bone selected.
 - 3D Nowdz has Pose mode: in Bones mode, press Pose and drag a bone to see the model bend with it before adding it to an animation. You can paint weights while it's bent, and Stop posing puts every bone back.
 - 3D Nowdz weight painting can paint only on the parts you highlight (click a part while painting), and Mirror painting paints both sides at once.
+- 3D Nowdz faces are made of swap sets: model several mouths, eyes or brows, put them in a folder and choose Make swap set, then pick which one shows in each frame from the face badge on the stage.
+- 3D Nowdz Starter face adds ready-made mouths (Closed, Open, A, O, Smile) and eyes (Open, Closed, Happy) shaped to your model's face, and Stick to face presses your own onto it.
+- 3D Nowdz Second view shows the model from another side in a corner while you work, so you can place things on a face accurately.
+- Juniper now has swappable eyes, mouths and brows, and Kettle a starter face.
 - 3D Nowdz has a Layers panel: imported models arrive as one folder, you can group parts into folders and lock them, and bones are listed under the bones they attach to.
 - 3D Nowdz bones start loose, so placing them doesn't move the model. Right-click a bone to group it to the model or merge it, which locks it with what it moves.
 - 3D Nowdz shows the figure's origin as an orange dot in Bones mode, with dashed lines to the bones that hang from it. Drag it to choose where the figure stands; figures already on the stage stay where they are.
@@ -43,6 +47,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 - Fixed movieclips made while another layer had figures joining their figures to the wrong part (or to itself), which could stop the project from opening with “Figures contain a cyclic join.” Such projects now open with their movieclips repaired.
 - Fixed the 3D Nowdz knife refusing to cut across a pushed-in panel or step.
+- Fixed parts of 3D figures that switch with a named pose, such as a prop's alternate parts, growing or shrinking between eased keys instead of switching.
 - Fixed 3D Nowdz weight painting where erasing a bone's paint didn't stop that spot from moving: the erased area went to the bone below it (erasing a shoulder gave the chest to the upper arm, which the shoulder carries along). Erased weight now goes to bones that stay still, such as the chest.
 - Fixed 3D Nowdz bones pulling the wrong part of an imported model, such as both legs following one shin or a hand following a leg, when the model's pieces were joined into one part.
 - Fixed 3D Nowdz automatic weights locking a leg made in one piece to the thigh so it couldn't bend at the knee, and hair or quills at the back of the head following the chest or an arm.

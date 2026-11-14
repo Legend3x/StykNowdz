@@ -440,14 +440,17 @@ a person uses it, and are kept as model files in `src/modeler/examples/`
   moves and scales; an ahoge bent with typed rotations; a skirt from a
   cylinder with its caps deleted, the hem flared and every other point pushed
   out for pleats, a loop cut and Solidify; collar and bow; boots; toon
-  shadows, outlines and face bones.
+  shadows and outlines; a face of swap sets (Face sets, below): Eyes (her own
+  eyes as Open, Closed, Happy), Mouth (her own as Closed, Open, A, O, Smile)
+  and Brows (her own as Normal, Angry, Worried), from `starterFace` with
+  `adopt` and `brows`.
 - **Kettle**, a robot from primitives in an A pose: body, head and feet
   bevelled (Ctrl+B, exact width and segments in the panel); a chest panel and
   visor inset and pushed in (E then Z typed); a belt line cut with the knife
   across the recessed panel; arms rotated with R Z 40 typed; loop-cut
   forearms; subdivided hands with extruded fingers; edges creased (Shift+E)
   under Smooth; toon shadows, outlines and a Humanoid skeleton fitted to the
-  model.
+  model; a starter face (Eyes and Mouth swap sets) on its visor.
 
 Selecting faces is selecting their points, so in Faces mode picking both caps
 of a cylinder picks every point and with them the sides: delete one cap at a
@@ -740,7 +743,50 @@ bone's head in the rest frame; `poseFrames` composes parents first
 linear blend skinning with `partWeights`, and `turnBone` turns a bone by a
 rotation given in the scene's frame.
 
+### Face sets
+
+Expressions are made the 2D puppet way: replaceable mouths, eyes and brows, one
+shown at a time. A **swap set** is a folder in Layers whose direct parts (or
+folders) are its choices (`folder.swap`, `folder.shown`, `folder.bone`;
+src/modeler/layers.mjs). Right-click a folder › **Make swap set**; each choice
+row then has a round button, and the filled one is the one showing. Choices not
+shown are left out of the view and of picking, never out of the figure;
+selecting a choice shows it. A swap set can't sit inside another. Each set rides
+a bone, the head unless **Attach to** another was chosen.
+
+- **+ › Starter face** (src/modeler/face-sets.mjs, `starterFace`) adds a Mouth
+  set (Closed, Open, A, O, Smile) and an Eyes set (Open, Closed, Happy): flat
+  shapes made as rings around their middle and pressed onto the face from the
+  front (`shrinkwrapPoints` along -Z, a little in front of the skin) so they
+  follow its curve. The face is the part named Head or Face (not hair), at
+  anime heights: mouth 22%, eyes 45% of it. They have no outline and no toon
+  shadow. With `adopt` the model's own Eye, Mouth and Brow parts become the
+  first choices and the others are made where they are; `brows` adds Angry and
+  Worried brows turned about each brow's middle as seen from the front.
+- **Stick to face** (a choice's or set's menu) presses parts onto the face as
+  they are seen in the view, just in front of the skin (`stickToFace`).
+- **Look at the face** frames the face in Front view and opens the **Second
+  view**: a small read-only view in the stage corner from another side (Side,
+  Front, Back, Top, the other side; the view bar's Second view), drawn with
+  the same picture each time the main view is, with the active part's selected
+  points, so a feature's depth can be checked while placing it from the front.
+
+On the stage (export-figure.mjs) each choice is a hidden **choice bone** under
+the set's bone (`<set> › <choice>`, `_stykPoseChoice: {group, label, shown,
+hidden: 0}`), and its parts ride it whole. A choice with no length collapses
+(rig-spatial.mjs `choiceScale`), so a new figure starts with only each set's
+shown choice (`withChoicesHidden`), and updating a placed figure starts choices
+it didn't have hidden (`replaceFigureDefinition`'s `newLengths`) while every
+frame keeps its own. Choice bones have no handles. The **face badge** on the
+head opens a menu with each set's choices (the one showing checked) and, when
+the figure also has face bones, Show face joints; picking one changes that
+frame's pose in one undo step, and keys like any pose. Between eased keys a
+choice switches at the next key instead of growing or shrinking
+(geometry.mjs `evaluatedNativeFrame`; the tweener's Push likewise).
+
 ### Face rig
+
+Face bones still work alongside or instead of face sets.
 
 **Face bones** (Bones panel) adds a face rig on the head: Jaw, LipUpper,
 LipLower (under the jaw), LipCorner, Brow, Lid (upper eyelid) and Eye, .L and .R

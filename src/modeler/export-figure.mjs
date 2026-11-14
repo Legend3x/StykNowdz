@@ -94,7 +94,8 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
       if (!points.length) continue;
       const lo = [0, 1, 2].map(k => Math.min(...points.map(q => q[k]))), hi = [0, 1, 2].map(k => Math.max(...points.map(q => q[k])));
       const centre = lo.map((v, k) => (v + hi[k]) / 2), size = Math.max(.02, ...hi.map((v, k) => v - lo[k]));
-      const label = unique(String(choice.label).slice(0, 72) || 'Choice', labels), name = `${group} › ${label}`;
+      // Named by the set and the choice's part or folder, not their names, so renaming keeps every frame's choice.
+      const label = unique(String(choice.label).slice(0, 72) || 'Choice', labels), name = `Swap ${set.id} › ${choice.key}`;
       const origin = place(centre), tip = place([centre[0], centre[1] + size / 2, centre[2]]), length = Math.hypot(...[0, 1, 2].map(k => tip[k] - origin[k]));
       const turn = push(0, 0, 0, `${name} turn`), tilt = push(0, 0, 0, `${name} tilt`);
       const seg = segment(idFor(name), attached.segment_id, length, -Math.PI / 2, name, {aux_code: 0, flags: 0, is_static: false,

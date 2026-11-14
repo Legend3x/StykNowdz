@@ -40,7 +40,7 @@ try {
   await step('Start > Examples open a whole model, ask before replacing one, and undo', async () => {
     const result = await page.evaluate(async () => {
       button('Juniper').click(); await wait(500);
-      const juniper = [m.model.name, m.model.parts.length > 10, m.model.bones.length > 19, allValid(), Boolean(m.model.toon?.shadows)];
+      const juniper = [m.model.name, m.model.parts.length > 10, m.model.bones.length >= 19, allValid(), Boolean(m.model.toon?.shadows)];
       m.setMode('object'); m.state.parts = new Set(); m.refresh(); await wait(50);
       button('Kettle').click(); await wait(100);
       const ask = button('Replace'); ask?.click(); await wait(500);
@@ -139,7 +139,7 @@ try {
       // A folder from the + menu takes the selected parts (Ctrl+G does the same).
       m.state.parts = new Set(m.model.parts.slice(0, 2).map(q => q.id)); m.refresh();
       press('g', {ctrlKey: true}); await wait(100);
-      const folder = m.model.folders?.[0], inFolder = m.model.parts.filter(q => q.folder === folder?.id).length;
+      const folder = m.model.folders?.at(-1), inFolder = m.model.parts.filter(q => q.folder === folder?.id).length;
       // Humanoid skeleton from the Skeleton layer's menu: every new bone is loose.
       rightClick(document.querySelector('.modeler-layer-skeleton')); await wait(50); menuItem('Humanoid skeleton').click(); await wait(500);
       button('Replace')?.click(); await wait(500);
@@ -164,6 +164,52 @@ try {
     await page.mouse.move(...dot); await page.mouse.down(); await page.mouse.move(dot[0], dot[1] - 60, {steps: 6}); await page.mouse.up();
     const origin = await page.evaluate(async () => { await wait(100); const o = m.model.origin; press('z', {ctrlKey: true}); await wait(100); return {moved: o?.[1] > .1, undone: !m.model.origin}; });
     assert.deepEqual(origin, {moved: true, undone: true});
+  });
+  await step('Face sets: Juniper\'s swap sets in Layers, Look at the face, Starter face, then picked from the face badge on the stage', async () => {
+    const result = await page.evaluate(async () => {
+      if (m.state.posing) button('Stop posing')?.click();
+      m.setMode('object'); m.state.parts = new Set(); m.refresh(); await wait(50);
+      button('Juniper').click(); await wait(300); button('Replace')?.click(); await wait(500);
+      const sets = (m.model.folders ?? []).filter(f => f.swap).map(f => f.name);
+      const rightClick = row => row.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 160, clientY: 260}));
+      const item = text => [...document.querySelectorAll('.modeler-popover button')].find(x => x.textContent.trim() === text);
+      const mouth = m.model.folders.find(f => f.name === 'Mouth'), row = n => [...document.querySelectorAll('.modeler-layer-part')].find(r => r.querySelector('.modeler-name')?.textContent === n);
+      // Open the Mouth folder and pick Smile with its round button: only it shows in the view.
+      document.querySelector(`.modeler-layer-folder[data-folder="${mouth.id}"] .modeler-chevron`).click(); await wait(50);
+      row('Smile').querySelector('.modeler-choice').click(); await wait(100);
+      const smile = m.model.parts.find(p => p.folder === mouth.id && p.name === 'Smile'), shown = mouth.shown === 'p' + smile.id;
+      const drawn = new Set(m.state.polys.map(q => q.item.partId)), onlySmile = drawn.has(smile.id) && !m.model.parts.some(p => p.folder === mouth.id && p !== smile && drawn.has(p.id));
+      rightClick(document.querySelector(`.modeler-layer-folder[data-folder="${mouth.id}"]`)); await wait(50); item('Look at the face').click(); await wait(200);
+      const second = !document.querySelector('.modeler-second').hidden && m.state.second === 'side';
+      // Starter face is one undo step.
+      const before = m.model.parts.length;
+      document.querySelector('.modeler-layers-add').click(); await wait(50); item('Starter face').click(); await wait(300);
+      const added = m.model.parts.length - before; press('z', {ctrlKey: true}); await wait(150);
+      const undone = m.model.parts.length === before;
+      return {sets, shown, onlySmile, second, added, undone};
+    });
+    assert.deepEqual(result, {sets: ['Mouth', 'Eyes', 'Brows'], shown: true, onlySmile: true, second: true, added: 8, undone: true});
+    // To the stage: the face badge opens the sets; picking Happy changes the pose in one undo step.
+    await page.evaluate(async () => { button('Add to animation').click(); });
+    await page.waitForFunction(() => window.styk.editor.figure?.segments.some(s => s._stykPoseChoice));
+    const badge = await page.evaluate(async () => {
+      await wait(500);
+      const v = document.getElementById('viewport'), r = v.getBoundingClientRect(), b = window.styk.faceBadges()[0];
+      return b ? {x: r.left + b.x * r.width / v.clientWidth, y: r.top + b.y * r.height / v.clientHeight, choices: b.choices} : null;
+    });
+    assert.ok(badge?.choices, 'the face badge is there');
+    await page.mouse.click(badge.x, badge.y);
+    await page.waitForFunction(() => document.querySelector('[role=menu][aria-label="Face"] [role=menuitemradio]'));
+    const picked = await page.evaluate(async () => {
+      const {poseChoiceGroups} = await import('/src/rig-pose-choices.mjs'), e = window.styk.editor;
+      const value = name => { const g = poseChoiceGroups(e.figure, e.object).find(x => x.name === name); return g.choices.find(c => c.id === g.value)?.label; };
+      const radios = [...document.querySelectorAll('[role=menu][aria-label="Face"] [role=menuitemradio]')], items = radios.map(x => x.textContent.trim());
+      radios.find(x => x.textContent.trim() === 'Happy').click(); await wait(200);
+      const happy = value('Eyes'), mouth = value('Mouth');
+      e.undo(); await wait(100);
+      return {items: items.length, happy, mouth, undone: value('Eyes')};
+    });
+    assert.deepEqual(picked, {items: 11, happy: 'Happy', mouth: 'Smile', undone: 'Open'});
   });
   assert.deepEqual(errors, []);
 } finally {

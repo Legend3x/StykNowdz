@@ -7,7 +7,7 @@ import {t as interfaceText} from './localization.mjs';
 
 import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGizmo,spatialControlMode} from './spatial-controls.mjs';
 import {rigDetailsShown,rigFaceShownUids} from './rig-control-details.mjs';
-import {drawFaceBadges,pickFaceBadge,toggleFaceControls,faceMenuItems} from './face-badges.mjs';
+import {drawFaceBadges,pickFaceBadge,toggleFaceControls,faceMenuItems,faceBadges} from './face-badges.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
@@ -6300,6 +6300,8 @@ window.styk = {
   acceptImport,
   fit,
   drawingResourcesFor,
+  // Where the face badges sit on the stage (viewport units), for tests and tools.
+  faceBadges: () => faceBadges(editor, screenPoint, {hidden: effectiveHidden()}),
   // The overlay kit: the open overlays and the hotkey gate, the message slot,
   // the command registry and the tooltip.
   ui: { overlays, toasts, commands, palette, tooltips, context: commandContext, stageHead },
