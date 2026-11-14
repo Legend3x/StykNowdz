@@ -69,8 +69,9 @@ export function symmetrizeBones(model) {
     const mirror = p => [-p[0], p[1], p[2]], target = byName.get(name);
     const parentId = parentName ? byName.get(parentName)?.id ?? 0 : 0;
     const face = bone.face ? faceOf(bone) : null, {strength, range} = pullOf(bone);
-    if (target) { target.head = mirror(bone.head); target.tail = mirror(bone.tail); target.parent = parentId; setFace(target, face); setPull(target, {strength, range}); }
-    else { const created = addBone(model, {name, head: mirror(bone.head), tail: mirror(bone.tail), parent: parentId, face, strength, range}); byName.set(name, created); byId.set(created.id, created); }
+    // A merged bone is locked in place: mirroring leaves it alone.
+    if (target) { if (isMerged(target)) continue; target.head = mirror(bone.head); target.tail = mirror(bone.tail); target.parent = parentId; setFace(target, face); setPull(target, {strength, range}); }
+    else { const created = addBone(model, {name, head: mirror(bone.head), tail: mirror(bone.tail), parent: parentId, face, strength, range}); if (isLoose(bone)) created.state = 'loose'; byName.set(name, created); byId.set(created.id, created); }
   }
 }
 
@@ -335,12 +336,25 @@ export function piecesOf(mesh) {
   return [...pieces.values()];
 }
 
-/** Whether bones weigh the skin by themselves (Automatic weights, on unless the model turns it off). */
-export const automaticWeights = model => model.autoWeights !== false;
+/** A bone layer's state (docs/BLENDER-LITE.md, "Layers"): `loose` bones move
+ * only points painted for them (placing one changes nothing), `grouped` bones
+ * (the default, also for bones stored before states existed) also take their
+ * share of the skin by themselves (automatic weights), and `merged` bones are
+ * locked in place with the weights they had frozen into painted weights. */
+export const BONE_STATES = Object.freeze(['loose', 'grouped', 'merged']);
+export const boneState = bone => bone?.state === 'loose' || bone?.state === 'merged' ? bone.state : 'grouped';
+export const isLoose = bone => boneState(bone) === 'loose';
+export const isMerged = bone => boneState(bone) === 'merged';
+/** Whether a bone takes its share of the skin by itself (only grouped bones do:
+ * a merged bone's weights are all frozen into painted weights). */
+export const takesSkin = bone => boneState(bone) === 'grouped';
+/** Set a bone's state (grouped is stored as no state). */
+export function setBoneState(bone, state) { if (state === 'loose' || state === 'merged') bone.state = state; else delete bone.state; }
 
-/** The bone points with no weights of their own follow when Automatic weights is
- * off: their part's "Moves with" bone, else the skeleton's root (they move only
- * with the whole figure), as unweighted points in Blender move only with the armature. */
+/** The bone points with no weights of their own follow when no bone takes them
+ * by itself (every bone loose): their part's "Moves with" bone, else the
+ * skeleton's root (they move only with the whole figure), as unweighted points
+ * in Blender move only with the armature. */
 export function holdingBone(model, part) {
   const body = model.bones.filter(b => !b.face), ids = new Set(body.map(b => b.id));
   if (part?.bone && model.bones.some(b => b.id === part.bone)) return part.bone;
@@ -349,7 +363,9 @@ export function holdingBone(model, part) {
 
 function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
   const n = mesh.verts.length, everyBone = new Map(model.bones.map(b => [b.id, b]));
-  if (!automaticWeights(model)) {
+  const bound = part?.bone && everyBone.get(part.bone);
+  // Loose and merged bones take nothing by themselves: with none grouped, every point stays with the holding bone.
+  if (!bound && !model.bones.some(b => takesSkin(b) && pullOf(b).strength > 0)) {
     const hold = holdingBone(model, part), out = {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
     if (hold) for (let v = 0; v < n; v++) { out.bones[v * 4] = hold; out.weights[v * 4] = 1; }
     return out;
@@ -358,7 +374,6 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
   // and their parent and children count as each other's neighbours.
   const pulls = new Map(model.bones.map(b => [b.id, pullOf(b)]));
   let bones = model.bones.filter(b => pulls.get(b.id).strength > 0);
-  const bound = part?.bone && everyBone.get(part.bone);
   if (bound && !bones.includes(bound)) bones = [...bones, bound]; // a part bound to a bone always follows it
   if (!bones.length) return {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
   const byId = new Map(bones.map(b => [b.id, b])), byName = new Map(bones.map(b => [b.name, b]));
@@ -470,6 +485,14 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     if (singleOf[v]) return;
     for (const id of [...m.keys()]) { const {range} = pulls.get(id) ?? {}; if (range && m.size > 1 && segmentDistance(mesh.verts[v], byId.get(id).head, byId.get(id).tail) > range) m.delete(id); }
   });
+  // Loose and merged bones still divide the skin with the others, so a grouped bone
+  // takes only its own region; what they would take stays with the holding bone
+  // (a merged bone's own points carry its frozen weights).
+  const hold = holdingBone(model, part);
+  if (!rigid) for (const m of lists) for (const [id, w] of [...m]) {
+    if (takesSkin(everyBone.get(id))) continue;
+    m.delete(id); if (hold) m.set(hold, (m.get(hold) ?? 0) + w);
+  }
   const outBones = [], outWeights = [];
   for (const m of lists) {
     let top = [...m].sort((a, b) => b[1] - a[1]).slice(0, 4);
@@ -525,7 +548,7 @@ const smoothstep = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 /** Blend face bones into body weights (four bones per vertex, as autoWeights returns). */
 function faceWeights(model, mesh, body) {
-  const byId = new Map(model.bones.map(b => [b.id, b])), face = model.bones.filter(b => b.face && b.reach > 0);
+  const byId = new Map(model.bones.map(b => [b.id, b])), face = model.bones.filter(b => b.face && b.reach > 0 && takesSkin(b));
   // The body bone a face bone sits on (the head): only skin that mostly follows it takes the face bones.
   const rootOf = b => { let at = b, guard = 0; while (at?.face && guard++ < 64) at = byId.get(at.parent); return at && !at.face ? at.id : 0; };
   const roots = new Map(face.map(b => [b.id, rootOf(b)]));

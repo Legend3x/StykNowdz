@@ -4624,9 +4624,9 @@ async function openBlenderLite(editing = false) {
   pause(); finishCurrentEdit();
   modelerOpen = true;
   let modules;
-  try { modules = await Promise.all([import("./modeler/modeler-ui.mjs"), import("./modeler/export-figure.mjs")]); }
+  try { modules = await Promise.all([import("./modeler/modeler-ui.mjs"), import("./modeler/export-figure.mjs"), import("./rig-spatial.mjs"), import("./animation-origin.mjs")]); }
   catch (error) { modelerOpen = false; fail(error); return; }
-  const [{openModeler}, {modelToFigure, modelDocument}] = modules;
+  const [{openModeler}, {modelToFigure, modelDocument, originShift}, {spatialQuaternion, quatRotate}, {animationRotation}] = modules;
   const typeId = editing ? editor.figure.figure_type_id : null, draftKey = editing ? typeId : "new", draft = modelDrafts.get(draftKey) ?? null;
   state.modeling = true; document.body.dataset.modeling = "";
   // Docked under the band, so the workspace tabs stay in reach.
@@ -4643,7 +4643,10 @@ async function openBlenderLite(editing = false) {
       if (editing) {
         const previous = editor.report.figure_types.find((f) => f.figure_type_id === typeId);
         const {figure} = modelToFigure(model, {figureTypeId: typeId, previous});
-        editor.replaceFigureDefinition(typeId, figure, {label: "Edit 3D model"});
+        // A moved origin moves the root handle, never the model: each placed figure is shifted back.
+        const from = previous?._styk?.modelSource?.origin ?? [0, 0, 0], to = model.origin ?? [0, 0, 0];
+        const moveRoot = from.some((v, i) => Math.abs(v - to[i]) > 1e-9) ? (obj, oldFigure) => originShift(oldFigure, obj, from, to, {spatialQuaternion, quatRotate, animationRotation}) : null;
+        editor.replaceFigureDefinition(typeId, figure, {label: "Edit 3D model", moveRoot});
         notify(interfaceText("modeler.modelUpdated", {name: figure.name}), "modeler.modelUpdated", {name: figure.name});
       } else {
         const {document: incoming, stats} = modelDocument(model);

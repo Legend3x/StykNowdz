@@ -10,6 +10,7 @@ export const VIEW_COLORS = Object.freeze({
   background: '#e8eaee', grid: 'rgba(40,48,60,.10)', gridStrong: 'rgba(40,48,60,.22)', axisX: 'rgba(214,72,72,.75)', axisZ: 'rgba(60,110,214,.75)',
   wire: 'rgba(20,24,32,.35)', cage: 'rgba(20,24,32,.75)', vertex: '#1d2230', selected: '#ff8a1f', active: '#ffd33d', faceSelected: 'rgba(255,138,31,.28)',
   outline: '#ff8a1f', bone: '#8b93a6', boneSelected: '#ff8a1f', boneHead: '#4a5163', hover: 'rgba(13,153,255,.9)', ring: '#0d99ff', wireTrace: '#1d2230',
+  origin: '#ff8a1f', originRing: '#ffffff', lineEnd: '#e8590c',
 });
 
 export function defaultCamera() { return {yaw: .5, pitch: .25, dist: 4.2, target: [0, 1, 0], ortho: false, fov: .7}; }

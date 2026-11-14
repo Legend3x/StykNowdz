@@ -74,20 +74,23 @@ test('rigging an imported OBJ: each limb follows its own bones, not the other si
   for (const name of ['Shin.L', 'Shin.R', 'Thigh.L', 'Thigh.R']) assert.ok(![...pull(name).parts].some(n => /hand|arm/i.test(n)), `${name} does not move a hand or arm`);
 });
 
-test('with Automatic weights off, only painted points follow the bones', async () => {
-  const {holdingBone, automaticWeights} = await import('../src/modeler/armature.mjs');
+test('loose bones move only painted points; old models with Automatic weights off open with loose bones', async () => {
+  const {holdingBone, boneState, setBoneState} = await import('../src/modeler/armature.mjs');
   const model = readModel((await import('../src/modeler/examples/juniper.mjs')).default);
-  assert.equal(automaticWeights(model), true);
-  model.autoWeights = false;
-  assert.equal(automaticWeights(model), false);
+  assert.ok(model.bones.every(b => boneState(b) === 'grouped'), 'bones stored before layers are grouped');
+  for (const b of model.bones) setBoneState(b, 'loose');
   const arm = model.parts.find(p => p.name === 'Arm'), mesh = evaluatePart(arm), hold = holdingBone(model, arm);
   assert.ok(model.bones.some(b => b.id === hold));
   const skin = partWeights(model, mesh, arm);
-  const painted = new Set(Object.keys(arm.mesh.vdata?.skin ?? {}).map(Number));
   // Juniper has no painted weights, so every point stays with the part's holding bone.
-  assert.equal(painted.size, 0);
+  assert.equal(Object.keys(arm.mesh.vdata?.skin ?? {}).length, 0);
   for (let v = 0; v < mesh.verts.length; v++) assert.equal(skin.bones[v * 4], hold);
-  // Saved and read back, the switch keeps its setting; anything but true/false is dropped.
-  assert.equal(readModel(JSON.parse(JSON.stringify(model))).autoWeights, false);
-  assert.equal('autoWeights' in readModel({...JSON.parse(JSON.stringify(model)), autoWeights: 'yes'}), false);
+  // States are saved; anything else is dropped. Automatic weights off becomes loose bones.
+  assert.ok(readModel(JSON.parse(JSON.stringify(model))).bones.every(b => b.state === 'loose'));
+  const old = JSON.parse(JSON.stringify((await import('../src/modeler/examples/juniper.mjs')).default));
+  old.autoWeights = false; old.bones[0].state = 'nonsense';
+  const opened = readModel(old);
+  assert.equal('autoWeights' in opened, false);
+  assert.ok(opened.bones.every(b => b.state === 'loose'));
+  assert.equal(readModel({...JSON.parse(JSON.stringify(model)), bones: model.bones.map(b => ({...b, state: 'x'}))}).bones.every(b => !('state' in b)), true);
 });

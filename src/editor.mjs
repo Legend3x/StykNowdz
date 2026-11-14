@@ -1423,7 +1423,9 @@ export class Editor extends EventTarget {
     this._emit('edit', {label, structural: true, definition: true}); return true;
   }
   /** Replace a reusable definition while retaining every instance's pose and identity. */
-  replaceFigureDefinition(figureTypeId, definition, {label = 'Edit figure definition'} = {}) {
+  /** `moveRoot(object, oldFigure)` may return {x, y}: how far that placed figure's
+   * root moves (a 3D model whose origin moved stays where it is on the stage). */
+  replaceFigureDefinition(figureTypeId, definition, {label = 'Edit figure definition', moveRoot = null} = {}) {
     const index = this.report.figure_types.findIndex(f => f.figure_type_id === figureTypeId);
     if (index < 0) throw messageError(new Error(''), "errors.editor.theFigureDefinitionDoesNotExist", {});
     if (!definition || !Array.isArray(definition.segments) || !definition.segments.length) throw messageError(new Error(''), "errors.editor.aFigureNeedsAtLeastOneSegment", {});
@@ -1444,6 +1446,8 @@ export class Editor extends EventTarget {
           }
         }
         for (const obj of frame.objects) if (obj.figure_type_id === figureTypeId) {
+          const shift = moveRoot && !obj.join ? moveRoot(obj, oldFigure) : null;
+          if (shift && Number.isFinite(shift.x) && Number.isFinite(shift.y)) { obj.root_x = Number(obj.root_x ?? 0) + shift.x; obj.root_y = Number(obj.root_y ?? 0) + shift.y; }
           const oldAngles = obj.angles;
           obj.angles = replacement.segments.map(s => {
             const i = oldIndices.get(s.segment_id);

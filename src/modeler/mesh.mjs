@@ -899,6 +899,17 @@ function addPointEdit(mesh, at, from = null) {
   return k;
 }
 
+/** Split a traced line between two neighbouring points (removes the wire edge
+ * a–b); a point left on nothing is kept as a loose point. */
+function splitWireEdit(mesh, a, b) {
+  const key = edgeKey(a, b);
+  mesh.edges = (mesh.edges ?? []).filter(e => edgeKey(...e) !== key);
+  const used = new Set(mesh.edges.flat());
+  for (const f of mesh.faces) for (const v of f.v) used.add(v);
+  for (const v of [a, b]) if (!used.has(v)) mesh.loose = [...(mesh.loose ?? []), v];
+  return null;
+}
+
 /** The selected edges (wire or open border) as connected chains: [{points, closed}]. */
 export function selectedChains(mesh, verts) {
   const uses = edgeFaces(mesh), links = new Map(), link = (a, b) => { links.set(a, [...(links.get(a) ?? []), b]); };
@@ -1819,6 +1830,7 @@ export const duplicateFaces = atomic('Duplicate', duplicateFacesEdit);
 export const symmetrize = atomic('Symmetrize', symmetrizeEdit);
 export const extrudePoints = atomic('Extrude point', extrudePointsEdit);
 export const addPoint = atomic('Add point', addPointEdit);
+export const splitWire = atomic('Split', splitWireEdit);
 export const bridge = atomic('Bridge', bridgeEdit);
 export const orientWireFaces = atomic('Face the viewer', orientWireFacesEdit);
 /** The same winding on a mesh copy being dragged (no validation: the move's own result is

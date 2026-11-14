@@ -6,7 +6,9 @@ import {t} from '../localization.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, automaticWeights} from './armature.mjs';
+import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged} from './armature.mjs';
+import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
+  originOf, setOrigin, connections, tracedLines, lineOf, otherEnd} from './layers.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
@@ -72,7 +74,7 @@ function listenToBlender() {
 export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose} = {}) {
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
-  const S = {mode: 'object', posing: false, pose: new Map(), selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
+  const S = {mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
     depth: createDepthPass(), camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
 
@@ -131,8 +133,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const iconButton = (name, label, onclick, extra = '') => { const b = el('button', {type: 'button', class: `modeler-button modeler-icon-only ${extra}`.trim(), title: label, 'aria-label': label, onclick}); b.append(glyph(name)); return b; };
   const quiet = (label, onclick, title) => { const b = button(label, onclick, {title}); b.classList.add('modeler-quiet'); return b; };
   const header = el('div', {class: 'modeler-bar'});
-  const left = el('aside', {class: 'modeler-side'}, [el('h3', {text: t("modeler.parts")}), outliner, el('div', {class: 'modeler-row'}, [
-    button(t("modeler.add"), e => addMenu(e.currentTarget)), button(t("modeler.duplicate"), () => duplicateParts(), {title: t("modeler.duplicateHint")}),
+  const layersHead = el('div', {class: 'modeler-layers-head'}, [el('h3', {text: t("modeler.layers")}), iconButton('plus', t("modeler.layersAdd"), e => layersMenu(e.currentTarget), 'modeler-layers-add')]);
+  const left = el('aside', {class: 'modeler-side'}, [layersHead, outliner, el('div', {class: 'modeler-row'}, [
+    button(t("modeler.duplicate"), () => duplicateParts(), {title: t("modeler.duplicateHint")}),
     button(t("modeler.delete"), () => deleteSelection(), {title: t("modeler.deleteHint")})]), el('h3', {text: t("modeler.colors")}), palette,
     el('p', {class: 'modeler-hint', text: t("modeler.colorsHint")})]);
   const right = el('aside', {class: 'modeler-side modeler-side-right'}, [props]);
@@ -174,19 +177,313 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: done}, editing ? t("modeler.updateFigure") : t("modeler.addToAnimation"))].filter(Boolean));
   }
 
-  function renderOutliner() {
-    outliner.replaceChildren(...model.parts.map(p => {
-      const row = el('div', {class: 'modeler-item', 'aria-selected': String(S.parts.has(p.id)), dataset: {part: p.id}, onclick: e => { selectPart(p.id, e.shiftKey); },
-        ondblclick: () => rename(p)}, [
-        el('button', {type: 'button', class: 'modeler-eye', title: p.visible ? t("modeler.hide") : t("modeler.show"), 'aria-pressed': String(p.visible !== false),
-          onclick: e => { e.stopPropagation(); commit(() => { p.visible = p.visible === false; }); }}, p.visible === false ? '◌' : '●'),
-        el('span', {class: 'modeler-name', text: p.name}),
-        p.mirror ? el('span', {class: 'modeler-tag', text: t("modeler.mirrorTag"), title: t("modeler.mirrorX")}) : null,
-        p.smooth ? el('span', {class: 'modeler-tag', text: `◒${p.smooth}`, title: t("modeler.smooth")}) : null]);
-      return row;
-    }));
-    if (!model.parts.length) outliner.append(el('p', {class: 'modeler-hint', text: t("modeler.noParts")}));
+  // ---------- Layers (docs/BLENDER-LITE.md, "Layers") ----------
+  // Parts in folders (an imported model in one folder of its own), the skeleton's
+  // bones nested by what they attach to, each loose, grouped or merged, and the
+  // origin. Right-click a row for its menu; drag rows into folders or onto bones.
+  const pointAnchor = e => ({getBoundingClientRect: () => ({left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY})});
+  const menuItem = (label, run, {danger = false, title} = {}) => el('button', {type: 'button', role: 'menuitem', class: `modeler-menu-item${danger ? ' modeler-menu-danger' : ''}`, title: title ?? label,
+    onclick: () => { closePopover(); run(); }}, label);
+  const menuLine = () => el('div', {class: 'modeler-menu-line', role: 'separator'});
+  const menu = (anchor, items) => popover(anchor, items.filter(Boolean));
+  const boneById = id => model.bones.find(b => b.id === id);
+  let dragging = null;
+  function layerRow({kind, id, depth, name, selected, open, toggle, eye, badge, tags = [], lock, onclick, ondblclick, onmenu, drop, draggable = true}) {
+    const row = el('div', {class: `modeler-item modeler-layer modeler-layer-${kind}`, role: 'treeitem', 'aria-selected': String(Boolean(selected)), draggable: draggable ? 'true' : 'false',
+      dataset: {[kind]: String(id)}, onclick, ondblclick, oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); onmenu?.(e); }}, [
+      toggle ? el('button', {type: 'button', class: 'modeler-chevron', 'aria-expanded': String(Boolean(open)), title: open ? t("modeler.layerCollapse") : t("modeler.layerExpand"),
+        onclick: e => { e.stopPropagation(); toggle(); }}, open ? '▾' : '▸') : el('span', {class: 'modeler-chevron'}),
+      eye ?? null, el('span', {class: 'modeler-name', text: name}), ...tags.filter(Boolean), badge ?? null, lock ?? null]);
+    row.style.paddingInlineStart = `${2 + depth * 11}px`;
+    if (draggable) {
+      row.addEventListener('dragstart', e => { dragging = {kind, id}; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', `${kind}:${id}`); });
+      row.addEventListener('dragend', () => { dragging = null; outliner.querySelectorAll('.modeler-drop').forEach(r => r.classList.remove('modeler-drop')); });
+    }
+    if (drop) {
+      row.addEventListener('dragover', e => { if (dragging && drop(dragging, true)) { e.preventDefault(); e.stopPropagation(); row.classList.add('modeler-drop'); } });
+      row.addEventListener('dragleave', () => row.classList.remove('modeler-drop'));
+      row.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); row.classList.remove('modeler-drop'); const d = dragging; dragging = null; if (d) drop(d, false); });
+    }
+    return row;
   }
+  const eyeOf = (shown, toggle) => el('button', {type: 'button', class: 'modeler-eye', title: shown ? t("modeler.hide") : t("modeler.show"), 'aria-pressed': String(shown),
+    onclick: e => { e.stopPropagation(); toggle(); }}, shown ? '●' : '◌');
+  const badgeOf = (text, kind, title) => el('span', {class: `modeler-badge modeler-badge-${kind}`, text, title});
+  /** The parts a drag or menu acts on: the selection when the row is in it, else the row's part. */
+  const partsFor = id => S.parts.has(id) ? [...S.parts] : [id];
+  // Drops: parts and folders into folders (or next to a part, into its folder); bones onto bones.
+  const dropInto = folderId => (d, test) => {
+    if (d.kind === 'part') { if (!test) commit(() => { moveToFolder(model, partsFor(d.id), folderId); }); return true; }
+    if (d.kind === 'folder') { if (d.id === folderId || (folderId && foldersWithin(model, d.id).has(folderId))) return false; if (!test) commit(() => { nestFolder(model, d.id, folderId); }); return true; }
+    return false;
+  };
+  const dropOnBone = parentId => (d, test) => {
+    if (d.kind !== 'bone' || d.id === parentId || (parentId && bonesBelow(model, d.id).has(parentId))) return false;
+    if (!test) commit(() => { const b = boneById(d.id); if (b) b.parent = parentId; S.cache.clear(); });
+    return true;
+  };
+  function renderOutliner() {
+    const rows = [], folders = model.folders ?? [];
+    const walk = (parent, depth) => {
+      for (const f of folders.filter(q => (q.parent ?? 0) === parent)) {
+        const inside = partsIn(model, f.id), shown = inside.some(q => q.visible !== false);
+        rows.push(layerRow({kind: 'folder', id: f.id, depth, name: f.name, selected: inside.length > 0 && inside.every(q => S.parts.has(q.id)), open: f.open, toggle: () => { if (f.open) delete f.open; else f.open = true; renderOutliner(); },
+          eye: eyeOf(shown, () => commit(() => { for (const q of inside) q.visible = !shown; })), tags: [el('span', {class: 'modeler-tag', text: String(inside.length), title: t("modeler.folderCount", {count: inside.length})})],
+          onclick: e => selectFolder(f.id, e.shiftKey), ondblclick: () => renameLayer(`[data-folder="${f.id}"]`, f.name, v => { f.name = v; }), onmenu: e => folderMenu(f, e), drop: dropInto(f.id)}));
+        if (f.open) walk(f.id, depth + 1);
+      }
+      for (const q of model.parts.filter(x => (x.folder ?? 0) === parent)) {
+        const lines = tracedLines(q.mesh), open = S.openLines.has(q.id);
+        rows.push(layerRow({kind: 'part', id: q.id, depth, name: q.name, selected: S.parts.has(q.id), open, toggle: lines.length ? () => { if (open) S.openLines.delete(q.id); else S.openLines.add(q.id); renderOutliner(); } : null,
+          eye: eyeOf(q.visible !== false, () => commit(() => { q.visible = q.visible === false; })),
+          tags: [q.mirror ? el('span', {class: 'modeler-tag', text: t("modeler.mirrorTag"), title: t("modeler.mirrorX")}) : null, q.smooth ? el('span', {class: 'modeler-tag', text: `◒${q.smooth}`, title: t("modeler.smooth")}) : null],
+          lock: el('button', {type: 'button', class: `modeler-lock${q.locked ? ' modeler-lock-on' : ''}`, title: q.locked ? t("modeler.unlockPart") : t("modeler.lockPart"), 'aria-pressed': String(Boolean(q.locked)),
+            onclick: e => { e.stopPropagation(); commit(() => { if (q.locked) delete q.locked; else q.locked = true; }); }}, glyph(q.locked ? 'lock' : 'unlock')),
+          onclick: e => { selectPart(q.id, e.shiftKey); }, ondblclick: () => rename(q), onmenu: e => partMenu(q, e), drop: dropInto(q.folder ?? 0)}));
+        if (open) lines.forEach((line, k) => rows.push(layerRow({kind: 'line', id: `${q.id}:${k}`, depth: depth + 1, draggable: false,
+          name: line.closed ? t("modeler.lineClosed", {count: line.points.length}) : t("modeler.lineOpen", {count: line.points.length}),
+          selected: S.mode === 'edit' && S.active === q.id && line.points.every(v => S.verts.has(v)),
+          onclick: () => selectLine(q, line), onmenu: e => lineMenu(q, line, e)})));
+      }
+    };
+    walk(0, 0);
+    // The skeleton: the origin, then each bone under the bone it is attached to.
+    const byId = new Map(model.bones.map(b => [b.id, b])), shownBones = S.mode === 'bones' || S.showBones;
+    rows.push(layerRow({kind: 'skeleton', id: 0, depth: 0, draggable: false, name: t("modeler.skeletonLayer"), open: S.skeletonOpen, toggle: () => { S.skeletonOpen = !S.skeletonOpen; renderOutliner(); },
+      eye: S.mode === 'bones' ? null : eyeOf(shownBones, () => { S.showBones = !S.showBones; refresh(); }),
+      tags: [el('span', {class: 'modeler-tag', text: String(model.bones.length)})], onclick: () => { if (S.mode !== 'bones') setMode('bones'); }, onmenu: e => skeletonMenu(e), drop: dropOnBone(0)}));
+    if (S.skeletonOpen) {
+      const moved = Boolean(model.origin);
+      rows.push(layerRow({kind: 'origin', id: 0, depth: 1, draggable: false, name: t("modeler.origin"), selected: false,
+        eye: el('span', {class: 'modeler-origin-dot', 'aria-hidden': 'true'}), tags: [el('span', {class: 'modeler-tag', text: moved ? t("modeler.originMoved") : t("modeler.originFloor")})],
+        onclick: () => { if (S.mode !== 'bones') setMode('bones'); toast(t("modeler.originHint")); }, onmenu: e => originMenu(e)}));
+      const seen = new Set(), walkBones = (parent, depth) => {
+        for (const b of model.bones.filter(x => (byId.has(x.parent) ? x.parent : 0) === parent)) {
+          if (seen.has(b.id)) continue; seen.add(b.id);
+          const state = boneState(b);
+          rows.push(layerRow({kind: 'bone', id: b.id, depth, name: b.name, selected: S.bones.has(b.id),
+            badge: badgeOf(t(`modeler.layer.${state}`), state, t(`modeler.layer.${state}Hint`)),
+            lock: state === 'merged' ? el('span', {class: 'modeler-lock modeler-lock-on', title: t("modeler.layer.mergedHint")}, glyph('lock')) : null,
+            onclick: e => selectBone(b.id, e.shiftKey), ondblclick: () => renameLayer(`[data-bone="${b.id}"]`, b.name, v => { b.name = v; }, 80), onmenu: e => boneMenu(b, e), drop: dropOnBone(b.id)}));
+          walkBones(b.id, depth + 1);
+        }
+      };
+      walkBones(0, 1);
+    }
+    outliner.replaceChildren(...rows);
+    if (!model.parts.length) outliner.prepend(el('p', {class: 'modeler-hint', text: t("modeler.noParts")}));
+  }
+  // Dropping on the empty part of the list takes parts and folders out of any folder.
+  outliner.addEventListener('dragover', e => { if (e.target === outliner && dragging && (dragging.kind === 'part' || dragging.kind === 'folder')) e.preventDefault(); });
+  outliner.addEventListener('drop', e => { if (e.target !== outliner || !dragging) return; e.preventDefault(); const d = dragging; dragging = null; dropInto(0)(d, false); });
+  outliner.addEventListener('contextmenu', e => { if (e.target !== outliner) return; e.preventDefault(); layersMenu(pointAnchor(e)); });
+
+  function selectFolder(id, extend) {
+    if (S.mode === 'edit') setMode('object');
+    const ids = partsIn(model, id).map(q => q.id);
+    S.parts = extend ? new Set([...S.parts, ...ids]) : new Set(ids); S.active = ids[0] ?? S.active;
+    refresh();
+  }
+  function selectBone(id, extend) {
+    if (S.mode !== 'bones') setMode('bones');
+    if (extend) { if (S.bones.has(id)) S.bones.delete(id); else S.bones.add(id); } else S.bones = new Set([id]);
+    S.boneEnd = null; refresh();
+  }
+  function selectLine(q, line) {
+    S.parts = new Set([q.id]); S.active = q.id;
+    if (S.mode !== 'edit') setMode('edit');
+    S.selectMode = 'vert'; S.verts = new Set(line.points); refresh();
+  }
+  /** Rename a row in place (Enter keeps, Esc cancels). */
+  function renameLayer(selector, value, apply, max = 120) {
+    const name = outliner.querySelector(`${selector} .modeler-name`); if (!name) return;
+    const input = el('input', {type: 'text', class: 'modeler-rename', value, maxlength: String(max)});
+    let done = false;
+    const finish = ok => { if (done) return; done = true; const v = input.value.trim(); if (ok && v && v !== value) commit(() => { apply(v); }); else refresh(); };
+    input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('click', e => e.stopPropagation());
+    name.replaceWith(input); input.select();
+  }
+  /** + in Layers: parts, a folder, bones. */
+  function layersMenu(anchor) {
+    const shapes = [['baseCharacter', t("modeler.baseCharacter")], ['cube', t("modeler.cube")], ['sphere', t("modeler.sphere")], ['capsule', t("modeler.capsule")], ['cylinder', t("modeler.cylinder")],
+      ['cone', t("modeler.cone")], ['torus', t("modeler.torus")], ['plane', t("modeler.plane")], ['circle', t("modeler.circle")], ['point', t("modeler.singlePoint")]];
+    menu(anchor, [...shapes.map(([id, label]) => menuItem(label, () => { if (id === 'baseCharacter') addBaseCharacter(); else addPrimitive(id); })), menuLine(),
+      menuItem(S.parts.size ? t("modeler.groupIntoFolder") : t("modeler.newFolder"), () => groupIntoFolder(), {title: 'Ctrl+G'}), menuLine(),
+      menuItem(t("modeler.humanoidSkeleton"), addHumanoid, {title: t("modeler.humanoidSkeletonHint")}), menuItem(t("modeler.faceBones"), addFaceBones, {title: t("modeler.faceBonesHint")}),
+      menuItem(t("modeler.addBone"), () => { if (S.mode !== 'bones') setMode('bones'); addSingleBone(); })]);
+  }
+  /** The selected parts (or none: an empty folder) into a new folder, Ctrl+G. */
+  function groupIntoFolder() {
+    const ids = S.mode === 'object' ? [...S.parts] : [], first = ids.length ? part(ids[0]) : null;
+    commit(() => { const f = addFolder(model, {name: t("modeler.folderName"), parent: first?.folder ?? 0, open: true}); moveToFolder(model, ids, f.id); });
+  }
+  function partMenu(q, e) {
+    const ids = partsFor(q.id), folders = model.folders ?? [];
+    menu(pointAnchor(e), [menuItem(t("modeler.renameLayer"), () => rename(q)), menuItem(t("modeler.duplicate"), () => { S.parts = new Set(ids); S.active = q.id; if (S.mode === 'edit') setMode('object'); duplicateParts(); }),
+      menuItem(ids.length > 1 ? t("modeler.groupIntoFolder") : t("modeler.putInNewFolder"), () => { S.parts = new Set(ids); if (S.mode !== 'object') setMode('object'); groupIntoFolder(); }),
+      ...folders.filter(f => f.id !== q.folder).slice(0, 8).map(f => menuItem(t("modeler.moveToFolder", {name: f.name}), () => commit(() => { moveToFolder(model, ids, f.id); }))),
+      q.folder ? menuItem(t("modeler.takeOutOfFolder"), () => commit(() => { moveToFolder(model, ids, 0); })) : null,
+      tracedLines(q.mesh).length ? menuItem(S.openLines.has(q.id) ? t("modeler.hideLines") : t("modeler.showLines"), () => { if (S.openLines.has(q.id)) S.openLines.delete(q.id); else S.openLines.add(q.id); renderOutliner(); }) : null,
+      menuItem(q.locked ? t("modeler.unlockPart") : t("modeler.lockPart"), () => commit(() => { for (const id of ids) { const x = part(id); if (!x) continue; if (q.locked) delete x.locked; else x.locked = true; } })),
+      menuLine(), menuItem(t("modeler.delete"), () => { S.parts = new Set(ids); if (S.mode !== 'object') setMode('object'); deleteSelection(); }, {danger: true})]);
+  }
+  function folderMenu(f, e) {
+    menu(pointAnchor(e), [menuItem(t("modeler.renameLayer"), () => renameLayer(`[data-folder="${f.id}"]`, f.name, v => { f.name = v; })),
+      menuItem(t("modeler.selectFolder"), () => selectFolder(f.id, false)),
+      menuItem(t("modeler.newFolderInside"), () => commit(() => { addFolder(model, {name: t("modeler.folderName"), parent: f.id}); f.open = true; })),
+      f.parent ? menuItem(t("modeler.takeOutOfFolder"), () => commit(() => { nestFolder(model, f.id, 0); })) : null,
+      menuItem(t("modeler.ungroupFolder"), () => commit(() => { ungroupFolder(model, f.id); }), {title: t("modeler.ungroupFolderHint")}),
+      menuLine(), menuItem(t("modeler.deleteFolder"), () => askConfirm(t("modeler.deleteFolderAsk", {name: f.name, count: partsIn(model, f.id).length}), () => commit(() => {
+        const gone = new Set(deleteFolder(model, f.id)); S.parts = new Set([...S.parts].filter(id => !gone.has(id))); if (gone.has(S.active)) S.active = model.parts[0]?.id ?? null; S.cache.clear(); }),
+        {yesLabel: t("modeler.delete"), noLabel: t("modeler.keep")}), {danger: true})]);
+  }
+  function skeletonMenu(e) {
+    const loose = model.bones.filter(b => boneState(b) === 'loose');
+    menu(pointAnchor(e), [menuItem(t("modeler.humanoidSkeleton"), addHumanoid, {title: t("modeler.humanoidSkeletonHint")}), menuItem(t("modeler.faceBones"), addFaceBones, {title: t("modeler.faceBonesHint")}),
+      menuItem(t("modeler.addBone"), () => { if (S.mode !== 'bones') setMode('bones'); addSingleBone(); }),
+      model.bones.length ? menuItem(t("modeler.mirrorBones"), () => commit(() => { symmetrizeBones(model); S.cache.clear(); }), {title: t("modeler.mirrorBonesHint")}) : null,
+      loose.length ? menuLine() : null, loose.length ? menuItem(t("modeler.groupAllBones", {count: loose.length}), () => setBoneStates(loose.map(b => b.id), 'grouped')) : null]);
+  }
+  function originMenu(e) {
+    menu(pointAnchor(e), [menuItem(t("modeler.originReset"), () => commit(() => { setOrigin(model, [0, 0, 0]); }), {title: t("modeler.originResetHint")}),
+      S.bones.size === 1 ? menuItem(t("modeler.originToBone"), () => commit(() => { setOrigin(model, boneById([...S.bones][0]).head); })) : null]);
+  }
+  function boneMenu(b, e) {
+    const state = boneState(b), ids = S.bones.has(b.id) ? [...S.bones] : [b.id];
+    menu(pointAnchor(e), [
+      state !== 'grouped' && state !== 'merged' ? menuItem(t("modeler.groupToModel"), () => setBoneStates(ids, 'grouped'), {title: t("modeler.groupToModelHint")}) : null,
+      state !== 'merged' ? menuItem(t("modeler.mergeToModel"), () => setBoneStates(ids, 'merged'), {title: t("modeler.mergeToModelHint")}) : null,
+      state === 'grouped' ? menuItem(t("modeler.makeLoose"), () => setBoneStates(ids, 'loose'), {title: t("modeler.makeLooseHint")}) : null,
+      state === 'merged' ? menuItem(t("modeler.unmerge"), () => askUnmerge(ids)) : null,
+      menuLine(), menuItem(t("modeler.extrudeBone"), () => { S.bones = new Set([b.id]); if (S.mode !== 'bones') setMode('bones'); extrudeBone(); }, {title: 'E'}),
+      menuItem(t("modeler.renameLayer"), () => renameLayer(`[data-bone="${b.id}"]`, b.name, v => { b.name = v; }, 80)),
+      b.parent ? menuItem(t("modeler.detachBone"), () => commit(() => { b.parent = 0; S.cache.clear(); })) : null,
+      menuLine(), menuItem(t("modeler.delete"), () => { S.bones = new Set(ids); if (S.mode !== 'bones') setMode('bones'); deleteSelection(); }, {danger: true})]);
+  }
+  /** Group, loosen or merge bones (one undo step). */
+  function setBoneStates(ids, state) {
+    let frozen = 0;
+    commit(() => {
+      for (const id of ids) {
+        const b = boneById(id); if (!b) continue;
+        if (state === 'merged') frozen += mergeBone(model, id);
+        else if (boneState(b) === 'merged') { unmergeBone(model, id); if (state === 'loose') looseBone(model, id); }
+        else if (state === 'loose') looseBone(model, id);
+        else groupBone(model, id);
+      }
+      S.cache.clear();
+    });
+    const name = ids.length === 1 ? boneById(ids[0])?.name : t("modeler.bonesCount", {count: ids.length});
+    toast(t(state === 'merged' ? "modeler.mergedToast" : state === 'loose' ? "modeler.looseToast" : "modeler.groupedToast", {name, count: frozen}));
+  }
+  /** Unmerge asks first (unless "Don't ask again" was ticked): the bone can move again. */
+  const UNMERGE_QUIET = 'stykNowdz.modeler.unmergeQuiet';
+  function askUnmerge(ids) {
+    let quiet = false; try { quiet = localStorage.getItem(UNMERGE_QUIET) === '1'; } catch {}
+    if (quiet) { setBoneStates(ids, 'grouped'); return; }
+    const name = ids.length === 1 ? boneById(ids[0])?.name : t("modeler.bonesCount", {count: ids.length});
+    const box = el('input', {type: 'checkbox'});
+    askConfirm(t("modeler.unmergeAsk", {name}), () => { if (box.checked) { try { localStorage.setItem(UNMERGE_QUIET, '1'); } catch {} } setBoneStates(ids, 'grouped'); },
+      {yesLabel: t("modeler.unmerge"), noLabel: t("modeler.keepMerged"), extra: el('label', {class: 'modeler-check modeler-confirm-check'}, [box, t("modeler.dontAskAgain")])});
+  }
+  /** A merged bone is locked in place: moving it (or the bones it rides on that would carry it) is refused. */
+  function refuseMerged(bones) {
+    const locked = bones.find(isMerged); if (!locked) return false;
+    toast(t("modeler.mergedLocked", {name: locked.name})); S.refused = true; return true;
+  }
+
+  // ---------- Traced shapes ----------
+  /** The point under the pointer in Edit mode (the active part's, visible), or null. */
+  function pointAt(x, y) {
+    const c = cage(); if (!c) return null;
+    let best = null;
+    c.pts.forEach((q, v) => { if (!q.ok || !c.visible[v]) return; const d = Math.hypot(q.x - x, q.y - y); if (d < 9 && (!best || d < best.d)) best = {v, d}; });
+    return best ? best.v : null;
+  }
+  /** Join two points with a line (closing a shape when they are its two ends). */
+  function joinPoints(q, a, b) {
+    if (a === b) return;
+    const closing = otherEnd(q.mesh, a) === b;
+    commit(() => { M.fillVerts(q.mesh, new Set([a, b])); S.verts = new Set([b]); S.cache.delete(q.id); });
+    toast(closing ? t("modeler.shapeClosed") : t("modeler.pointsJoined"));
+  }
+  function fillLine(q, line) {
+    S.parts = new Set([q.id]); S.active = q.id; if (S.mode !== 'edit') setMode('edit');
+    S.verts = new Set(line.points); fill();
+    if (!tracedLines(q.mesh).some(l => l.points.length === line.points.length && l.points.every(v => line.points.includes(v)))) toast(t("modeler.shapeFilled"));
+  }
+  function splitAt(q, v) {
+    const line = lineOf(q.mesh, v); if (!line) return;
+    const i = line.points.indexOf(v), next = line.points[(i + 1) % line.points.length];
+    if (!line.closed && i === line.points.length - 1) return;
+    commit(() => { M.splitWire(q.mesh, v, next); S.verts = new Set([v]); S.cache.delete(q.id); });
+  }
+  function pointMenu(q, v, e) {
+    const line = lineOf(q.mesh, v), first = otherEnd(q.mesh, v);
+    const inside = line && (line.closed || (line.points.indexOf(v) > 0 && line.points.indexOf(v) < line.points.length - 1));
+    menu(pointAnchor(e), [
+      first !== null ? menuItem(t("modeler.connectToFirst"), () => joinPoints(q, v, first), {title: t("modeler.connectToFirstHint")}) : null,
+      menuItem(t("modeler.connectTo"), () => { S.connect = {part: q.id, from: v}; S.verts = new Set([v]); refresh(); toast(t("modeler.connectToHint")); }),
+      line?.closed ? menuItem(t("modeler.fillShape"), () => fillLine(q, line), {title: t("modeler.fillShapeHint")}) : null,
+      inside ? menuItem(t("modeler.splitHere"), () => splitAt(q, v), {title: t("modeler.splitHereHint")}) : null,
+      line ? menuItem(t("modeler.selectLine"), () => selectLine(q, line)) : null]);
+  }
+  function lineMenu(q, line, e) {
+    const ends = line.closed ? [] : line.ends;
+    menu(pointAnchor(e), [menuItem(t("modeler.selectLine"), () => selectLine(q, line)),
+      !line.closed && ends.length === 2 && line.points.length >= 3 ? menuItem(t("modeler.closeShape"), () => joinPoints(q, ends[1], ends[0]), {title: t("modeler.connectToFirstHint")}) : null,
+      line.closed ? menuItem(t("modeler.fillShape"), () => fillLine(q, line), {title: t("modeler.fillShapeHint")}) : null]);
+  }
+  /** Open ends of traced lines as hollow circles (Edit mode), and the line being joined. */
+  function drawLineEnds(ctx) {
+    const c = cage(); if (!c) return;
+    ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = VIEW_COLORS.lineEnd;
+    for (const line of tracedLines(c.p.mesh)) if (!line.closed) for (const v of line.ends) {
+      const q = c.pts[v]; if (!q?.ok) continue;
+      ctx.beginPath(); ctx.arc(q.x, q.y, 6.5, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (S.connect?.part === c.p.id && S.pointer) {
+      const q = c.pts[S.connect.from];
+      if (q?.ok) { ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(S.pointer.x, S.pointer.y); ctx.stroke(); }
+    }
+    ctx.restore();
+  }
+
+  // ---------- Origin ----------
+  /** In Bones mode: the origin (the orange dot the figure stands on and turns about on
+   * the stage) and dashed lines from it to bones attached to nothing, and between
+   * bones attached across a gap. */
+  function drawOrigin(ctx) {
+    const o = frame.project(originOf(model)), byId = new Map(model.bones.map(b => [b.id, b]));
+    ctx.save(); ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5;
+    for (const line of connections(model)) {
+      const bone = byId.get(line.bone), [head] = boneEnds(bone);
+      const from = line.kind === 'origin' ? originOf(model) : boneEnds(byId.get(bone.parent))[1];
+      const a = frame.project(from), b = frame.project(head); if (!a.ok || !b.ok) continue;
+      ctx.strokeStyle = line.kind === 'origin' ? VIEW_COLORS.origin : VIEW_COLORS.bone; ctx.globalAlpha = .9;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.restore();
+    if (!o.ok) return;
+    ctx.save(); ctx.fillStyle = VIEW_COLORS.origin; ctx.strokeStyle = VIEW_COLORS.originRing; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(o.x, o.y, 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  /** Right-click in the view: the menu for the point, bone, origin or part under the pointer. */
+  function viewMenu(pt, e) {
+    if (S.mode === 'edit') { const q = activePart(), v = q ? pointAt(pt.x, pt.y) : null; if (v !== null) { S.verts = new Set([v]); refresh(); pointMenu(q, v, e); } return; }
+    if (S.mode === 'bones') {
+      if (!S.posing && nearOrigin(pt)) { originMenu(e); return; }
+      const hit = pick(pt.x, pt.y); if (!hit?.bone) return;
+      if (!S.bones.has(hit.bone)) { S.bones = new Set([hit.bone]); S.boneEnd = null; refresh(); }
+      boneMenu(boneById(hit.bone), e); return;
+    }
+    const hit = pick(pt.x, pt.y); if (!hit?.part) return;
+    if (!S.parts.has(hit.part)) { S.parts = new Set([hit.part]); S.active = hit.part; refresh(); }
+    partMenu(part(hit.part), e);
+  }
+  const nearOrigin = p => { const o = frame.project(originOf(model)); return o.ok && Math.hypot(o.x - p.x, o.y - p.y) < 10; };
 
   function renderPalette() {
     palette.replaceChildren(...model.palette.map((c, i) => {
@@ -386,6 +683,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Paint what the selected bone moves, in the colours of "Show what the selected bone moves". */
   function weightPaintTools(bone) {
     const B = brush(), painted = model.parts.reduce((n, q) => n + paintedCount(q), 0);
+    if (isMerged(bone)) return [el('p', {class: 'modeler-hint', text: t("modeler.mergedNoPaint", {bone: bone.name})})];
     return [
       el('p', {class: 'modeler-hint', text: t("modeler.weightPaintHint", {bone: bone.name})}),
       el('button', {type: 'button', class: 'modeler-button modeler-toggle', 'aria-pressed': String(B.on), onclick: () => setPainting(!B.on)}, B.on ? t("modeler.weightPaintStop") : t("modeler.weightPaintStart")),
@@ -407,7 +705,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (on) S.weights = true;
     renderProps(); setStatus(); draw();
   }
-  const paintingNow = () => S.mode === 'bones' && brush().on && S.bones.size === 1;
+  const paintingNow = () => S.mode === 'bones' && brush().on && S.bones.size === 1 && !isMerged(boneById([...S.bones][0]));
   /** The surface point under the pointer (on the shown, smoothed shape), or null. */
   function surfaceAt(x, y) {
     const poly = pickPolygon(S.polys, x, y); if (!poly) return null;
@@ -533,32 +831,32 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       blocks.push(section(t("modeler.toonPoints"), toonPointTools(p)));
     } else if (S.mode === 'bones') {
       const bone = model.bones.find(b => S.bones.has(b.id) && S.bones.size === 1);
+      // Adding bones lives in Layers (+, or right-click Skeleton); with none yet, the two ways to start are here too.
       blocks.push(section(t("modeler.skeleton"), [
         el('p', {class: 'modeler-hint', text: model.bones.length ? t("modeler.boneCount", {count: model.bones.length}) : t("modeler.noBonesHint")}),
-        actions([[t("modeler.humanoidSkeleton"), addHumanoid, t("modeler.humanoidSkeletonHint")], [t("modeler.faceBones"), addFaceBones, t("modeler.faceBonesHint")], [t("modeler.addBone"), addSingleBone], [t("modeler.extrudeBone"), extrudeBone, 'E'],
-          [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.mirrorBones"), () => commit(() => symmetrizeBones(model)), t("modeler.mirrorBonesHint")]]),
-        el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.weights, onchange: e => { S.weights = e.target.checked; refresh(); }}), t("modeler.showWeights")]),
-        // Automatic weights: bones weigh the skin by themselves; off, only painted weights move points.
-        el('label', {class: 'modeler-check', title: t("modeler.autoWeightsHint")}, [el('input', {type: 'checkbox', checked: model.bones.length ? automaticWeights(model) : model.autoWeights === true,
-          onchange: e => commit(() => { model.autoWeights = e.target.checked; S.cache.clear(); })}), t("modeler.autoWeights")]),
+        model.bones.length ? null : actions([[t("modeler.humanoidSkeleton"), addHumanoid, t("modeler.humanoidSkeletonHint")], [t("modeler.addBone"), addSingleBone]]),
+        model.bones.length ? el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.weights, onchange: e => { S.weights = e.target.checked; refresh(); }}), t("modeler.showWeights")]) : null,
         // Pose mode: turn bones to see the model bend, without changing the skeleton.
         model.bones.length ? el('p', {class: 'modeler-hint', text: t("modeler.poseHint")}) : null,
         model.bones.length ? actions([[S.posing ? t("modeler.poseStop") : t("modeler.poseStart"), () => setPosing(!S.posing), t("modeler.poseHint")],
           ...(S.posing && isPosed(S.pose) ? [[t("modeler.poseReset"), resetPose]] : [])]) : null,
         el('p', {class: 'modeler-hint', text: S.posing ? t("modeler.poseStatus") : t("modeler.bonesHint")})]));
+      const merged = bone && isMerged(bone);
       if (bone) blocks.push(section(t("modeler.bone"), [
+        el('p', {class: 'modeler-hint modeler-state-line'}, [badgeOf(t(`modeler.layer.${boneState(bone)}`), boneState(bone)), ' ', t(`modeler.layer.${boneState(bone)}Hint`)]),
         el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.name")}), el('input', {type: 'text', value: bone.name, maxlength: '80', onchange: e => commit(() => { bone.name = e.target.value.trim() || bone.name; })})]),
         el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.parent")}), el('select', {onchange: e => commit(() => { bone.parent = Number(e.target.value); })},
           [el('option', {value: '0', text: t("modeler.none")}), ...model.bones.filter(b => b.id !== bone.id).map(b => el('option', {value: String(b.id), text: b.name, selected: bone.parent === b.id}))])]),
-        vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
-        actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]]),
+        merged ? null : vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), merged ? null : vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
+        merged ? null : actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]]),
         // How hard the bone pulls the skin: weaker, or only within a distance, so it stops tugging what is merely close to it.
-        liveSlider(t("modeler.boneStrength"), pullOf(bone).strength, 0, STRENGTH_MAX, .05, {preview: v => setPull(bone, {strength: v}), title: t("modeler.boneStrengthHint")}),
-        liveSlider(t("modeler.boneRange"), pullOf(bone).range, 0, 1, .01, {format: v => v > 0 ? fmt(v) : t("modeler.noLimit"), preview: v => setPull(bone, {range: v}), title: t("modeler.boneRangeHint")}),
-        el('p', {class: 'modeler-hint', text: t("modeler.bonePullHint")}),
-        el('label', {class: 'modeler-check', title: t("modeler.faceBoneHint")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e => commit(() => { setFace(bone, e.target.checked ? faceOf(bone) : null); S.cache.clear(); })}), t("modeler.faceBone")]),
-        bone.face ? field(t("modeler.faceReach"), bone.reach, v => commit(() => { setFace(bone, {...faceOf(bone), reach: v}); S.cache.clear(); }), {step: .01, min: 0}) : null,
-        bone.face ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.faceCutHint")}, [el('span', {text: t("modeler.faceCut")}), el('select', {onchange: e => commit(() => { setFace(bone, {...faceOf(bone), cut: e.target.value}); S.cache.clear(); })},
+        // Only a grouped bone takes the skin by itself, so only it has these.
+        boneState(bone) === 'grouped' ? liveSlider(t("modeler.boneStrength"), pullOf(bone).strength, 0, STRENGTH_MAX, .05, {preview: v => setPull(bone, {strength: v}), title: t("modeler.boneStrengthHint")}) : null,
+        boneState(bone) === 'grouped' ? liveSlider(t("modeler.boneRange"), pullOf(bone).range, 0, 1, .01, {format: v => v > 0 ? fmt(v) : t("modeler.noLimit"), preview: v => setPull(bone, {range: v}), title: t("modeler.boneRangeHint")}) : null,
+        boneState(bone) === 'grouped' ? el('p', {class: 'modeler-hint', text: t("modeler.bonePullHint")}) : null,
+        merged ? null : el('label', {class: 'modeler-check', title: t("modeler.faceBoneHint")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e => commit(() => { setFace(bone, e.target.checked ? faceOf(bone) : null); S.cache.clear(); })}), t("modeler.faceBone")]),
+        bone.face && !merged ? field(t("modeler.faceReach"), bone.reach, v => commit(() => { setFace(bone, {...faceOf(bone), reach: v}); S.cache.clear(); }), {step: .01, min: 0}) : null,
+        bone.face && !merged ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.faceCutHint")}, [el('span', {text: t("modeler.faceCut")}), el('select', {onchange: e => commit(() => { setFace(bone, {...faceOf(bone), cut: e.target.value}); S.cache.clear(); })},
           ['', ...FACE_CUTS].map(c => el('option', {value: c, text: t(c ? `modeler.faceCut.${c}` : "modeler.faceCut.none"), selected: (bone.cut ?? '') === c})))]) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.sideNamesHint")})]));
       if (bone) blocks.push(section(t("modeler.weightPaint"), weightPaintTools(bone)));
@@ -648,7 +946,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     frame = cameraFrame(S.camera, w, h);
     const items = [];
-    const showWeights = S.mode === 'bones' && S.weights && S.bones.size === 1 && model.bones.length;
+    const showWeights = S.mode === 'bones' && (S.weights || paintingNow()) && S.bones.size === 1 && model.bones.length;
     const bone = showWeights ? [...S.bones][0] : 0;
     for (const p of model.parts) {
       if (p.visible === false || !p.mesh.faces.length) continue;
@@ -676,7 +974,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth}).filter(poly => !poly.item.hull);
     drawAllWires(ctx);
     if (S.mode === 'object') drawObjectOutline(ctx);
-    if (S.mode === 'edit') drawCage(ctx);
+    if (S.mode === 'edit') { drawCage(ctx); drawLineEnds(ctx); }
+    if (S.mode === 'bones') drawOrigin(ctx);
     if (S.mode === 'bones' || S.showBones) drawBones(ctx);
     if (paintingNow()) drawBrush(ctx);
     if (S.modal?.kind === 'loopcut' && S.modal.ring) drawRing(ctx, S.modal.ring, S.modal.cuts);
@@ -866,7 +1165,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function setMode(mode) {
     if (S.modal) cancelModal();
     if (mode === 'edit' && !activePart()) { toast(t("modeler.selectAPartToEdit")); return; }
-    S.mode = mode; S.hover = null;
+    S.mode = mode; S.hover = null; S.connect = null;
     if (mode === 'edit') S.verts = new Set();
     // Leaving the Bones tab puts every posed bone back.
     if (mode !== 'bones') { S.posing = false; S.pose = new Map(); }
@@ -888,10 +1187,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Pick under the pointer in the current mode. Returns what was hit. */
   function pick(x, y) {
     if (S.mode === 'object') {
-      const poly = pickPolygon(S.polys, x, y); if (poly) return {part: poly.item.partId};
+      const poly = pickPolygon(S.polys.filter(q => !part(q.item.partId)?.locked), x, y); if (poly) return {part: poly.item.partId};
       // Parts that are only traced lines so far: pick a line or point near the pointer.
       for (const p of model.parts) {
-        if (p.visible === false || (!p.mesh.edges?.length && !p.mesh.loose?.length)) continue;
+        if (p.visible === false || p.locked || (!p.mesh.edges?.length && !p.mesh.loose?.length)) continue;
         const transform = M.objectTransform(p), q = p.mesh.verts.map(v => frame.project(transform(v)));
         if ((p.mesh.edges ?? []).some(([a, b]) => q[a].ok && q[b].ok && segmentPixelDistance({x, y}, q[a], q[b]) < 6) || (p.mesh.loose ?? []).some(i => q[i].ok && Math.hypot(q[i].x - x, q[i].y - y) < 8)) return {part: p.id};
       }
@@ -970,7 +1269,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (S.selectMode === 'face') { const keep = M.facesFromVerts(c.p.mesh, hits); const verts = M.vertsFromFaces(c.p.mesh, keep); S.verts = extend ? new Set([...S.verts, ...verts]) : verts; }
       else S.verts = extend ? new Set([...S.verts, ...hits]) : hits;
     } else if (S.mode === 'object') {
-      const hits = model.parts.filter(p => p.visible !== false && evaluated(p).verts.some(v => inside(frame.project(v)))).map(p => p.id);
+      const hits = model.parts.filter(p => p.visible !== false && !p.locked && evaluated(p).verts.some(v => inside(frame.project(v)))).map(p => p.id);
       S.parts = extend ? new Set([...S.parts, ...hits]) : new Set(hits); S.active = hits[0] ?? S.active;
     } else {
       const hits = model.bones.filter(b => inside(frame.project(b.head)) || inside(frame.project(b.tail))).map(b => b.id);
@@ -983,7 +1282,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** World positions the transform moves, how to read and write them, and the pivot. */
   function transformTarget() {
     if (S.mode === 'object') {
-      const parts = [...S.parts].map(part).filter(Boolean); if (!parts.length) return null;
+      // Locked layers stay put.
+      const parts = [...S.parts].map(part).filter(q => q && !q.locked); if (!parts.length) { if (S.parts.size) toast(t("modeler.partLocked")); return null; }
       const pivot = M.scale(parts.reduce((s, p) => M.add(s, p.position), [0, 0, 0]), 1 / parts.length);
       return {kind: 'parts', parts, start: parts.map(p => ({position: p.position.slice(), rotation: p.rotation.slice(), scale: p.scale.slice()})), pivot};
     }
@@ -1009,7 +1309,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         }
       }
     }
-    if (!points.length) return null;
+    if (!points.length || refuseMerged(points.map(q => q.bone))) return null;
     const start = points.map(q => q.bone[q.end].slice());
     return {kind: 'bones', points, start, pivot: M.scale(start.reduce((s, q) => M.add(s, q), [0, 0, 0]), 1 / start.length)};
   }
@@ -1017,8 +1317,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Pose mode only turns bones for a look: their rest positions are edited with Pose off.
     if (S.mode === 'bones' && S.posing) { toast(t("modeler.poseLeaveToEdit")); return; }
     if (S.modal) return;
+    S.refused = false;
     const target = transformTarget();
-    if (!target) { toast(S.mode === 'edit' ? t("modeler.selectSomethingFirst") : S.mode === 'bones' ? t("modeler.selectABoneFirst") : t("modeler.selectAPartFirst")); return; }
+    if (!target) { if (S.refused) return; toast(S.mode === 'edit' ? t("modeler.selectSomethingFirst") : S.mode === 'bones' ? t("modeler.selectABoneFirst") : t("modeler.selectAPartFirst")); return; }
     const before = snapshot(), pivotScreen = frame.project(target.pivot);
     const m = mouse ?? {x: pivotScreen.x + 60, y: pivotScreen.y};
     S.modal = {kind, target, before, pivot: target.pivot, pivotScreen, start: {...m}, mouse: {...m}, axis, axisName, axisColor: VIEW_COLORS.ring};
@@ -1233,6 +1534,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const p = editPart(); if (!p || S.mode !== 'edit') return;
     if (S.verts.size > 1) { toast(t("modeler.ctrlClickFromOnePoint")); return; }
     const from = S.verts.size ? [...S.verts][0] : null, transform = M.objectTransform(p);
+    // Ctrl+click on a point instead of empty space joins to it, as the pen tool closes a shape on its first point.
+    const onto = from !== null ? pointAt(pt.x, pt.y) : null;
+    if (onto !== null && onto !== from) { joinPoints(p, from, onto); return; }
     const through = from !== null ? transform(p.mesh.verts[from]) : transform([0, 0, 0]);
     const local = M.objectInverse(p)(screenToWorld(pt, through));
     commit(() => {
@@ -1534,7 +1838,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function deleteSelection() {
     if (S.mode === 'object') {
       if (!S.parts.size) return;
-      commit(() => { model.parts = model.parts.filter(p => !S.parts.has(p.id)); S.parts = new Set(); S.active = model.parts[0]?.id ?? null; });
+      commit(() => { model.parts = model.parts.filter(p => !S.parts.has(p.id)); dropEmptyFolders(model); S.parts = new Set(); S.active = model.parts[0]?.id ?? null; });
     } else if (S.mode === 'edit') {
       const p = activePart(); if (!p || !S.verts.size) return;
       commit(() => { const faces = selectedFaces(p); if (S.selectMode === 'face' && faces.size) M.deleteFaces(p.mesh, faces); else M.deleteVerts(p.mesh, S.verts); S.verts = new Set(); S.cache.delete(p.id); });
@@ -1614,7 +1918,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         if (other.mesh.loose?.length) target.mesh.loose = [...(target.mesh.loose ?? []), ...other.mesh.loose.map(i => i + base)];
       }
       assertValidMesh(target.mesh, 'Join');
-      model.parts = model.parts.filter(p => p === target || !S.parts.has(p.id));
+      model.parts = model.parts.filter(p => p === target || !S.parts.has(p.id)); dropEmptyFolders(model);
       S.parts = new Set([target.id]); S.active = target.id; S.cache.clear();
     });
   }
@@ -1628,22 +1932,26 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
 
   // ---------- bones ----------
-  /** A model's first bones start with Automatic weights off (unless it was turned on):
-   * they move nothing until you paint what they move, or tick Automatic weights. */
-  function firstBones() {
-    if (model.bones.length || model.autoWeights !== undefined) return;
-    model.autoWeights = false;
-    toast(t("modeler.manualWeightsStart"));
+  /** New bones are loose layers: they move nothing until you paint what they move, or
+   * Group to model (right-click the bone's layer). Runs `add` and marks what it made. */
+  function newBones(add) {
+    const had = new Set(model.bones.map(b => b.id)), result = add();
+    const made = model.bones.filter(b => !had.has(b.id));
+    for (const b of made) b.state = 'loose';
+    if (made.length) S.looseNote = true;
+    return result;
   }
+  // Said once per session, after the step that made the first loose bones.
+  const noteLoose = () => { if (S.looseNote && !S.looseNoted) { S.looseNoted = true; toast(t("modeler.newBonesLoose")); } };
   function addHumanoid() {
     const meshes = evaluateModel(model, {smooth: false}).map(x => x.mesh);
-    if (model.bones.length) { askConfirm(t("modeler.replaceSkeleton"), () => commit(() => { humanoidSkeleton(model, meshes); S.bones = new Set(); S.cache.clear(); })); return; }
-    commit(() => { firstBones(); humanoidSkeleton(model, meshes); S.bones = new Set(); S.cache.clear(); });
-    if (S.mode !== 'bones') setMode('bones');
+    const run = () => { commit(() => { newBones(() => humanoidSkeleton(model, meshes)); S.bones = new Set(); S.cache.clear(); }); if (S.mode !== 'bones') setMode('bones'); noteLoose(); };
+    if (model.bones.length) { askConfirm(t("modeler.replaceSkeleton"), run); return; }
+    run();
   }
   /** Face bones on the head (replacing any already there). */
   function addFaceBones() {
-    const run = () => commit(() => { const meshes = evaluateModel(model, {smooth: false}).map(x => x.mesh); const added = faceSkeleton(model, meshes); S.bones = new Set(); S.cache.clear(); toast(t("modeler.faceBonesAdded", {count: added.length})); });
+    const run = () => commit(() => { const meshes = evaluateModel(model, {smooth: false}).map(x => x.mesh); const added = newBones(() => faceSkeleton(model, meshes)); S.bones = new Set(); S.cache.clear(); toast(t("modeler.faceBonesAdded", {count: added.length})); });
     if (model.bones.some(b => b.face)) { askConfirm(t("modeler.replaceFaceBones"), run); return; }
     run();
     if (S.mode !== 'bones') setMode('bones');
@@ -1653,6 +1961,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function boneToSelection() {
     const bone = model.bones.find(b => S.bones.has(b.id) && S.bones.size === 1);
     if (!bone) { toast(t("modeler.selectABoneFirst")); return; }
+    if (refuseMerged([bone, ...[...bonesBelow(model, bone.id)].map(boneById)])) return;
     let points = [];
     const p = activePart();
     if (p && S.verts.size) { const transform = M.objectTransform(p); points = [...S.verts].filter(v => p.mesh.verts[v]).map(v => transform(p.mesh.verts[v])); }
@@ -1689,14 +1998,15 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     toast(t(keepPositive ? "modeler.symmetrizedFromPositive" : "modeler.symmetrizedFromNegative"));
   }
   function addSingleBone() {
-    commit(() => { firstBones(); const at = spawnPoint(); const b = addBone(model, {name: 'Bone', head: at, tail: M.add(at, [0, .3, 0])}); S.bones = new Set([b.id]); S.boneEnd = null; S.cache.clear(); });
+    commit(() => { const at = spawnPoint(), b = newBones(() => addBone(model, {name: 'Bone', head: at, tail: M.add(at, [0, .3, 0])})); S.bones = new Set([b.id]); S.boneEnd = null; S.cache.clear(); });
+    noteLoose();
   }
   function extrudeBone() {
     const from = model.bones.find(b => S.bones.has(b.id));
     if (!from) { toast(t("modeler.selectABoneFirst")); return; }
     const before = snapshot();
     const dir = M.normalize(M.sub(from.tail, from.head)), len = M.length(M.sub(from.tail, from.head)) * .8;
-    const b = addBone(model, {name: sideOf(from.name) ? `Bone.${sideOf(from.name)}` : 'Bone', head: from.tail, tail: M.add(from.tail, M.scale(dir, len)), parent: from.id});
+    const b = newBones(() => addBone(model, {name: sideOf(from.name) ? `Bone.${sideOf(from.name)}` : 'Bone', head: from.tail, tail: M.add(from.tail, M.scale(dir, len)), parent: from.id}));
     S.bones = new Set([b.id]); S.boneEnd = 'tail'; S.cache.clear();
     startTransform('grab'); if (S.modal) S.modal.before = before;
   }
@@ -1738,10 +2048,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     commit(() => {
       const result = importGltf(source, {palette: model.palette, files: others}), ids = new Map();
       for (const b of result.bones) { const made = addBone(model, {name: b.name, head: b.head, tail: b.tail, parent: b.parent === null ? 0 : ids.get(b.parent) ?? 0}); ids.set(b.key, made.id); }
+      const folder = result.parts.length > 1 ? addFolder(model, {name: main.name.replace(/\.(glb|gltf)$/i, '') || 'Model'}).id : 0;
       for (const p of result.parts) {
         const skin = p.mesh.vdata?.skin;
         if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([key, w]) => [ids.get(key), w]).filter(([id]) => id !== undefined);
-        addPart(model, {name: p.name, mesh: p.mesh});
+        const made = addPart(model, {name: p.name, mesh: p.mesh}); if (folder) made.folder = folder;
       }
       S.parts = new Set();
       toast(t("modeler.importedGltf", {parts: result.parts.length, bones: result.bones.length}));
@@ -1803,7 +2114,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       try {
         const [text, mtl] = await Promise.all([objFile.text(), mtlFile ? mtlFile.text() : '']);
         let uncolored = 0;
-        const added = commit(() => { const parts = importObj(text, {mtl, palette: model.palette}); uncolored = parts.uncoloredMaterials; for (const p of parts) addPart(model, {name: p.name, mesh: p.mesh}); S.parts = new Set(); return parts.length; });
+        // The model's pieces go in one folder named after the file, closed (a "skin" layer).
+        const added = commit(() => { const parts = importObj(text, {mtl, palette: model.palette}); uncolored = parts.uncoloredMaterials;
+          const folder = parts.length > 1 ? addFolder(model, {name: objFile.name.replace(/\.obj$/i, '') || 'Model'}).id : 0;
+          for (const p of parts) { const made = addPart(model, {name: p.name, mesh: p.mesh}); if (folder) made.folder = folder; } S.parts = new Set(); return parts.length; });
         // commit shows the reason when the file is refused; only say "imported" when it was.
         if (added) { frameSelected(); toast(uncolored ? t("modeler.importedObjNoMtl", {count: uncolored}) : t("modeler.importedObj")); }
       } catch (error) { toast(error.message); }
@@ -1849,12 +2163,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** A question in the middle of the viewport (Enter answers yes, Esc no), so it can't
    * end up off screen or under a message along the bottom of the window. */
   let confirmBox = null;
-  function askConfirm(message, yes, {yesLabel = t("modeler.replace"), noLabel = t("modeler.keep")} = {}) {
+  function askConfirm(message, yes, {yesLabel = t("modeler.replace"), noLabel = t("modeler.keep"), extra = null} = {}) {
     closePopover(); closeConfirm();
     const ok = el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: () => { closeConfirm(); yes(); }}, yesLabel);
     const no = el('button', {type: 'button', class: 'modeler-button', onclick: closeConfirm}, noLabel);
     confirmBox = el('div', {class: 'modeler-controls modeler-confirm-layer', onpointerdown: e => { if (e.target === confirmBox) closeConfirm(); }},
-      [el('div', {class: 'modeler-controls-card modeler-confirm', role: 'alertdialog', 'aria-label': message}, [el('p', {class: 'modeler-confirm-text', text: message}), el('div', {class: 'modeler-row modeler-confirm-row'}, [no, ok])])]);
+      [el('div', {class: 'modeler-controls-card modeler-confirm', role: 'alertdialog', 'aria-label': message}, [el('p', {class: 'modeler-confirm-text', text: message}), extra, el('div', {class: 'modeler-row modeler-confirm-row'}, [no, ok])])]);
     stage.append(confirmBox);
     ok.focus();
   }
@@ -1913,6 +2227,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function tweakModal(hit, start, stretch) {
     const before = snapshot();
     const modal = (kind, points, pivot) => {
+      if (refuseMerged(points.map(q => q.bone))) return 'refused';
       const target = {kind: 'bones', points, start: points.map(q => q.bone[q.end].slice()), pivot};
       return {kind, target, before, pivot, pivotScreen: frame.project(pivot), start: {...start}, mouse: {...start}, axis: null, axisName: '', axisColor: VIEW_COLORS.ring, tweak: true, stretch};
     };
@@ -1966,7 +2281,16 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     canvas.setPointerCapture(e.pointerId);
     // While painting, an Alt+click that doesn't move (Alt+drag still orbits) highlights a part or
     // un-highlights it: the brush then paints only highlighted parts.
-    if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p, start: p, maskClick: e.button === 0 && e.altKey && paintingNow()}; e.preventDefault(); return; }
+    if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p, start: p, button: e.button, maskClick: e.button === 0 && e.altKey && paintingNow()}; e.preventDefault(); return; }
+    // Connect to…: the next click on a point joins it to the one the menu was opened on.
+    if (e.button === 0 && S.connect) {
+      const q = part(S.connect.part), v = S.mode === 'edit' && q && S.active === q.id ? pointAt(p.x, p.y) : null, from = S.connect.from;
+      S.connect = null;
+      if (v !== null && v !== from) joinPoints(q, from, v); else { toast(t("modeler.connectCancelled")); draw(); }
+      return;
+    }
+    // Bones mode: drag the orange origin dot to move it.
+    if (e.button === 0 && S.mode === 'bones' && !S.posing && !paintingNow() && nearOrigin(p)) { drag = {kind: 'origin', before: snapshot(), through: originOf(model).slice(), moved: false}; return; }
     // Weight painting: a stroke is one undo step; Ctrl paints the other way (Add ↔ Remove).
     // While painting, Shift+click picks another bone to paint.
     if (e.button === 0 && paintingNow() && e.shiftKey) { const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
@@ -1993,15 +2317,17 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'loopslide') { S.modal.mouse = p; applyLoopSlide(); return; }
     if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
-    if (!drag) { if (paintingNow()) draw(); return; }
+    if (!drag) { if (paintingNow() || S.connect) draw(); return; }
     if (drag.kind === 'paint') { paintTo(drag, p, drag.invert); return; }
     if (drag.kind === 'pose') { poseDrag(drag, p); return; }
+    if (drag.kind === 'origin') { setOrigin(model, screenToWorld(p, drag.through)); drag.moved = true; draw(); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
     if (drag.kind === 'orbit') { S.camera.yaw -= dx * .008; S.camera.pitch = Math.max(-1.55, Math.min(1.55, S.camera.pitch + dy * .008)); S.camera.ortho = false; draw(); }
     else if (drag.kind === 'pan') { const u = frame.unitsPerPixel(S.camera.target); S.camera.target = M.add(S.camera.target, M.add(M.scale(frame.right, -dx * u), M.scale(frame.up, dy * u))); draw(); }
     else if (drag.kind === 'press' && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) > 4) {
       const tweak = drag.hit ? tweakModal(drag.hit, drag.start, e.ctrlKey || e.metaKey) : null;
-      if (tweak) { drag.kind = 'tweak'; S.modal = tweak; S.modal.mouse = p; renderHeader(); renderOutliner(); renderProps(); setStatus(); applyTransform(); }
+      if (tweak === 'refused') { drag.kind = 'refused'; renderOutliner(); renderProps(); }
+      else if (tweak) { drag.kind = 'tweak'; S.modal = tweak; S.modal.mouse = p; renderHeader(); renderOutliner(); renderProps(); setStatus(); applyTransform(); }
       else { drag.kind = 'box'; S.modal = {kind: 'box', box: {x0: drag.start.x, y0: drag.start.y, x1: p.x, y1: p.y}}; }
     }
     else if (drag.kind === 'box') { S.modal.box.x1 = p.x; S.modal.box.y1 = p.y; draw(); }
@@ -2010,6 +2336,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (!drag) return;
     const d = drag; drag = null;
     if (d.kind === 'pose') { renderProps(); return; }
+    if (d.kind === 'origin') { if (d.moved) { S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; refresh(); } return; }
+    // A right-click that doesn't move (a right-drag orbits) opens the menu for what is under the pointer.
+    if (d.kind === 'orbit' && d.button === 2 && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { viewMenu(d.start, e); return; }
     if (d.kind === 'paint') { if (d.touched.size) { S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
     if (d.maskClick && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { const poly = pickPolygon(S.polys, d.start.x, d.start.y); if (poly) selectPart(poly.item.partId, true); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
@@ -2065,6 +2394,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (S.modal) handled = false;
     else if (ctrl && key === 'z') e.shiftKey ? redo() : undo();
     else if (ctrl && key === 'y') redo();
+    else if (ctrl && key === 'g' && S.mode === 'object') groupIntoFolder();
+    else if (key === 'Escape' && S.connect) { S.connect = null; toast(t("modeler.connectCancelled")); draw(); }
     else if (ctrl && e.altKey && e.shiftKey && key === 's') startShear();
     else if (ctrl && key === 'e' && S.mode === 'edit') bridgeSelected();
     else if (ctrl && key === 'r') startLoopCut();

@@ -14,7 +14,7 @@
  * startStroke(model, part, bone) → stroke state for one part and bone;
  * paintPoint(stroke, v, mode, amount) changes one point (mode add, remove,
  * smooth or set); clearPainted(part, verts?) returns points to automatic. */
-import {completeSkin, autoWeights, otherSide} from './armature.mjs';
+import {completeSkin, autoWeights, otherSide, isMerged} from './armature.mjs';
 import {transformMesh, objectMatrix} from './mesh.mjs';
 
 export const PAINT_MODES = Object.freeze(['add', 'remove', 'smooth', 'set']);
@@ -71,11 +71,11 @@ export function ridersOf(model, bone) {
  * still when it turns: never to a bone below it (a shoulder's upper arm), which
  * would carry the point along anyway. Bones below it keep what they had. Null
  * when no such bone can take it. */
-function lowered(model, pairs, bone, amount, fallback) {
-  const riders = ridersOf(model, bone), still = ([b, x]) => b !== bone && !riders.has(b) && x > 0;
+function lowered(model, pairs, bone, amount, fallback, held = new Set()) {
+  const riders = ridersOf(model, bone), still = ([b, x]) => b !== bone && !riders.has(b) && !held.has(b) && x > 0;
   let takers = (pairs ?? []).filter(still);
   if (!takers.length) takers = fallback().filter(still);
-  if (!takers.length) { const parent = model.bones.find(b => b.id === bone)?.parent; if (model.bones.some(b => b.id === parent)) takers = [[parent, 1]]; }
+  if (!takers.length) { const parent = model.bones.find(b => b.id === bone)?.parent; if (model.bones.some(b => b.id === parent) && !held.has(parent)) takers = [[parent, 1]]; }
   if (!takers.length) return null;
   const total = takers.reduce((t, [, x]) => t + x, 0), out = new Map((pairs ?? []).filter(([, x]) => x > 0));
   out.set(bone, Math.max(0, (out.get(bone) ?? 0) - amount));
@@ -88,7 +88,12 @@ function lowered(model, pairs, bone, amount, fallback) {
  * its neighbours' average (smooth) or `value` (set). `bone` defaults to the
  * stroke's bone (a Mirror copy paints the other side's bone). True if it changed. */
 export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value = 1} = {}) {
-  const {skin, part} = stroke, pairs = skin[v] ?? [], now = weightIn(pairs, bone);
+  const {skin, part} = stroke, all = skin[v] ?? [];
+  // A merged bone's weights are frozen: painting another bone shares only what they leave.
+  const held = new Set(stroke.model.bones.filter(b => b.id !== bone && isMerged(b)).map(b => b.id));
+  const kept = all.filter(([b]) => held.has(b)), free = 1 - kept.reduce((t, [, x]) => t + x, 0);
+  if (free <= 1e-4) return false;
+  const pairs = all.filter(([b]) => !held.has(b)).map(([b, x]) => [b, x / free]), now = weightIn(pairs, bone);
   let target;
   if (mode === 'add') target = 1;
   else if (mode === 'remove') target = 0;
@@ -98,10 +103,13 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
     if (!around.length) return false;
     target = around.reduce((t, u) => t + weightIn(skin[u], bone), 0) / around.length;
   } else throw new Error(`Unknown paint mode “${mode}”.`);
+  // Smooth and Set name weights out of the whole point; the free share is what can change.
+  if (mode !== 'add' && mode !== 'remove') target = Math.min(1, target / free);
   const next = now + (target - now) * clamp01(amount);
-  if (Math.abs(next - now) < 1e-4) return false;
-  const fallback = () => stroke.fallback(v, bone);
-  skin[v] = next < now ? lowered(stroke.model, pairs, bone, now - next, fallback) ?? withWeight(pairs, bone, next, fallback) : withWeight(pairs, bone, next, fallback);
+  if (Math.abs(next - now) * free < 1e-4) return false;
+  const fallback = () => stroke.fallback(v, bone).filter(([b]) => !held.has(b));
+  const changed = next < now ? lowered(stroke.model, pairs, bone, now - next, fallback, held) ?? withWeight(pairs, bone, next, fallback) : withWeight(pairs, bone, next, fallback);
+  skin[v] = kept.length ? [...kept, ...changed.map(([b, x]) => [b, Math.round(x * free * 1e5) / 1e5])].filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1]).slice(0, 4) : changed;
   part.mesh.vdata ??= {};
   part.mesh.vdata.skin ??= {};
   part.mesh.vdata.skin[v] = skin[v].map(pair => pair.slice());

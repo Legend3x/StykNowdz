@@ -67,12 +67,16 @@ export function readModel(value) {
     if (part.clip !== undefined) part.clip = part.clip !== false;
   }
   if (model.toon !== undefined && (!model.toon || typeof model.toon !== 'object')) delete model.toon;
-  // Automatic weights: on unless turned off (then only painted weights move points).
-  // A new model's first bones start with it off; true records turning it back on.
-  if (typeof model.autoWeights !== 'boolean') delete model.autoWeights;
   model.bones = Array.isArray(model.bones) ? model.bones : [];
+  // Models saved with Automatic weights off (before bone layers) open with their bones loose:
+  // the same thing, only painted points move.
+  const allLoose = model.autoWeights === false;
+  delete model.autoWeights;
   for (const b of model.bones) {
     if (!finite(b.head, 3) || !finite(b.tail, 3)) fail('a bone is broken');
+    // Bone layer state (armature.mjs boneState): loose or merged; grouped is stored as none.
+    if (allLoose && b.state !== 'merged') b.state = 'loose';
+    if (b.state !== 'loose' && b.state !== 'merged') delete b.state;
     // Face bones: a flag, how far each pulls the skin, and an optional cut.
     if (b.face === true) { b.reach = Number.isFinite(b.reach) ? Math.max(0, Math.min(10, b.reach)) : .05; if (!['below', 'above'].includes(b.cut)) delete b.cut; }
     else { delete b.face; delete b.reach; delete b.cut; }
@@ -80,10 +84,25 @@ export function readModel(value) {
     if (b.strength !== undefined) { if (Number.isFinite(b.strength) && b.strength !== 1) b.strength = Math.max(0, Math.min(2, b.strength)); else delete b.strength; }
     if (b.range !== undefined) { if (Number.isFinite(b.range) && b.range > 0) b.range = Math.min(100, b.range); else delete b.range; }
   }
+  // Layers (docs/BLENDER-LITE.md, "Layers"): folders of parts, each part in at most one
+  // folder, folders inside folders; a locked part can't be picked in the view.
+  const folders = Array.isArray(model.folders) ? model.folders.filter(f => f && Number.isInteger(f.id) && f.id > 0) : [];
+  const folderIds = new Set(folders.map(f => f.id));
+  model.folders = folders.map(f => ({id: f.id, name: String(f.name ?? 'Folder').slice(0, 120) || 'Folder', ...(folderIds.has(f.parent) && f.parent !== f.id ? {parent: f.parent} : {}), ...(f.open === true ? {open: true} : {})}));
+  // No folder inside itself, however deep.
+  const byFolder = new Map(model.folders.map(f => [f.id, f]));
+  for (const f of model.folders) { const seen = new Set([f.id]); let up = byFolder.get(f.parent); while (up) { if (seen.has(up.id)) { delete f.parent; break; } seen.add(up.id); up = byFolder.get(up.parent); } }
+  if (!model.folders.length) delete model.folders;
+  for (const part of model.parts) {
+    if (!folderIds.has(part.folder)) delete part.folder;
+    if (part.locked !== true) delete part.locked;
+  }
+  // The origin: the point the figure stands on and turns about on the stage (export-figure.mjs).
+  if (model.origin !== undefined) { if (finite(model.origin, 3) && model.origin.some(v => v !== 0)) model.origin = model.origin.slice(); else delete model.origin; }
   model.palette = Array.isArray(model.palette) && model.palette.length ? model.palette : DEFAULT_PALETTE.map(c => c.slice());
   model.references = Array.isArray(model.references) ? model.references : [];
   for (const ref of model.references) if (ref && typeof ref === 'object' && ref.flip !== true) delete ref.flip;
-  model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1));
+  model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1), ...(model.folders ?? []).map(f => f.id + 1));
   return model;
 }
 

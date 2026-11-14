@@ -14,7 +14,10 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - 3D Nowdz bones have Strength and Reach sliders, and you can paint exactly what each bone moves with Add, Remove, Smooth and Set brushes, so a shoulder no longer tugs the chest or back. Find them in Bones mode with a bone selected.
 - 3D Nowdz has Pose mode: in Bones mode, press Pose and drag a bone to see the model bend with it before adding it to an animation. You can paint weights while it's bent, and Stop posing puts every bone back.
 - 3D Nowdz weight painting can paint only on the parts you highlight (click a part while painting), and Mirror painting paints both sides at once.
-- 3D Nowdz has an Automatic weights checkbox in Bones mode. Bones added to a model with no bones start with it off, so nothing moves until you paint it; tick it to have the bones work out what they move.
+- 3D Nowdz has a Layers panel: imported models arrive as one folder, you can group parts into folders and lock them, and bones are listed under the bones they attach to.
+- 3D Nowdz bones start loose, so placing them doesn't move the model. Right-click a bone to group it to the model or merge it, which locks it with what it moves.
+- 3D Nowdz shows the figure's origin as an orange dot in Bones mode, with dashed lines to the bones that hang from it. Drag it to choose where the figure stands; figures already on the stage stay where they are.
+- 3D Nowdz traced shapes close when you Ctrl+click their first point, and right-clicking a point lets you connect, fill or split the shape.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).
 - 3D Nowdz Inset and Bevel can be changed after they finish, with exact thickness, width and segments.

@@ -39,7 +39,60 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
   bone (E), Delete, Mirror .L to .R; click a bone to select it and drag its
   joints (see Dragging). With one bone selected the model shows what it moves,
   blue (nothing) to red (fully). Bones mode sets the skeleton's rest shape: the
-  mesh doesn't follow, as in Blender. Posing happens on the Animate stage.
+  mesh doesn't follow, as in Blender. Posing happens on the Animate stage, or
+  as a preview with Pose (see Pose mode). New bones start loose (see Layers).
+
+### Layers
+
+The left panel lists the model as layers, like Procreate's (`renderOutliner` in
+modeler-ui.mjs, the model side in src/modeler/layers.mjs):
+
+- **Folders** hold parts and other folders (`model.folders`, `part.folder`).
+  An imported OBJ or glTF with several pieces arrives as one closed folder
+  named after the file, so a 40-piece model is one row. Ctrl+G (or + › Group
+  into folder) puts the selected parts in a new folder; drag rows onto a
+  folder to move them in, onto empty space to take them out. Clicking a folder
+  selects everything in it; its eye hides it all. Folders left empty go.
+- **Parts** have an eye and a lock (`part.locked`): a locked part can't be
+  picked, box-selected or moved in the view.
+- **Skeleton** lists the **Origin** and the bones nested under the bone each is
+  attached to; drag a bone onto another to attach it, onto Skeleton to detach.
+  Each bone layer is in one of three states (`bone.state`, armature.mjs
+  `boneState`):
+  - **Loose** (every new bone: Add bone, Extrude, Humanoid skeleton, Face
+    bones): moves only points painted for it, so it can be placed without the
+    model reacting.
+  - **Grouped** (bones stored before states, and imported rigs): also takes its
+    share of the skin by itself (automatic weights), can be moved and painted.
+  - **Merged**: locked in place. `mergeBone` freezes the weights of every point
+    it moves into painted weights (on a Mirror part also where its other side
+    moves the part's own points), and it takes nothing new by itself, so later
+    changes to other bones can't shift its share; painting other bones shares
+    only what merged bones leave (`paintPoint`). Moving it, or a bone it rides
+    on, is refused with a message. A bone and the skin stay separate objects
+    (the stage needs the bone to bend the model), so merging means locked with
+    its weights frozen. **Unmerge** asks first, with "Don't ask again"
+    (localStorage `stykNowdz.modeler.unmergeQuiet`); its frozen weights stay
+    until repainted or Back to automatic.
+- Right-click any row (or a part, bone or point in the view, with a right-click
+  that doesn't move: a right-drag still orbits) for its menu: rename, folders,
+  lock, Group to model / Make loose / Merge to model / Unmerge, Extrude, detach,
+  delete. **+** at the top adds parts, a folder or bones; the right panel keeps
+  only the selected thing's settings.
+
+### Origin
+
+The origin (`model.origin`, the middle of the floor unless moved) is the point
+the figure stands on and turns about on the stage: the orange dot there. In
+Bones mode it shows as an orange dot with dashed lines to every bone attached
+to nothing (those hang off it on the stage) and dashed grey lines between a
+bone and its parent where they don't touch (`connections`). Drag the dot to move
+it (one undo step); its layer's menu puts it back on the floor or at the
+selected bone's start. The figure is exported relative to it
+(export-figure.mjs). Updating a placed figure after moving it keeps the model
+where it was on the stage: `originShift` moves each frame's root by the
+difference, turned and sized as the figure is in that frame
+(`replaceFigureDefinition`'s `moveRoot`), in the same undo step.
 
 ### Toon look (cel shading)
 
@@ -123,10 +176,18 @@ the outline like dot-to-dot over a reference drawing, then fill faces.
 | Start | Add › Single point (opens Edit mode with it selected) |
 | Next point | E, move, click (pulls a new point out of the selected one), or Ctrl+click where it should go |
 | Start a new line | Deselect (Alt+A), then Ctrl+click |
-| Join two points | Select both, F |
-| Face from a ring | Select a closed ring of traced lines, F (keeps the ring's order) |
+| Join two points | Select both, F; or right-click a point › Connect to…, then click the other |
+| Close a shape | Ctrl+click the line's first point while placing points, or right-click an end › Connect to first point |
+| Split a line | Right-click a point › Split here (a ring opens there) |
+| Face from a ring | Select a closed ring of traced lines, F, or right-click › Fill shape (keeps the ring's order) |
 | Fill between two lines | Select both lines, Bridge (Ctrl+E): quads, or triangles where one line has more points; two rings make a tube |
 | Grow a strip | Select a traced line (or an open border), E: quads |
+
+The two open ends of each line show as hollow circles, so a gap is easy to
+see. In Layers a part with traced lines opens (▸) to list them, each an
+**Open line** or a **Closed shape** with its point count (`tracedLines` in
+src/modeler/layers.mjs); clicking one selects its points. A filled shape is
+part of the surface and leaves the list; a single point on its own isn't a line.
 
 New faces face the viewer unless they touch older faces, whose winding they
 follow. On mirrored parts the other half shows dashed, and with clipping on a
@@ -559,12 +620,13 @@ centre (and, on a Mirror part, each side by its own), so a left shin never pulls
 the right leg and a hand hanging beside a thigh doesn't follow the leg
 (`piecesOf`: points joined by faces or edges).
 
-**Automatic weights** (Bones panel checkbox, `model.autoWeights`, on unless
-`false`) can be turned off: then only painted points follow the bones and every
-other point stays with the part's holding bone (`holdingBone`: its Moves with
-bone, else the skeleton's root). The first bones added to a model that has none
-(Humanoid skeleton or Add bone) start with it off, so nothing moves until you
-paint it; ticking the box brings automatic weights back.
+Only **grouped** bones take their share by themselves (see Layers): loose and
+merged bones still divide the skin with the others in steps 1–3, so a grouped
+bone takes only its own region, but what they would take goes to the part's
+holding bone (`holdingBone`: its Moves with bone, else the skeleton's root), so
+it moves only with the whole figure. With no grouped bone at all every point
+does. Models saved with the old Automatic weights checkbox off
+(`model.autoWeights: false`) open with their bones loose, which is the same.
 
 Two refinements: a bone that only touches a part's edge (a thigh starting just
 under the shirt, sampled inside the part's tight bounds once or its grown

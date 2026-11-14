@@ -128,6 +128,43 @@ try {
     });
     assert.deepEqual({...result, steps: result.steps - setup.undo}, {swung: true, blocked: true, unchanged: true, steps: 0, back: true});
   });
+  await step('Layers: new bones are loose, right-click groups and merges, a merged bone stays put, the origin drags', async () => {
+    const result = await page.evaluate(async () => {
+      if (m.state.posing) button('Stop posing')?.click();
+      m.setMode('object'); m.state.parts = new Set(); m.refresh();
+      button('Base character').click(); await wait(300);
+      const layer = (kind, id) => document.querySelector(`.modeler-layer-${kind}[data-${kind}="${id}"]`);
+      const menuItem = text => [...document.querySelectorAll('.modeler-popover button')].find(x => x.textContent.trim() === text);
+      const rightClick = row => row.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 120, clientY: 300}));
+      // A folder from the + menu takes the selected parts (Ctrl+G does the same).
+      m.state.parts = new Set(m.model.parts.slice(0, 2).map(q => q.id)); m.refresh();
+      press('g', {ctrlKey: true}); await wait(100);
+      const folder = m.model.folders?.[0], inFolder = m.model.parts.filter(q => q.folder === folder?.id).length;
+      // Humanoid skeleton from the Skeleton layer's menu: every new bone is loose.
+      rightClick(document.querySelector('.modeler-layer-skeleton')); await wait(50); menuItem('Humanoid skeleton').click(); await wait(500);
+      button('Replace')?.click(); await wait(500);
+      const loose = m.model.bones.every(b => b.state === 'loose');
+      const shoulder = m.model.bones.find(b => b.name === 'Shoulder.L');
+      rightClick(layer('bone', shoulder.id)); await wait(50); menuItem('Group to model').click(); await wait(200);
+      const grouped = !('state' in shoulder);
+      rightClick(layer('bone', shoulder.id)); await wait(50); menuItem('Merge to model').click(); await wait(200);
+      const merged = shoulder.state === 'merged', head = shoulder.head.slice();
+      m.state.bones = new Set([shoulder.id]); m.refresh(); press('g'); await wait(50);
+      const locked = !m.state.modal && JSON.stringify(head) === JSON.stringify(shoulder.head);
+      return {inFolder, loose, grouped, merged, locked, steps: m.state.undo.length};
+    });
+    assert.deepEqual({...result, steps: undefined}, {inFolder: 2, loose: true, grouped: true, merged: true, locked: true, steps: undefined});
+    // Drag the orange origin dot in Front view.
+    const dot = await page.evaluate(async () => {
+      m.setView('front'); m.state.bones = new Set(); m.refresh(); await wait(100);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), q = f.project([0, 0, 0]);
+      return [box.left + q.x, box.top + q.y];
+    });
+    await page.mouse.move(...dot); await page.mouse.down(); await page.mouse.move(dot[0], dot[1] - 60, {steps: 6}); await page.mouse.up();
+    const origin = await page.evaluate(async () => { await wait(100); const o = m.model.origin; press('z', {ctrlKey: true}); await wait(100); return {moved: o?.[1] > .1, undone: !m.model.origin}; });
+    assert.deepEqual(origin, {moved: true, undone: true});
+  });
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

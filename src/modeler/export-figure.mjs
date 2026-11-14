@@ -11,6 +11,7 @@ import {outlineHull, partOutline, toonSettings} from './toon.mjs';
 import {toonLight, toonThreshold, inkColor} from '../toon-shading.mjs';
 import {evaluateModel, readModel} from './model.mjs';
 import {boneOrder, partWeights, addBone} from './armature.mjs';
+import {originOf} from './layers.mjs';
 import {MESH_LIMITS} from '../spatial-mesh.mjs';
 import {createObject, createFrame} from '../demo.mjs';
 
@@ -60,9 +61,12 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     addBone(temp, {name: 'Body', head: [0, Math.min(...ys), 0], tail: [0, Math.max(...ys), 0]});
     bones = temp.bones; model.bones = temp.bones;
   }
+  // Everything is placed relative to the model's origin: the point the figure
+  // stands on and turns about (the Figure rotation joint at [0, 0, 0]).
+  const o = originOf(model), place = p => toFigure([p[0] - o[0], p[1] - o[1], p[2] - o[2]]);
   const boneSegment = new Map();
   for (const bone of bones) {
-    const origin = toFigure(bone.head), tip = toFigure(bone.tail), d = [tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]];
+    const origin = place(bone.head), tip = place(bone.tail), d = [tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]];
     const full = Math.hypot(...d);
     if (full < 1e-6) throw problem(`The bone “${bone.name}” has no length. Move its tail away from its head.`);
     const turn = push(0, 0, 0, `${bone.name} turn`), tilt = push(0, 0, 0, `${bone.name} tilt`);
@@ -92,7 +96,7 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   // look clockwise on screen (positive area with Y down), so each is reversed.
   const addSurface = (surface, skin, name, noShadow) => {
     const base = positions.length / 3, start = indices.length / 3;
-    for (const p of surface.verts) positions.push(...toFigure(p).map(v => Math.fround(v)));
+    for (const p of surface.verts) positions.push(...place(p).map(v => Math.fround(v)));
     // Custom shading normals, in figure space (Y flips as positions do); zero = smooth.
     surface.verts.forEach((_, i) => { const n = surface.vdata?.normal?.[i]; if (n) customNormals = true; normals.push(...(n ? [n[0], -n[1], n[2]].map(v => Math.fround(v)) : [0, 0, 0])); });
     for (let k = 0; k < skin.bones.length; k++) { const id = skin.bones[k]; meshBones.push(id ? boneSegment.get(id).segment_id : 0); weights.push(skin.weights[k]); }
@@ -124,4 +128,23 @@ export function modelDocument(model) {
   const {figure, stats} = modelToFigure(model);
   const object = createObject(figure, 1, 0, 0);
   return {document: {figure_types: [figure], keyframes: [createFrame([object])]}, stats};
+}
+
+/** How far a placed figure's root must move on the stage so the model stays
+ * where it is when its origin moves from `from` to `to` (model space): the
+ * difference turned and scaled as the figure is in that frame (its Figure
+ * rotation joint's turn and tilt, its rotation and size, mirrored or not).
+ * The depth part has no place on the stage and is left out. */
+export function originShift(figure, object, from, to, {spatialQuaternion, quatRotate, animationRotation}) {
+  const d = toFigure([to[0] - from[0], to[1] - from[1], to[2] - from[2]]);
+  if (Math.hypot(...d) < 1e-9) return null;
+  const index = figure.segments.findIndex(s => s.name === 'Figure rotation' && s._stykRig?.spatial);
+  if (index < 0) return null;
+  const spatial = figure.segments[index]._stykRig.spatial, at = id => figure.segments.findIndex(s => s.segment_id === id);
+  const sign = object.image_text_flags ? -1 : 1, figureAngle = animationRotation(figure, object);
+  const angleOf = i => Number(object.angles?.[i] ?? figure.segments[i]?.angle_rad ?? 0), restOf = i => Number(figure.segments[i]?.angle_rad ?? 0);
+  const channel = id => { const i = at(id); return i < 0 ? 0 : (angleOf(i) - figureAngle) * sign - restOf(i); };
+  const q = spatialQuaternion((angleOf(index) - figureAngle) * sign - restOf(index), channel(spatial.turn), channel(spatial.pitch));
+  const r = quatRotate(q, d), scale = Number(object.scale ?? 1), cs = Math.cos(figureAngle), sn = Math.sin(figureAngle);
+  return {x: (r[0] * cs - r[1] * sign * sn) * scale, y: (r[0] * sn + r[1] * sign * cs) * scale};
 }
