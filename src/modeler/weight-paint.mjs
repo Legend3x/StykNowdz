@@ -27,18 +27,19 @@ export function mirrorBone(model, bone) {
   return model.bones.find(b => b.name === otherSide(name ?? ''))?.id ?? bone;
 }
 
-/** What a stroke needs for one part and bone: every point's current weights,
- * and (when asked) where weight goes if the bone gives up a point it had alone. */
+/** What a stroke needs for one part: every point's current weights, and (when
+ * asked) where weight goes if a bone gives up a point it had alone. `bone` is the
+ * one painted unless paintPoint names another (a mirrored side). */
 export function startStroke(model, part, bone) {
   const skin = completeSkin(model, part);
   const neighbours = part.mesh.verts.map(() => new Set());
   for (const f of part.mesh.faces) for (let i = 0; i < f.v.length; i++) { const a = f.v[i], b = f.v[(i + 1) % f.v.length]; neighbours[a].add(b); neighbours[b].add(a); }
-  let without = null;
-  const fallback = v => {
-    // The bones that would move this point if this bone moved nothing (its Strength 0).
-    without ??= autoWeights({...model, bones: model.bones.map(b => b.id === bone ? {...b, strength: 0} : b)}, transformMesh(part.mesh, objectMatrix(part)), {...part, bone: part.bone === bone ? 0 : part.bone});
-    const pairs = [];
-    for (let k = 0; k < 4; k++) if (without.bones[v * 4 + k] && without.bones[v * 4 + k] !== bone && without.weights[v * 4 + k] > 0) pairs.push([without.bones[v * 4 + k], without.weights[v * 4 + k]]);
+  const without = new Map(), cage = transformMesh(part.mesh, objectMatrix(part));
+  const fallback = (v, b = bone) => {
+    // The bones that would move this point if bone b moved nothing (its Strength 0).
+    if (!without.has(b)) without.set(b, autoWeights({...model, bones: model.bones.map(x => x.id === b ? {...x, strength: 0} : x)}, cage, {...part, bone: part.bone === b ? 0 : part.bone}));
+    const w = without.get(b), pairs = [];
+    for (let k = 0; k < 4; k++) if (w.bones[v * 4 + k] && w.bones[v * 4 + k] !== b && w.weights[v * 4 + k] > 0) pairs.push([w.bones[v * 4 + k], w.weights[v * 4 + k]]);
     return pairs;
   };
   return {model, part, bone, skin, neighbours, fallback, touched: new Set()};
@@ -74,7 +75,7 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
   } else throw new Error(`Unknown paint mode “${mode}”.`);
   const next = now + (target - now) * clamp01(amount);
   if (Math.abs(next - now) < 1e-4) return false;
-  const fallback = bone === stroke.bone ? () => stroke.fallback(v) : () => [];
+  const fallback = () => stroke.fallback(v, bone);
   skin[v] = withWeight(pairs, bone, next, fallback);
   part.mesh.vdata ??= {};
   part.mesh.vdata.skin ??= {};

@@ -104,6 +104,30 @@ try {
     assert.deepEqual({...result, steps: result.steps - setup.undo}, {painted: true, onTorso: true, steps: 1, undone: true});
     assert.equal(setup.sliders, 2);
   });
+  await step('Pose: dragging a bone bends the model, changes nothing, and Stop posing puts it back', async () => {
+    const setup = await page.evaluate(async () => {
+      if (m.state.brush?.on) { m.state.brush.on = false; m.refresh(); }
+      m.state.camera.target = [0, 1, 0]; m.state.camera.dist = 2.6; m.refresh();
+      const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); window.restBones = JSON.stringify(m.model.bones);
+      button('Pose').click(); await wait(100);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
+      const head = at(fore.head), mid = at(fore.head.map((v, k) => (v + fore.tail[k]) / 2)), r = Math.hypot(mid[0] - head[0], mid[1] - head[1]);
+      return {from: mid, to: [head[0] + r, head[1] - r * .2], undo: m.state.undo.length};
+    });
+    await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to, {steps: 8}); await page.mouse.up();
+    const result = await page.evaluate(async () => {
+      await wait(100);
+      const {poseFrames, posedBy} = await import('/src/modeler/pose.mjs');
+      const fore = m.model.bones.find(b => b.name === 'LowerArm.L'), end = posedBy(poseFrames(m.model, m.state.pose), fore.id, fore.tail);
+      const swung = Math.hypot(end[0] - fore.tail[0], end[1] - fore.tail[1]) > .1;
+      press('g'); await wait(50); const blocked = !m.state.modal;
+      const unchanged = JSON.stringify(m.model.bones) === restBones, steps = m.state.undo.length;
+      button('Stop posing').click(); await wait(100);
+      return {swung, blocked, unchanged, steps, back: !m.state.posing && m.state.pose.size === 0};
+    });
+    assert.deepEqual({...result, steps: result.steps - setup.undo}, {swung: true, blocked: true, unchanged: true, steps: 0, back: true});
+  });
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

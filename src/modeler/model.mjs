@@ -67,6 +67,9 @@ export function readModel(value) {
     if (part.clip !== undefined) part.clip = part.clip !== false;
   }
   if (model.toon !== undefined && (!model.toon || typeof model.toon !== 'object')) delete model.toon;
+  // Automatic weights: on unless turned off (then only painted weights move points).
+  // A new model's first bones start with it off; true records turning it back on.
+  if (typeof model.autoWeights !== 'boolean') delete model.autoWeights;
   model.bones = Array.isArray(model.bones) ? model.bones : [];
   for (const b of model.bones) {
     if (!finite(b.head, 3) || !finite(b.tail, 3)) fail('a bone is broken');

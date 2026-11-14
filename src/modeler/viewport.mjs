@@ -190,6 +190,8 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     let rgb = item.palette[face.c] ?? item.palette[0] ?? [200, 200, 200];
     if (face.ink !== undefined) rgb = inkColor(rgb, face.ink);
     if (item.weights) rgb = weightColor(item.weights[poly.fi] ?? 0);
+    // Outside what the weight brush may paint: greyed.
+    if (item.muted) rgb = rgb.map(v => v * .35 + 120 * .65);
     // Toon: flat lit colour, cut along the exact shadow line (as the stage does).
     const pieces = toon && !item.weights
       ? (toonDir && !item.flat && poly.side ? splitByShadow(poly.pts, poly.side) : [[poly.pts, true]]).map(([pts, lit]) => [pts, shadeRgb(lit ? rgb : shadowColor(rgb, toon.strength), 1)])

@@ -552,6 +552,20 @@ the farthest a point can be from the bone and still follow it (fading over its
 last quarter), also after smoothing; it gives way only where no other bone is
 left. Defaults are not stored; Mirror bones copies both across.
 
+Steps 1 and 2 work per connected piece: a part made of separate pieces (an
+OBJ that imported both legs, or both legs and the hands, as one part) gets its
+candidates from each piece's own bounds and blends each piece by its own
+centre (and, on a Mirror part, each side by its own), so a left shin never pulls
+the right leg and a hand hanging beside a thigh doesn't follow the leg
+(`piecesOf`: points joined by faces or edges).
+
+**Automatic weights** (Bones panel checkbox, `model.autoWeights`, on unless
+`false`) can be turned off: then only painted points follow the bones and every
+other point stays with the part's holding bone (`holdingBone`: its Moves with
+bone, else the skeleton's root). The first bones added to a model that has none
+(Humanoid skeleton or Add bone) start with it off, so nothing moves until you
+paint it; ticking the box brings automatic weights back.
+
 Two refinements: a bone that only touches a part's edge (a thigh starting just
 under the shirt, sampled inside the part's tight bounds once or its grown
 bounds at most once) is not a candidate; and a part centred on a root bone
@@ -573,6 +587,12 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   through to the far side. It paints a part's own points (every visible part
   in reach); on a Mirror part, the mirrored half is painted through its source
   point with the other side's bone (`mirrorBone`).
+- **Paint only on highlighted parts**: while painting, click a part without
+  moving the pointer (Alt+click) to add it to the highlight; the brush then
+  paints only highlighted parts and the others are greyed out. **Paint
+  everywhere** clears it, as Blender's face mask.
+- **Mirror painting** paints the same spot on the other side with the other
+  side's bone (Shoulder.L ↔ Shoulder.R), as X-Mirror in Blender.
 - `src/modeler/weight-paint.mjs`: a painted point stores complete weights in
   `part.mesh.vdata.skin` (where an imported rig keeps its weights, saved with
   the model) and always adds up to 1 (Auto Normalize): weight taken from the
@@ -634,6 +654,24 @@ the marker step of an auto-rigger), reading the surfaces (sampled about every
 
 It is tested on a cartoon figure in separate pieces (big head, spikes behind
 it, one-piece legs, large shoes, dense fists) in a T and an A pose.
+
+### Pose mode
+
+Bones panel > **Pose** (as Blender's Pose mode): drag a bone to turn it about
+its start, in the view's plane; the bones below follow and the model bends by
+its weights, so you can see how it will move before **Add to animation**.
+Grabbing a joint shared with the parent turns the parent. Weight painting works
+on the bent model (the brush finds the same spot on the unbent shape), so a
+bad bend can be painted out while you look at it. **Reset pose** straightens
+every bone and **Stop posing** (or leaving the Bones tab) ends it. A pose is
+only a preview: it isn't saved, isn't an undo step and never moves the bones'
+rest positions; G, R and S are blocked while posing.
+
+`src/modeler/pose.mjs`: a pose is a Map of bone id → quaternion about the
+bone's head in the rest frame; `poseFrames` composes parents first
+(`turn = parent.turn · own`, the head carried by the parent), `posedMesh` is
+linear blend skinning with `partWeights`, and `turnBone` turns a bone by a
+rotation given in the scene's frame.
 
 ### Face rig
 

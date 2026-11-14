@@ -6,12 +6,13 @@ import {t} from '../localization.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX} from './armature.mjs';
+import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, automaticWeights} from './armature.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
 import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES} from './weight-paint.mjs';
+import {poseFrames, posedBy, posedMesh, turnBone, axisAngle, isPosed} from './pose.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
@@ -71,7 +72,7 @@ function listenToBlender() {
 export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose} = {}) {
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
-  const S = {mode: 'object', selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
+  const S = {mode: 'object', posing: false, pose: new Map(), selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
     depth: createDepthPass(), camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
 
@@ -393,6 +394,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       B.mode === 'set' ? slider(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
       slider(t("modeler.brushRadius"), B.radius, 4, 200, 1, v => { B.radius = v; draw(); }, t("modeler.brushRadiusHint")),
       slider(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }),
+      el('label', {class: 'modeler-check', title: t("modeler.mirrorPaintHint")}, [el('input', {type: 'checkbox', checked: Boolean(B.mirror), onchange: e => { B.mirror = e.target.checked; }}), t("modeler.mirrorPaint")]),
+      el('p', {class: 'modeler-hint', text: S.parts.size ? t("modeler.paintMaskOn", {count: S.parts.size}) : t("modeler.paintMaskOff")}),
+      S.parts.size ? actions([[t("modeler.paintMaskClear"), () => { S.parts = new Set(); S.active = null; refresh(); }]]) : null,
       actions([[t("modeler.paintedBackToAuto"), () => commit(() => { const n = model.parts.reduce((c, q) => c + clearPainted(q), 0); S.cache.clear(); toast(t("modeler.paintedCleared", {count: n})); }), t("modeler.paintedBackToAutoHint")]]),
       painted ? el('p', {class: 'modeler-hint', text: t("modeler.paintedCount", {count: painted})}) : null,
     ].filter(Boolean);
@@ -407,7 +411,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** The surface point under the pointer (on the shown, smoothed shape), or null. */
   function surfaceAt(x, y) {
     const poly = pickPolygon(S.polys, x, y); if (!poly) return null;
-    const mesh = poly.item.mesh, f = poly.face, pts = poly.pts;
+    // Posed, the brush still paints the rest shape: the same spot of the same face.
+    const mesh = poly.item.restMesh ?? poly.item.mesh, f = poly.face, pts = poly.pts;
     // Screen-space barycentric weights on the face's fan, applied to its 3D corners.
     for (let i = 1; i + 1 < f.v.length; i++) {
       const a = pts[0], b = pts[i], c = pts[i + 1], d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
@@ -419,13 +424,28 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     return mesh.verts[f.v[0]].slice();
   }
-  /** One dab of the brush at a screen point: a sphere around the surface point, as Blender's brush. */
+  /** The parts the brush may paint: the highlighted ones (click them in the list,
+   * or Alt+click them while painting), else every shown part. */
+  const paintMask = () => S.parts.size ? S.parts : null;
+  /** One dab of the brush at a screen point: a sphere around the surface point, as
+   * Blender's brush. Mirror painting dabs the same spot on the other side too, with
+   * the other side's bone (for models whose two sides are separate points). */
   function paintDab(stroke, x, y, invert) {
     const B = brush(), hit = surfaceAt(x, y); if (!hit) return false;
     const reach = B.radius * frame.unitsPerPixel(hit), bone = [...S.bones][0], mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
+    let changed = dabAt(stroke, hit, reach, bone, mode, false);
+    const other = mirrorBone(model, bone);
+    if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, mode, true) || changed;
+    if (changed) for (const id of stroke.touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
+    return changed;
+  }
+  function dabAt(stroke, hit, reach, bone, mode, mirrorDab) {
+    const B = brush(), mask = paintMask();
     let changed = false;
     for (const q of model.parts) {
-      if (q.visible === false || !q.mesh.faces.length) continue;
+      if (q.visible === false || !q.mesh.faces.length || (mask && !mask.has(q.id))) continue;
+      // A Mirror part already paints both halves from one dab.
+      if (mirrorDab && q.mirror) continue;
       const to = M.objectTransform(q);
       let state = stroke.parts.get(q.id);
       for (let v = 0; v < q.mesh.verts.length; v++) {
@@ -440,7 +460,6 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         }
       }
     }
-    if (changed) for (const id of stroke.touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
     return changed;
   }
   function paintTo(stroke, p, invert) {
@@ -519,7 +538,14 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         actions([[t("modeler.humanoidSkeleton"), addHumanoid, t("modeler.humanoidSkeletonHint")], [t("modeler.faceBones"), addFaceBones, t("modeler.faceBonesHint")], [t("modeler.addBone"), addSingleBone], [t("modeler.extrudeBone"), extrudeBone, 'E'],
           [t("modeler.deleteSelected"), deleteSelection, 'X'], [t("modeler.mirrorBones"), () => commit(() => symmetrizeBones(model)), t("modeler.mirrorBonesHint")]]),
         el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.weights, onchange: e => { S.weights = e.target.checked; refresh(); }}), t("modeler.showWeights")]),
-        el('p', {class: 'modeler-hint', text: t("modeler.bonesHint")})]));
+        // Automatic weights: bones weigh the skin by themselves; off, only painted weights move points.
+        el('label', {class: 'modeler-check', title: t("modeler.autoWeightsHint")}, [el('input', {type: 'checkbox', checked: model.bones.length ? automaticWeights(model) : model.autoWeights === true,
+          onchange: e => commit(() => { model.autoWeights = e.target.checked; S.cache.clear(); })}), t("modeler.autoWeights")]),
+        // Pose mode: turn bones to see the model bend, without changing the skeleton.
+        model.bones.length ? el('p', {class: 'modeler-hint', text: t("modeler.poseHint")}) : null,
+        model.bones.length ? actions([[S.posing ? t("modeler.poseStop") : t("modeler.poseStart"), () => setPosing(!S.posing), t("modeler.poseHint")],
+          ...(S.posing && isPosed(S.pose) ? [[t("modeler.poseReset"), resetPose]] : [])]) : null,
+        el('p', {class: 'modeler-hint', text: S.posing ? t("modeler.poseStatus") : t("modeler.bonesHint")})]));
       if (bone) blocks.push(section(t("modeler.bone"), [
         el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.name")}), el('input', {type: 'text', value: bone.name, maxlength: '80', onchange: e => commit(() => { bone.name = e.target.value.trim() || bone.name; })})]),
         el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.parent")}), el('select', {onchange: e => commit(() => { bone.parent = Number(e.target.value); })},
@@ -576,7 +602,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
       : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '') + (m.typed ? ` · ${t("modeler.typedValue", {value: m.typed})}` : '')
       : m?.kind === 'inset' ? t("modeler.insetStatus") : m?.kind === 'bevel' ? t("modeler.bevelStatus", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind === 'knife' ? t("modeler.knifeStatus", {count: m.path.length}) : m?.kind === 'loopcut' ? t("modeler.loopCutStatus", {count: m.cuts}) : m?.kind === 'loopslide' ? t("modeler.loopSlideStatus") : m?.kind === 'slide' ? t("modeler.edgeSlideStatus")
-      : S.mode === 'edit' ? t("modeler.editStatus") : paintingNow() ? t("modeler.paintStatus", {bone: model.bones.find(b => S.bones.has(b.id))?.name ?? ''}) : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
+      : S.mode === 'edit' ? t("modeler.editStatus") : S.mode === 'bones' && S.posing && !paintingNow() ? t("modeler.poseStatus") : paintingNow() ? t("modeler.paintStatus", {bone: model.bones.find(b => S.bones.has(b.id))?.name ?? ''}) : S.mode === 'bones' ? t("modeler.bonesStatus") : t("modeler.objectStatus");
     // Soft select: its radius, which the scroll wheel changes while moving.
     status.textContent = m?.target?.soft ? `${text} · ${t("modeler.softStatus", {radius: fmt(S.softRadius)})}` : text;
   }
@@ -609,6 +635,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (!p.smooth) toast(t("modeler.creaseNeedsSmooth"));
   }
   function draw() {
+    shownFrames = null;
     if (frameRequest) return;
     frameRequest = requestAnimationFrame(() => { frameRequest = 0; drawNow(); });
   }
@@ -637,7 +664,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           S.cache.set(key, weights);
         }
       }
-      items.push({mesh, palette: model.palette, partId: p.id, weights, flat: p.shadows === false});
+      // Pose mode: the shape bent by its weights (the rest shape kept for the weight brush).
+      const frames = poseNow(), shown = frames ? posedMesh(mesh, skinOf(p, mesh), frames) : mesh;
+      items.push({mesh: shown, restMesh: mesh, palette: model.palette, partId: p.id, weights, flat: p.shadows === false, muted: Boolean(weights && paintingNow() && S.parts.size && !S.parts.has(p.id))});
       // The outline shell (not pickable), in the toon preview.
       const hull = S.toonPreview && !weights ? hullOf(p) : null;
       if (hull) items.push({mesh: hull, palette: model.palette, partId: p.id, hull: true, flat: true, twoSided: false});
@@ -754,9 +783,39 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       drawWires(ctx, p, p.mesh.verts.map(v => frame.project(transform(v))), false);
     }
   }
+  // ---------- Pose mode ----------
+  /** Where each bone has gone in the preview pose (null when nothing is posed). */
+  const posingNow = () => S.mode === 'bones' && S.posing && isPosed(S.pose);
+  let shownFrames = null;
+  const poseNow = () => posingNow() ? (shownFrames ??= poseFrames(model, S.pose)) : null;
+  /** A bone's start and end as shown: posed in Pose mode, else at rest. */
+  const boneEnds = b => { const f = poseNow(); return f ? [f.get(b.id).at, posedBy(f, b.id, b.tail)] : [b.head, b.tail]; };
+  /** A part's weights for its shown shape (cached with the weight colours, cleared by painting). */
+  function skinOf(p, mesh) {
+    const key = `w${p.id}:skin`;
+    let got = S.cache.get(key);
+    // Kept with the shape it was worked out for, so an edited part gets fresh weights.
+    if (got?.mesh !== mesh) { got = {mesh, skin: partWeights(model, mesh, p)}; S.cache.set(key, got); }
+    return got.skin;
+  }
+  function setPosing(on) {
+    S.posing = on;
+    if (!on) S.pose = new Map();
+    shownFrames = null; renderProps(); setStatus(); draw();
+  }
+  function resetPose() { S.pose = new Map(); shownFrames = null; draw(); renderProps(); }
+  /** Turn a bone in the view plane by dragging, about its posed start (its children follow). */
+  function poseDrag(d, p) {
+    const pivot = frame.project(d.pivot);
+    const angle = Math.atan2(p.y - pivot.y, p.x - pivot.x) - Math.atan2(d.start.y - pivot.y, d.start.x - pivot.x);
+    // Screen Y points down, so a turn the pointer makes on screen is the opposite way about the view axis.
+    S.pose = turnBone(model, d.pose, d.bone, axisAngle(frame.back, -angle));
+    shownFrames = null; draw();
+  }
+
   function drawBones(ctx) {
     for (const b of model.bones) {
-      const a = frame.project(b.head), c = frame.project(b.tail); if (!a.ok || !c.ok) continue;
+      const [head, tail] = boneEnds(b), a = frame.project(head), c = frame.project(tail); if (!a.ok || !c.ok) continue;
       const on = S.bones.has(b.id);
       ctx.strokeStyle = on ? VIEW_COLORS.boneSelected : VIEW_COLORS.bone; ctx.lineWidth = on ? 5 : 4; ctx.lineCap = 'round'; ctx.globalAlpha = S.mode === 'bones' ? 1 : .7;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
@@ -809,6 +868,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (mode === 'edit' && !activePart()) { toast(t("modeler.selectAPartToEdit")); return; }
     S.mode = mode; S.hover = null;
     if (mode === 'edit') S.verts = new Set();
+    // Leaving the Bones tab puts every posed bone back.
+    if (mode !== 'bones') { S.posing = false; S.pose = new Map(); }
     refresh();
   }
   function selectPart(id, extend = false) {
@@ -839,7 +900,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'bones') {
       let best = null;
       for (const b of model.bones) {
-        const a = frame.project(b.head), c = frame.project(b.tail); if (!a.ok || !c.ok) continue;
+        const [head, tail] = boneEnds(b), a = frame.project(head), c = frame.project(tail); if (!a.ok || !c.ok) continue;
         for (const [q, end] of [[a, 'head'], [c, 'tail']]) { const d = Math.hypot(q.x - x, q.y - y); if (d < 9 && (!best || d < best.d)) best = {bone: b.id, end, d}; }
         const d = segmentPixelDistance({x, y}, a, c); if (d < 7 && (!best || d + 3 < best.d)) best = {bone: b.id, end: null, d: d + 3};
       }
@@ -953,6 +1014,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     return {kind: 'bones', points, start, pivot: M.scale(start.reduce((s, q) => M.add(s, q), [0, 0, 0]), 1 / start.length)};
   }
   function startTransform(kind, {axis = null, axisName = '', mouse = S.pointer} = {}) {
+    // Pose mode only turns bones for a look: their rest positions are edited with Pose off.
+    if (S.mode === 'bones' && S.posing) { toast(t("modeler.poseLeaveToEdit")); return; }
     if (S.modal) return;
     const target = transformTarget();
     if (!target) { toast(S.mode === 'edit' ? t("modeler.selectSomethingFirst") : S.mode === 'bones' ? t("modeler.selectABoneFirst") : t("modeler.selectAPartFirst")); return; }
@@ -1565,10 +1628,17 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
 
   // ---------- bones ----------
+  /** A model's first bones start with Automatic weights off (unless it was turned on):
+   * they move nothing until you paint what they move, or tick Automatic weights. */
+  function firstBones() {
+    if (model.bones.length || model.autoWeights !== undefined) return;
+    model.autoWeights = false;
+    toast(t("modeler.manualWeightsStart"));
+  }
   function addHumanoid() {
     const meshes = evaluateModel(model, {smooth: false}).map(x => x.mesh);
     if (model.bones.length) { askConfirm(t("modeler.replaceSkeleton"), () => commit(() => { humanoidSkeleton(model, meshes); S.bones = new Set(); S.cache.clear(); })); return; }
-    commit(() => { humanoidSkeleton(model, meshes); S.bones = new Set(); S.cache.clear(); });
+    commit(() => { firstBones(); humanoidSkeleton(model, meshes); S.bones = new Set(); S.cache.clear(); });
     if (S.mode !== 'bones') setMode('bones');
   }
   /** Face bones on the head (replacing any already there). */
@@ -1619,7 +1689,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     toast(t(keepPositive ? "modeler.symmetrizedFromPositive" : "modeler.symmetrizedFromNegative"));
   }
   function addSingleBone() {
-    commit(() => { const at = spawnPoint(); const b = addBone(model, {name: 'Bone', head: at, tail: M.add(at, [0, .3, 0])}); S.bones = new Set([b.id]); S.boneEnd = null; S.cache.clear(); });
+    commit(() => { firstBones(); const at = spawnPoint(); const b = addBone(model, {name: 'Bone', head: at, tail: M.add(at, [0, .3, 0])}); S.bones = new Set([b.id]); S.boneEnd = null; S.cache.clear(); });
   }
   function extrudeBone() {
     const from = model.bones.find(b => S.bones.has(b.id));
@@ -1894,11 +1964,24 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     const orbit = e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey && S.mode !== 'edit');
     canvas.setPointerCapture(e.pointerId);
-    if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p}; e.preventDefault(); return; }
+    // While painting, an Alt+click that doesn't move (Alt+drag still orbits) highlights a part or
+    // un-highlights it: the brush then paints only highlighted parts.
+    if (orbit) { drag = {kind: e.shiftKey ? 'pan' : 'orbit', last: p, start: p, maskClick: e.button === 0 && e.altKey && paintingNow()}; e.preventDefault(); return; }
     // Weight painting: a stroke is one undo step; Ctrl paints the other way (Add ↔ Remove).
     // While painting, Shift+click picks another bone to paint.
     if (e.button === 0 && paintingNow() && e.shiftKey) { const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
     if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', before: snapshot(), parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey}; paintTo(drag, p, drag.invert); return; }
+    // Pose mode: drag a bone to turn it (a joint shared with its parent turns the parent, as on the stage).
+    if (e.button === 0 && S.mode === 'bones' && S.posing) {
+      const hit = pick(p.x, p.y);
+      if (!hit?.bone) { if (!e.shiftKey) { S.bones = new Set(); renderProps(); draw(); } return; }
+      let bone = model.bones.find(b => b.id === hit.bone);
+      const parent = model.bones.find(b => b.id === bone.parent);
+      if (hit.end === 'head' && parent && connected(bone, parent)) bone = parent;
+      S.bones = new Set([bone.id]); renderProps(); setStatus();
+      drag = {kind: 'pose', bone: bone.id, pose: S.pose, start: p, pivot: (poseFrames(model, S.pose).get(bone.id)?.at ?? bone.head).slice()};
+      return;
+    }
     if (e.button === 0) drag = {kind: 'press', start: p, last: p, event: e, hit: e.shiftKey || (e.altKey && S.mode === 'edit') ? null : pick(p.x, p.y)};
   }, {signal});
   canvas.addEventListener('pointermove', e => {
@@ -1912,6 +1995,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
     if (!drag) { if (paintingNow()) draw(); return; }
     if (drag.kind === 'paint') { paintTo(drag, p, drag.invert); return; }
+    if (drag.kind === 'pose') { poseDrag(drag, p); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
     if (drag.kind === 'orbit') { S.camera.yaw -= dx * .008; S.camera.pitch = Math.max(-1.55, Math.min(1.55, S.camera.pitch + dy * .008)); S.camera.ortho = false; draw(); }
     else if (drag.kind === 'pan') { const u = frame.unitsPerPixel(S.camera.target); S.camera.target = M.add(S.camera.target, M.add(M.scale(frame.right, -dx * u), M.scale(frame.up, dy * u))); draw(); }
@@ -1925,7 +2009,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('pointerup', e => {
     if (!drag) return;
     const d = drag; drag = null;
+    if (d.kind === 'pose') { renderProps(); return; }
     if (d.kind === 'paint') { if (d.touched.size) { S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
+    if (d.maskClick && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { const poly = pickPolygon(S.polys, d.start.x, d.start.y); if (poly) selectPart(poly.item.partId, true); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
     else if (d.kind === 'press') clickSelect(d.start.x, d.start.y, e);
     else if (d.kind === 'box') { const box = S.modal?.box; S.modal = null; if (box) boxSelect(box, e.shiftKey); }

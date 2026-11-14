@@ -322,8 +322,38 @@ export function autoWeights(model, mesh, part, options = {}) {
   return part?.bone ? body : faceWeights(model, mesh, body);
 }
 
+/** A mesh's separate pieces: lists of point indices joined by faces or edges
+ * (points on nothing are pieces of their own). */
+export function piecesOf(mesh) {
+  const n = mesh.verts.length, up = Int32Array.from({length: n}, (_, i) => i);
+  const find = i => { while (up[i] !== i) { up[i] = up[up[i]]; i = up[i]; } return i; };
+  const join = (a, b) => { a = find(a); b = find(b); if (a !== b) up[a] = b; };
+  for (const f of mesh.faces) for (let i = 1; i < f.v.length; i++) join(f.v[0], f.v[i]);
+  for (const [a, b] of mesh.edges ?? []) join(a, b);
+  const pieces = new Map();
+  for (let i = 0; i < n; i++) { const r = find(i); if (!pieces.has(r)) pieces.set(r, []); pieces.get(r).push(i); }
+  return [...pieces.values()];
+}
+
+/** Whether bones weigh the skin by themselves (Automatic weights, on unless the model turns it off). */
+export const automaticWeights = model => model.autoWeights !== false;
+
+/** The bone points with no weights of their own follow when Automatic weights is
+ * off: their part's "Moves with" bone, else the skeleton's root (they move only
+ * with the whole figure), as unweighted points in Blender move only with the armature. */
+export function holdingBone(model, part) {
+  const body = model.bones.filter(b => !b.face), ids = new Set(body.map(b => b.id));
+  if (part?.bone && model.bones.some(b => b.id === part.bone)) return part.bone;
+  return (body.find(b => !ids.has(b.parent)) ?? body[0])?.id ?? 0;
+}
+
 function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
   const n = mesh.verts.length, everyBone = new Map(model.bones.map(b => [b.id, b]));
+  if (!automaticWeights(model)) {
+    const hold = holdingBone(model, part), out = {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
+    if (hold) for (let v = 0; v < n; v++) { out.bones[v * 4] = hold; out.weights[v * 4] = 1; }
+    return out;
+  }
   // Bones with no strength move nothing: weights go to the bones around them,
   // and their parent and children count as each other's neighbours.
   const pulls = new Map(model.bones.map(b => [b.id, pullOf(b)]));
@@ -337,45 +367,55 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
   const deformParent = new Map(bones.map(b => [b.id, upOf(b)]));
   const neighbours = new Map(bones.map(b => [b.id, new Set([b.id, deformParent.get(b.id), ...bones.filter(c => deformParent.get(c.id) === b.id).map(c => c.id)].filter(Boolean))]));
   const sideBones = p => { const side = p[0] > 1e-3 ? 'L' : p[0] < -1e-3 ? 'R' : ''; return bones.filter(b => !side || !sideOf(b.name) || sideOf(b.name) === side); };
-  // Bones that run through this part (sampled along the bone, inside its slightly grown bounds).
+  // A part can be several separate pieces (two legs, two hands, once Mirror is
+  // applied or after an OBJ round trip): each piece is judged on its own.
+  const islands = piecesOf(mesh);
+  const islandOf = new Int32Array(n).fill(0);
+  islands.forEach((members, k) => { for (const i of members) islandOf[i] = k; });
+  // Bones that run through a piece (sampled along the bone, inside its slightly grown bounds).
   // A torso never takes the upper arm hanging beside it; a hip still takes the thighs that start inside it.
-  const box = mesh.verts.length ? bounds(mesh.verts) : {min: [0, 0, 0], max: [0, 0, 0]};
-  const grow = Math.max(...[0, 1, 2].map(k => box.max[k] - box.min[k])) * .08;
-  const inside = (q, g) => [0, 1, 2].every(k => q[k] >= box.min[k] - g && q[k] <= box.max[k] + g);
-  // A bone that only touches the part's edge (a thigh starting just under the shirt) is not one of its bones.
-  let candidates = new Set(bones.filter(b => {
-    const samples = Array.from({length: 9}, (_, i) => add(b.head, scale(sub(b.tail, b.head), i / 8)));
-    return samples.some(q => inside(q, 0)) || samples.filter(q => inside(q, grow)).length >= 2;
-  }).map(b => b.id));
-  if (!candidates.size) candidates = new Set(bones.map(b => b.id));
-  // A humanoid's head region: a part centred above the base of the neck and
-  // inside the shoulders (hair, quills, ears, a hat) moves with the head and
-  // neck only, even where it hangs down beside an arm or behind the chest.
+  // A bone that only touches the piece's edge (a thigh starting just under the shirt) is not one of its bones.
   const neckBone = byName.get('Neck'), headBone = byName.get('Head'), upperArms = bones.filter(b => /^UpperArm\./.test(b.name));
-  if (neckBone && headBone && n) {
-    const centre = scale(mesh.verts.reduce((acc, p) => add(acc, p), [0, 0, 0]), 1 / n);
-    const inside = upperArms.length ? Math.min(...upperArms.map(b => Math.abs(b.head[0]))) : Infinity;
-    if (centre[1] > neckBone.head[1] && Math.abs(centre[0]) < inside) candidates = new Set([neckBone.id, headBone.id]);
-  }
+  const candidatesOf = members => {
+    const box = members.length ? bounds(members.map(i => mesh.verts[i])) : {min: [0, 0, 0], max: [0, 0, 0]};
+    const grow = Math.max(...[0, 1, 2].map(k => box.max[k] - box.min[k])) * .08;
+    const inside = (q, g) => [0, 1, 2].every(k => q[k] >= box.min[k] - g && q[k] <= box.max[k] + g);
+    let found = new Set(bones.filter(b => {
+      const samples = Array.from({length: 9}, (_, i) => add(b.head, scale(sub(b.tail, b.head), i / 8)));
+      return samples.some(q => inside(q, 0)) || samples.filter(q => inside(q, grow)).length >= 2;
+    }).map(b => b.id));
+    if (!found.size) found = new Set(bones.map(b => b.id));
+    // A humanoid's head region: a piece centred above the base of the neck and
+    // inside the shoulders (hair, quills, ears, a hat) moves with the head and
+    // neck only, even where it hangs down beside an arm or behind the chest.
+    if (neckBone && headBone && members.length) {
+      const centre = scale(members.reduce((acc, i) => add(acc, mesh.verts[i]), [0, 0, 0]), 1 / members.length);
+      const within = upperArms.length ? Math.min(...upperArms.map(b => Math.abs(b.head[0]))) : Infinity;
+      if (centre[1] > neckBone.head[1] && Math.abs(centre[0]) < within) found = new Set([neckBone.id, headBone.id]);
+    }
+    return found;
+  };
+  const pieceCandidates = islands.map(candidatesOf);
+  const candidates = new Set(pieceCandidates.flatMap(c => [...c]));
   const nearest = (p, pool) => sideBones(p).filter(b => !pool || pool.has(b.id)).reduce((best, b) => { const d = segmentDistance(p, b.head, b.tail); return d < best[1] ? [b.id, d] : best; }, [0, Infinity])[0];
   // Root bones (Hips and the thighs) meet at the figure's root, so a part centred on one of them blends with the others.
   const partCentre = byId.get(nearest(scale(mesh.verts.reduce((acc, p) => add(acc, p), [0, 0, 0]), 1 / Math.max(1, n)), candidates));
   if (partCentre && !partCentre.parent) for (const b of bones) if (!b.parent) for (const c of bones) if (!c.parent) neighbours.get(b.id).add(c.id);
   // Each vertex blends its nearest bone (among those in the part) with that bone's parent and children.
-  const allowedFor = mesh.verts.map(p => {
-    const centre = nearest(p, candidates) || nearest(p);
-    return new Set([...(neighbours.get(centre) ?? [centre])].filter(id => candidates.has(id) || id === centre));
+  const allowedFor = mesh.verts.map((p, i) => {
+    const own = pieceCandidates[islandOf[i]] ?? candidates, centre = nearest(p, own) || nearest(p);
+    return new Set([...(neighbours.get(centre) ?? [centre])].filter(id => own.has(id) || id === centre));
   });
   // A part that lies along one bone (a sleeve, a forearm, a shoe, the head) follows that bone rigidly, so it
   // keeps its shape instead of pinching where it touches the next bone. Mirrored parts are judged per side.
-  const groups = part?.mirror ? [v => v[0] > 1e-3, v => v[0] < -1e-3, v => Math.abs(v[0]) <= 1e-3] : [() => true];
+  const sides = part?.mirror ? [v => v[0] > 1e-3, v => v[0] < -1e-3, v => Math.abs(v[0]) <= 1e-3] : [() => true];
+  const groups = islands.flatMap((members, k) => sides.map(test => [members.filter(i => test(mesh.verts[i])), pieceCandidates[k]]));
   const singleOf = new Array(n).fill(null);
   const alongMiddle = (p, b) => { const ax = sub(b.tail, b.head), l2 = dot(ax, ax), t = l2 > 1e-12 ? dot(sub(p, b.head), ax) / l2 : -1; return t > .15 && t < .85; };
-  if (!rigid) for (const test of groups) {
-    const members = mesh.verts.map((p, i) => i).filter(i => test(mesh.verts[i]));
+  if (!rigid) for (const [members, own] of groups) {
     if (!members.length) continue;
     const centre = scale(members.reduce((acc, i) => add(acc, mesh.verts[i]), [0, 0, 0]), 1 / members.length);
-    const bone = byId.get(nearest(centre, candidates) || nearest(centre));
+    const bone = byId.get(nearest(centre, own) || nearest(centre));
     if (!bone) continue;
     const axis = sub(bone.tail, bone.head), len = length(axis);
     if (len < 1e-9) continue;

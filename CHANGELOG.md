@@ -12,6 +12,9 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - 3D Nowdz File > Open in Blender sends your model to Blender and brings your changes back each time you save there, with bones, mirror and smoothing kept. Blender's other tools, such as Boolean, Remesh, text and curves, come back as finished shapes.
 - 3D Nowdz Front, Back and Side views show a grid with a line up the middle and along the ground, as in Blender, so you can see where your model lines up and where Mirror reflects it. The grid gets finer as you zoom in.
 - 3D Nowdz bones have Strength and Reach sliders, and you can paint exactly what each bone moves with Add, Remove, Smooth and Set brushes, so a shoulder no longer tugs the chest or back. Find them in Bones mode with a bone selected.
+- 3D Nowdz has Pose mode: in Bones mode, press Pose and drag a bone to see the model bend with it before adding it to an animation. You can paint weights while it's bent, and Stop posing puts every bone back.
+- 3D Nowdz weight painting can paint only on the parts you highlight (click a part while painting), and Mirror painting paints both sides at once.
+- 3D Nowdz has an Automatic weights checkbox in Bones mode. Bones added to a model with no bones start with it off, so nothing moves until you paint it; tick it to have the bones work out what they move.
 - 3D Nowdz Start > Examples opens two finished characters made with its own tools, Juniper and Kettle, to take apart or build on.
 - Type a number while moving, rotating or scaling in 3D Nowdz for an exact amount, as in Blender (for example G Z 0.5 or R 90).
 - 3D Nowdz Inset and Bevel can be changed after they finish, with exact thickness, width and segments.
@@ -37,6 +40,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 - Fixed movieclips made while another layer had figures joining their figures to the wrong part (or to itself), which could stop the project from opening with “Figures contain a cyclic join.” Such projects now open with their movieclips repaired.
 - Fixed the 3D Nowdz knife refusing to cut across a pushed-in panel or step.
+- Fixed 3D Nowdz bones pulling the wrong part of an imported model, such as both legs following one shin or a hand following a leg, when the model's pieces were joined into one part.
 - Fixed 3D Nowdz automatic weights locking a leg made in one piece to the thigh so it couldn't bend at the knee, and hair or quills at the back of the head following the chest or an arm.
 - Fixed 3D Nowdz showing "OBJ imported" while adding nothing. Models from games and other programs that break the mesh rules (doubled faces, three faces on one edge, mixed winding) are now repaired on import, and a file that still can't be read shows why.
 - Fixed 3D Nowdz drawing parts that pass through each other wrongly, such as hair through a head: each spot now shows the nearest surface.
