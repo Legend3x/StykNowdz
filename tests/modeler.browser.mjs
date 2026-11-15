@@ -128,6 +128,26 @@ try {
     });
     assert.deepEqual({...result, steps: result.steps - setup.undo}, {swung: true, blocked: true, unchanged: true, steps: 0, back: true});
   });
+  await step('Add Cylinder: Vertices, Radius, Depth and Cap fill type change it afterwards; one undo removes it; the next edit ends it', async () => {
+    const result = await page.evaluate(async () => {
+      if (m.state.posing) button('Stop posing')?.click();
+      m.setMode('object'); m.addPrimitive('cylinder'); await wait(100);
+      const p = m.model.parts.at(-1), panel = () => document.querySelector('.modeler-last-op');
+      const labels = [...panel().querySelectorAll('label > span')].map(x => x.textContent);
+      const set = (label, value) => { const field = [...panel().querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === label).querySelector('input, select');
+        field.value = String(value); field.dispatchEvent(new Event('change', {bubbles: true})); };
+      set('Vertices', 8); await wait(50); set('Cap fill type', 'fan'); await wait(50); set('Depth', 2); await wait(50);
+      const q = m.model.parts.find(x => x.id === p.id), shape = [q.mesh.verts.length, q.mesh.faces.length, Math.max(...q.mesh.verts.map(v => v[1]))];
+      set('Cap fill type', 'none'); await wait(50);
+      const open = m.model.parts.find(x => x.id === p.id).mesh.faces.length;
+      const parts = m.model.parts.length; press('z', {ctrlKey: true}); await wait(100);
+      const removed = parts - m.model.parts.length;
+      m.addPrimitive('circle'); await wait(50); const had = Boolean(panel());
+      press('g'); press('x'); keys('1'); press('Enter'); await wait(50);
+      return {labels, shape, open, removed, valid: allValid(), had, closed: !panel()};
+    });
+    assert.deepEqual(result, {labels: ['Vertices', 'Radius', 'Depth', 'Cap fill type'], shape: [18, 24, 1], open: 8, removed: 1, valid: true, had: true, closed: true});
+  });
   await step('Layers: new bones are loose, right-click groups and merges, a merged bone stays put, the origin drags', async () => {
     const result = await page.evaluate(async () => {
       if (m.state.posing) button('Stop posing')?.click();

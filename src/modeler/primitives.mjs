@@ -19,14 +19,23 @@ export function plane(size = 1, color = 0) {
   return {verts: [[-h, 0, h], [h, 0, h], [h, 0, -h], [-h, 0, -h]], faces: [{v: [0, 1, 2, 3], c: color}]};
 }
 
-/** A flat disc facing the front (+Z): one many-sided face. Inset it for eye
- * rings (iris, pupil, highlight), as anime eyes are built. */
-export function circle(radius = .5, segments = 16, color = 0) {
+/** How a cap or a circle is filled, as Blender's Fill Type: one many-sided face
+ * (N-gon), triangles from a middle point (Triangle fan), or left open (Nothing). */
+export const FILL_TYPES = Object.freeze(['ngon', 'fan', 'none']);
+const fillOf = cap => cap === false || cap === 'none' ? 'none' : cap === 'fan' ? 'fan' : 'ngon';
+
+/** A flat disc facing the front (+Z), filled as `fill` says (one many-sided face by
+ * default). Inset it for eye rings (iris, pupil, highlight), as anime eyes are built. */
+export function circle(radius = .5, segments = 16, color = 0, {fill = 'ngon'} = {}) {
   const verts = Array.from({length: segments}, (_, i) => { const a = i / segments * Math.PI * 2; return [Math.cos(a) * radius, Math.sin(a) * radius, 0]; });
-  return {verts, faces: [{v: verts.map((_, i) => i), c: color}]};
+  const ring = verts.map((_, i) => i);
+  if (fillOf(fill) === 'none') return {verts, faces: [], edges: ring.map(i => [i, (i + 1) % segments])};
+  if (fillOf(fill) === 'fan') { verts.push([0, 0, 0]); return {verts, faces: ring.map(i => ({v: [segments, i, (i + 1) % segments], c: color}))}; }
+  return {verts, faces: [{v: ring, c: color}]};
 }
 
-/** Rings of points around Y: `profile` is [[radius, y], ...] from bottom to top. Ends close with a pole or a cap. */
+/** Rings of points around Y: `profile` is [[radius, y], ...] from bottom to top. Ends close
+ * with a pole, or with a cap filled as `cap` says (true or 'ngon', 'fan', false or 'none'). */
 export function lathe(profile, segments = 12, color = 0, {cap = true} = {}) {
   const verts = [], faces = [], rings = [];
   for (const [r, y] of profile) {
@@ -44,9 +53,13 @@ export function lathe(profile, segments = 12, color = 0, {cap = true} = {}) {
       else if (Array.isArray(a)) faces.push([a[i], a[j], b]);
     }
   }
-  if (cap) {
-    if (Array.isArray(rings[0])) faces.push(rings[0].slice().reverse());
-    if (Array.isArray(rings.at(-1))) faces.push(rings.at(-1).slice());
+  const fill = fillOf(cap);
+  for (const [ring, bottom] of [[rings[0], true], [rings.at(-1), false]]) {
+    if (!Array.isArray(ring) || fill === 'none') continue;
+    if (fill === 'ngon') { faces.push(bottom ? ring.slice().reverse() : ring.slice()); continue; }
+    // Triangle fan: a middle point, a triangle to each side.
+    const y = verts[ring[0]][1], mid = verts.push([0, y, 0]) - 1;
+    for (let i = 0; i < segments; i++) { const j = (i + 1) % segments; faces.push(bottom ? [mid, ring[j], ring[i]] : [mid, ring[i], ring[j]]); }
   }
   return finish(verts, faces, color);
 }
@@ -58,13 +71,13 @@ export function uvSphere(radius = .5, segments = 16, rings = 8, color = 0) {
   return lathe(profile, segments, color);
 }
 
-export function cylinder(radius = .5, depth = 1, segments = 12, color = 0, {rings = 1} = {}) {
+export function cylinder(radius = .5, depth = 1, segments = 12, color = 0, {rings = 1, cap = true} = {}) {
   const profile = [];
   for (let k = 0; k <= rings; k++) profile.push([radius, -depth / 2 + depth * k / rings]);
-  return lathe(profile, segments, color);
+  return lathe(profile, segments, color, {cap});
 }
 
-export const cone = (radius = .5, depth = 1, segments = 12, color = 0) => lathe([[radius, -depth / 2], [0, depth / 2]], segments, color);
+export const cone = (radius = .5, depth = 1, segments = 12, color = 0, {cap = true} = {}) => lathe([[radius, -depth / 2], [0, depth / 2]], segments, color, {cap});
 
 /** A cylinder with rounded ends: good for arms, legs and fingers. */
 export function capsule(radius = .25, depth = 1, segments = 12, color = 0, {rings = 3} = {}) {
@@ -91,17 +104,41 @@ export function torus(major = .4, minor = .12, segments = 16, sides = 8, color =
   return finish(verts, faces, color);
 }
 
+/** What each shape can be added with, as Blender's Add Mesh panel (Adjust Last
+ * Operation): its settings with their defaults and limits, and how to build it.
+ * Settings: [key, kind ('whole' | 'size' | 'fill'), default, min, max]. */
+export const PRIMITIVE_SETTINGS = {
+  cube: {settings: [['size', 'size', 1, .001, 1000]], build: o => cube(o.size)},
+  plane: {settings: [['size', 'size', 1, .001, 1000]], build: o => plane(o.size)},
+  circle: {settings: [['vertices', 'whole', 16, 3, 256], ['radius', 'size', .5, .001, 1000], ['fill', 'fill', 'ngon']], build: o => circle(o.radius, o.vertices, 0, {fill: o.fill})},
+  sphere: {settings: [['segments', 'whole', 16, 3, 256], ['rings', 'whole', 8, 3, 128], ['radius', 'size', .5, .001, 1000]], build: o => uvSphere(o.radius, o.segments, o.rings)},
+  cylinder: {settings: [['vertices', 'whole', 12, 3, 256], ['radius', 'size', .5, .001, 1000], ['depth', 'size', 1, .001, 1000], ['fill', 'fill', 'ngon']],
+    build: o => cylinder(o.radius, o.depth, o.vertices, 0, {cap: o.fill})},
+  cone: {settings: [['vertices', 'whole', 12, 3, 256], ['radius', 'size', .5, .001, 1000], ['depth', 'size', 1, .001, 1000], ['fill', 'fill', 'ngon']],
+    build: o => cone(o.radius, o.depth, o.vertices, 0, {cap: o.fill})},
+  capsule: {settings: [['segments', 'whole', 12, 3, 256], ['rings', 'whole', 3, 1, 64], ['radius', 'size', .25, .001, 1000], ['depth', 'size', 1, .001, 1000]],
+    build: o => capsule(o.radius, Math.max(o.depth, o.radius * 2), o.segments, 0, {rings: o.rings})},
+  torus: {settings: [['majorSegments', 'whole', 16, 3, 256], ['minorSegments', 'whole', 8, 3, 256], ['majorRadius', 'size', .4, .001, 1000], ['minorRadius', 'size', .12, .001, 1000]],
+    build: o => torus(o.majorRadius, o.minorRadius, o.majorSegments, o.minorSegments)},
+};
+/** A shape's default settings. */
+export const primitiveDefaults = kind => Object.fromEntries((PRIMITIVE_SETTINGS[kind]?.settings ?? []).map(([key, , value]) => [key, value]));
+/** Settings brought into their limits (whole numbers where they must be, a known fill). */
+export function primitiveSettings(kind, values = {}) {
+  const out = primitiveDefaults(kind);
+  for (const [key, type, , min, max] of PRIMITIVE_SETTINGS[kind]?.settings ?? []) {
+    const v = values[key];
+    if (type === 'fill') { if (FILL_TYPES.includes(v)) out[key] = v; continue; }
+    if (!Number.isFinite(Number(v))) continue;
+    const n = Math.max(min, Math.min(max, Number(v)));
+    out[key] = type === 'whole' ? Math.round(n) : n;
+  }
+  return out;
+}
 export const PRIMITIVES = {
-  cube: () => cube(1),
-  plane: () => plane(1),
-  circle: () => circle(.5, 16),
+  ...Object.fromEntries(Object.entries(PRIMITIVE_SETTINGS).map(([kind, {build}]) => [kind, (values = {}) => build(primitiveSettings(kind, values))])),
   // One point, to trace a shape from (Blender's "extrude a single vertex").
   point: () => ({verts: [[0, 0, 0]], faces: [], loose: [0]}),
-  sphere: () => uvSphere(.5, 16, 8),
-  cylinder: () => cylinder(.5, 1, 12),
-  cone: () => cone(.5, 1, 12),
-  capsule: () => capsule(.25, 1, 12),
-  torus: () => torus(.4, .12, 16, 8),
 };
 
 /** A low-poly starter character, about 2 units tall with its feet on Y = 0.

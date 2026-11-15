@@ -418,7 +418,27 @@ after the fact in the Edit panel, like Blender's Adjust Last Operation:
 `adjustable()` keeps the state from before the edit, and each change redoes
 the edit from it with the new settings (one undo step in all). Inset (Thickness)
 and Bevel (Width, Segments) are set with the mouse and then join the same panel
-when they finish, so an exact amount can be typed after.
+when they finish, so an exact amount can be typed after. Any other edit (a move, a slider, a
+paint stroke, a knife cut) ends the panel, as in Blender, since changing it
+would undo that edit.
+
+Adding a shape works the same way in Object mode (Blender's Add Mesh panel):
+right after Add, the Part panel shows **Add <shape>** with its settings
+(primitives.mjs `PRIMITIVE_SETTINGS`), and each change rebuilds it in place:
+
+| Shape | Settings |
+| --- | --- |
+| Cube, Plane | Size |
+| Circle | Vertices, Radius, Fill type |
+| UV sphere | Segments, Rings, Radius |
+| Cylinder, Cone | Vertices, Radius, Depth, Cap fill type |
+| Capsule | Segments, Rings, Radius, Depth |
+| Torus | Major and minor segments, major and minor radius |
+
+Fill type is **N-gon** (one face a cap), **Triangle fan** (a middle point
+and a triangle to each side) or **Nothing** (open: a tube, or a circle as a
+ring of lines to extrude or bridge). Vertices run 3–256; settings outside their
+limits come back inside them. The new part is still one undo step.
 
 Vertex slide is GG on points (the existing edge slide). Not ported yet: Bevel
 profile shapes and vertex-only corner patches with several segments (an

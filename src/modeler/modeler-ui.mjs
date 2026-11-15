@@ -4,7 +4,7 @@
  * on a plain model document (model.mjs); `onDone(model)` hands it back. */
 import {t} from '../localization.mjs';
 import * as M from './mesh.mjs';
-import {PRIMITIVES, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
+import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
 import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged} from './armature.mjs';
 import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
@@ -563,7 +563,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     return el('label', {class: 'modeler-field modeler-wide modeler-live', title}, [el('span', {text: label}),
       el('input', {type: 'range', min: String(min), max: String(max), step: String(step), value: String(value),
         oninput: e => { before ??= snapshot(); const v = Number(e.target.value); shown.textContent = format(v); preview(v); S.cache.clear(); draw(); },
-        onchange: () => { if (before === null) return; S.undo.push(before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; before = null; touch(); }}), shown]);
+        onchange: () => { if (before === null) return; S.lastOp = null; S.undo.push(before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; before = null; touch(); }}), shown]);
   };
   const colorRow = (selected, onpick) => el('div', {class: 'modeler-swatch-row'}, model.palette.map((c, i) => {
     const b = el('button', {type: 'button', class: 'modeler-swatch', 'aria-pressed': String(i === selected), title: t("modeler.outlineColorIndex", {index: i + 1}), onclick: () => onpick(i)}, [el('span', {class: 'modeler-swatch-fill'})]);
@@ -830,6 +830,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'object') {
       if (p && S.parts.size === 1) {
         blocks.push(section(t("modeler.part"), [
+          // Just added: its shape's settings (vertices, size, cap fill) can still change.
+          S.mode === 'object' && S.lastOp?.kind.startsWith('add-') ? lastOpPanel(p) : null,
           el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t("modeler.name")}), el('input', {type: 'text', value: p.name, maxlength: '120', onchange: e => commit(() => { p.name = e.target.value.trim() || p.name; })})]),
           vector(t("modeler.position"), p.position, (k, v) => commit(() => { p.position[k] = v; S.cache.delete(p.id); })),
           vector(t("modeler.rotation"), p.rotation.map(deg), (k, v) => commit(() => { p.rotation[k] = rad(v); S.cache.delete(p.id); }), {step: 1}),
@@ -1540,6 +1542,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       run: (p, sel, {amount}) => M.insetFaces(p.mesh, m.faces, Math.max(.01, Math.min(.99, amount)))};
     else if (m.kind === 'bevel') S.lastOp = {kind: m.points ? 'bevelPoints' : 'bevel', part: edited.id, sel: [...m.verts], before: m.before, params: {width: m.width, segments: m.segments},
       run: (p, sel, {width, segments}) => m.points ? M.bevelVerts(p.mesh, sel, {width: Math.max(1e-4, width)}) : M.bevelEdges(p.mesh, m.edges, {width: Math.max(1e-4, width), segments})};
+    // Any other finished move ends the last operation's panel: changing it would undo the move.
+    else S.lastOp = null;
     refresh();
   }
   /** Put what a transform acts on back where the transform found it. */
@@ -1651,7 +1655,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const g = S.lastOp; if (!g) return;
     const after = snapshot(); restore(g.before);
     const p = part(g.part), params = {...g.params, [key]: value};
-    try { const r = g.run(p, new Set(g.sel), params); S.verts = r.verts ?? r; g.params = r.params ?? params; S.cache.delete(p.id); S.redo = []; touch(p.id); }
+    try { const r = g.run(p, new Set(g.sel), params); S.verts = r.verts ?? r; g.params = r.params ?? params; S.cache.delete(p.id); S.redo = []; touch(p.id); if (g.kind.startsWith('add-')) { S.parts = new Set([p.id]); S.active = p.id; } }
     catch (error) { restore(after); refuse(error); }
     S.lastOp = g; renderProps();
   }
@@ -1666,10 +1670,17 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     bevelPoints: () => [['width', t("modeler.bevelWidth"), {step: .005, min: .0001, max: 100}]],
     wrap: () => [['offset', t("modeler.wrapOffset"), {step: .005, min: -1, max: 1}], ['project', t("modeler.wrapMode"), {choices: [['nearest', t("modeler.wrapNearest")], ['view', t("modeler.wrapView")]]}]],
   };
+  // Add Mesh: each shape's settings (primitives.mjs PRIMITIVE_SETTINGS).
+  const FILL_CHOICES = () => [['ngon', t("modeler.fillNgon")], ['fan', t("modeler.fillFan")], ['none', t("modeler.fillNothing")]];
+  for (const [kind, {settings}] of Object.entries(PRIMITIVE_SETTINGS)) {
+    LAST_OP_FIELDS[`add-${kind}`] = () => settings.map(([key, type, , min, max]) => [key, t(`modeler.addSetting.${key}${key === 'fill' && kind !== 'circle' ? 'Cap' : ''}`),
+      type === 'fill' ? {choices: FILL_CHOICES()} : type === 'whole' ? {step: 1, min, max, whole: true} : {step: .05, min, max}]);
+  }
   const LAST_OP_NAMES = {grid: "modeler.gridFill", smooth: "modeler.smoothVerts", holes: "modeler.fillHoles", quads: "modeler.trisToQuads", wrap: "modeler.shrinkwrap", inset: "modeler.inset", bevel: "modeler.bevel", bevelPoints: "modeler.bevel"};
   function lastOpPanel(p) {
     const g = S.lastOp; if (!g || g.part !== p.id || !LAST_OP_FIELDS[g.kind]) return null;
-    return el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: t(LAST_OP_NAMES[g.kind])}),
+    const name = g.kind.startsWith('add-') ? t("modeler.addShape", {shape: p.name}) : t(LAST_OP_NAMES[g.kind]);
+    return el('div', {class: 'modeler-last-op'}, [el('span', {class: 'modeler-hint', text: name}),
       ...LAST_OP_FIELDS[g.kind](g).map(([key, label, spec]) => spec.choices ? el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: label}),
         el('select', {onchange: e => redoLast(key, e.target.value)}, spec.choices.map(([value, text]) => el('option', {value, text, selected: g.params[key] === value})))]) : field(label, g.params[key], v => {
         let value = Math.max(spec.min ?? -Infinity, Math.min(spec.max ?? Infinity, v)); if (spec.whole) value = Math.round(value);
@@ -1777,7 +1788,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (m.path.length < 2) { restore(m.before); toast(t("modeler.knifeNeedsTwo")); return; }
     try { S.verts = M.knife(p.mesh, m.path.map(({v, edge, t: at}) => v !== undefined ? {v} : {edge, t: at}), v => frame.project(tr(v))); }
     catch (error) { restore(m.before); refuse(error); return; }
-    S.selectMode = 'vert'; S.undo.push(m.before); S.redo = []; S.cache.delete(p.id); refresh();
+    S.selectMode = 'vert'; S.lastOp = null; S.undo.push(m.before); S.redo = []; S.cache.delete(p.id); refresh();
   }
   function drawKnife(ctx) {
     const m = S.modal, tr = M.objectTransform(m.part), pts = m.path.map(q => frame.project(tr(q.local)));
@@ -1947,14 +1958,22 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // New parts go on the middle (X = 0), where the mirror is, at the height and depth being looked at.
   const spawnPoint = () => { const ahead = S.camera.target.slice(); return [0, Math.max(0, Math.round(ahead[1] * 20) / 20), Math.round(ahead[2] * 20) / 20]; };
   function addPrimitive(kind) {
-    commit(() => {
+    const added = commit(() => {
       const names = {cube: t("modeler.cube"), plane: t("modeler.plane"), circle: t("modeler.circle"), point: t("modeler.singlePoint"), sphere: t("modeler.sphere"), cylinder: t("modeler.cylinder"), cone: t("modeler.cone"), capsule: t("modeler.capsule"), torus: t("modeler.torus")};
       const p = addPart(model, {name: names[kind], mesh: PRIMITIVES[kind](), position: spawnPoint()});
       S.parts = new Set([p.id]); S.active = p.id; if (S.mode === 'bones') S.mode = 'object';
       // A single point is only useful in Edit mode, selected, ready to extrude.
       if (kind === 'point') { S.mode = 'edit'; S.selectMode = 'vert'; S.verts = new Set([0]); }
+      return p;
     });
     if (kind === 'point') toast(t("modeler.singlePointAdded"));
+    // Blender's Adjust Last Operation for Add Mesh: its vertices, sizes and cap fill can
+    // still be changed in the Part panel, until the next edit. Each change rebuilds the shape.
+    if (added && PRIMITIVE_SETTINGS[kind]) {
+      S.lastOp = {kind: `add-${kind}`, part: added.id, sel: [], before: snapshot(), params: primitiveDefaults(kind),
+        run: (p, sel, params) => { const done = primitiveSettings(kind, params); p.mesh = PRIMITIVE_SETTINGS[kind].build(done); return {verts: new Set(), params: done}; }};
+      renderProps();
+    }
   }
   /** Start > Examples: a finished character made with these tools, opened in
    * place of the model (asking first when there is one), ready to take apart. */
@@ -2424,10 +2443,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (!drag) return;
     const d = drag; drag = null;
     if (d.kind === 'pose') { renderProps(); return; }
-    if (d.kind === 'origin') { if (d.moved) { S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; refresh(); } return; }
+    if (d.kind === 'origin') { if (d.moved) { S.lastOp = null; S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; refresh(); } return; }
     // A right-click that doesn't move (a right-drag orbits) opens the menu for what is under the pointer.
     if (d.kind === 'orbit' && d.button === 2 && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { viewMenu(d.start, e); return; }
-    if (d.kind === 'paint') { if (d.touched.size) { S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
+    if (d.kind === 'paint') { if (d.touched.size) { S.lastOp = null; S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
     if (d.maskClick && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { const poly = pickPolygon(S.polys, d.start.x, d.start.y); if (poly) selectPart(poly.item.partId, true); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
     else if (d.kind === 'press') clickSelect(d.start.x, d.start.y, e);

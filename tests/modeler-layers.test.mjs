@@ -337,3 +337,29 @@ test('a folder inside a swap set is one choice (both its parts swap together); a
   model.parts = model.parts.filter(p => p.folder !== pair.id); dropEmptyFolders(model);
   assert.equal(swapSets(model)[0].shown, swapSets(model)[0].choices[0].key);
 });
+
+// ---------- Add Mesh settings ----------
+import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveSettings, cylinder, circle} from '../src/modeler/primitives.mjs';
+
+test('shapes are added with Blender\'s settings: vertices, sizes and cap fill, always valid', () => {
+  for (const kind of Object.keys(PRIMITIVE_SETTINGS)) for (const fill of ['ngon', 'fan', 'none']) for (const n of [3, 7, 64]) {
+    const mesh = PRIMITIVES[kind]({vertices: n, segments: n, rings: n, majorSegments: n, minorSegments: n, fill});
+    assert.ok(validateMesh(mesh, {print: false}).ok, `${kind} ${n} ${fill}`);
+  }
+  // A cylinder's sides and caps: N-gon is one face a cap, Triangle fan a triangle a side, Nothing an open tube.
+  const sides = n => n;
+  assert.equal(cylinder(.5, 1, 8, 0, {cap: 'ngon'}).faces.length, sides(8) + 2);
+  const fan = cylinder(.5, 1, 8, 0, {cap: 'fan'});
+  assert.equal(fan.faces.length, sides(8) + 16); assert.equal(fan.verts.length, 18);
+  assert.ok(fan.faces.slice(8).every(f => f.v.length === 3));
+  const open = cylinder(.5, 1, 8, 0, {cap: 'none'});
+  assert.equal(open.faces.length, 8); assert.equal(open.verts.length, 16);
+  // Radius and depth.
+  const tall = PRIMITIVES.cylinder({vertices: 6, radius: .25, depth: 3});
+  assert.ok(Math.abs(Math.max(...tall.verts.map(v => v[1])) - 1.5) < 1e-9 && Math.abs(Math.max(...tall.verts.map(v => Math.hypot(v[0], v[2]))) - .25) < 1e-9);
+  // A circle filled with nothing is a ring of lines, ready to extrude or bridge.
+  const ring = circle(.5, 6, 0, {fill: 'none'});
+  assert.equal(ring.faces.length, 0); assert.equal(ring.edges.length, 6);
+  // Out-of-range settings come back inside their limits.
+  assert.deepEqual(primitiveSettings('cylinder', {vertices: 1.6, radius: -2, fill: 'odd'}), {vertices: 3, radius: .001, depth: 1, fill: 'ngon'});
+});
