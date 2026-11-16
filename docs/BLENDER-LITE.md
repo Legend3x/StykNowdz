@@ -523,7 +523,7 @@ stored downscaled (1024 px JPEG) with the model.
 
 ### Textures and UVs
 
-(src/modeler/uv.mjs; UV tools and painting in the Draw tab are still to come.)
+(src/modeler/uv.mjs; the UV tools follow below; painting in the Draw tab is still to come.)
 
 - A face may carry `uv`, one `[u, v]` per corner in the order of `v` (Blender's
   convention: 0..1 across the image, v up), and `t`, the id of one of
@@ -570,6 +570,33 @@ stored downscaled (1024 px JPEG) with the model.
   exports textured faces show their images under the toon shading; an image that
   hasn't loaded yet shows the faces' colours meanwhile. A textured model inside a
   movieclip shows its colours for now.
+
+### UV tools
+
+(src/modeler/unwrap.mjs, src/modeler/uv-editor.mjs.)
+
+- **Unwrap (U)**, in Edit mode on the selected faces (all faces when none are
+  selected) and in Object mode on every selected part together, packed into one
+  texture: Smart UV Project (faces join an island while their normal stays within
+  66° of its first face; each island lies flat along its area-weighted average
+  normal and is turned to fill its box), Cube Projection (by the side a face
+  points at most), Project from View (the faces as the camera sees them, as one
+  picture) and Reset (each face fills the square). Islands are measured in world
+  space and packed in shelves, all scaled alike, so texture detail is even.
+- Faces unwrapped without a texture take the one picked in the UV editor, else
+  the one their faces already use, else a new 1024 px texture with each face's
+  colour baked in at its UVs (edges grown 1.5 px), so the model looks unchanged
+  until it is painted. A model holds 16 textures.
+- **UV editor** (the UV button): the shown texture with the UV layout of the
+  faces Unwrap would take. Click a point (all corners at that point and UV move
+  together; Shift adds), drag a box, A / Alt+A, L the island under the pointer,
+  Ctrl+L the islands of the selection; drag a selected point, or G, S, R with X or
+  Y to keep one direction; click or Enter keeps, right-click or Esc puts back.
+  Wheel zooms on the pointer, middle drag pans, Home fits. Keys go to the editor
+  while the pointer is over it. Each move is one undo step.
+- Its header picks the texture shown (which also puts it on the faces shown),
+  makes a New one (colours baked in), opens a PNG, JPEG or WebP, and unwraps.
+- Undo steps keep each texture image once (a pool keyed by image), not a copy per step.
 
 ## Data integrity
 

@@ -220,6 +220,13 @@
   .modeler-second { position: absolute; inset-block-end: var(--space-3); inset-inline-end: var(--space-3); inline-size: min(32%, 300px); aspect-ratio: 4 / 3;
     border: 1px solid var(--line-control); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-stage); pointer-events: none; box-shadow: var(--shadow-thumb); }
   .modeler-second[hidden] { display: none; }
+  /* UV editor (docs/BLENDER-LITE.md, "UV tools"): the right part of the view. */
+  .modeler-uv { position: absolute; inset-block: var(--space-3); inset-inline-end: var(--space-3); inline-size: min(46%, 560px); display: flex; flex-direction: column;
+    background: var(--surface-stage); border: 1px solid var(--line-control); border-radius: var(--radius-md); box-shadow: var(--shadow-thumb); overflow: hidden; z-index: 2; }
+  .modeler-uv[hidden] { display: none; }
+  .modeler-uv-bar { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); border-block-end: 1px solid var(--line-control); flex-wrap: wrap; }
+  .modeler-uv-select { max-inline-size: 11em; font: inherit; }
+  .modeler-uv-canvas { display: block; flex: 1; min-block-size: 0; inline-size: 100%; touch-action: none; cursor: crosshair; }
   .modeler-second-canvas { display: block; inline-size: 100%; block-size: 100%; }
   .modeler-rename { flex: 1; min-width: 0; font: inherit; }
   .modeler-row, .modeler-actions { display: flex; flex-wrap: wrap; gap: var(--space-1-5); margin-top: var(--space-2); }

@@ -3,7 +3,9 @@
  * Bones mode builds the skeleton the figure is posed with. Everything works
  * on a plain model document (model.mjs); `onDone(model)` hands it back. */
 import {t} from '../localization.mjs';
-import {faceCopy, reversedFace, adoptTextures, remapFaceTextures} from './uv.mjs';
+import {faceCopy, reversedFace, adoptTextures, remapFaceTextures, addTexture, textureFromBytes, TEXTURE_LIMIT} from './uv.mjs';
+import {unwrapParts} from './unwrap.mjs';
+import {createUVEditor} from './uv-editor.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
@@ -81,8 +83,19 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const listeners = new AbortController(), signal = listeners.signal;
 
   // ---------- history ----------
-  const snapshot = () => JSON.stringify({model, parts: [...S.parts], active: S.active, verts: [...S.verts], bones: [...S.bones], mode: S.mode});
-  const restore = text => { const v = JSON.parse(text); model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode; S.cache.clear(); syncRefs(); refresh(); };
+  // Texture images are large: undo steps hold a short key for each, and each image is kept once here.
+  const imagePool = new Map(), imageKeys = new Map();
+  const imageKey = src => { let key = imageKeys.get(src); if (!key) { key = `pool:${imageKeys.size + 1}`; imageKeys.set(src, key); imagePool.set(key, src); } return key; };
+  const snapshot = () => {
+    const sources = (model.textures ?? []).map(tex => tex.src);
+    for (const tex of model.textures ?? []) tex.src = imageKey(tex.src);
+    try { return JSON.stringify({model, parts: [...S.parts], active: S.active, verts: [...S.verts], bones: [...S.bones], mode: S.mode}); }
+    finally { (model.textures ?? []).forEach((tex, i) => { tex.src = sources[i]; }); }
+  };
+  const restore = text => {
+    const v = JSON.parse(text); for (const tex of v.model.textures ?? []) tex.src = imagePool.get(tex.src) ?? tex.src;
+    model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode; S.cache.clear(); syncRefs(); refresh();
+  };
   /** Run a change as one undo step. A change that would break a mesh is
    * refused: the model goes back to how it was, the full topology report is
    * printed to the console, and the reason shows in the status line. */
@@ -171,6 +184,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       quiet(S.camera.ortho ? t("modeler.orthographic") : t("modeler.perspective"), () => { S.camera.ortho = !S.camera.ortho; refresh(); }, t("modeler.projectionHint")),
       iconButton('fit', t("modeler.frameSelectedHint"), frameSelected),
       quiet(t("modeler.secondView"), e => secondViewMenu(e.currentTarget), t("modeler.secondViewHint")),
+      quiet(t("modeler.uv.editor"), () => toggleUVEditor(), t("modeler.uv.editorHint")),
       el('span', {class: 'modeler-spacer'}),
       quiet(t("modeler.file"), e => popover(e.currentTarget, [
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); importObjFile(); }}, t("modeler.importObj")),
@@ -966,7 +980,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Hidden points can't stay selected.
     const hide = S.mode === 'edit' ? activePart()?.mesh.vdata?.hide : null;
     if (hide && S.verts.size) for (const v of S.verts) if (hide[v]) S.verts.delete(v);
-    renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); draw();
+    renderHeader(); renderOutliner(); renderPalette(); renderProps(); setStatus(); syncUVBar(); draw();
   }
   /** Edit mode H / Shift+H / Alt+H, as Blender: hide the selection, hide everything
    * else, or show all again (selecting what comes back). Only shape is unaffected. */
@@ -1041,6 +1055,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.target?.soft) drawSoftRadius(ctx, S.modal);
     drawAxes(ctx, w, h);
     drawSecond(items, toon);
+    uvEditor.draw();
   }
   /** The second view: the same picture from another side, small, in the corner. */
   const SECOND = {side: ['right', 'modeler.secondSide'], front: ['front', 'modeler.secondFront'], back: ['back', 'modeler.secondBack'], top: ['top', 'modeler.secondTop'], left: ['left', 'modeler.secondLeft']};
@@ -1068,6 +1083,108 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       onclick: () => { closePopover(); S.second = key; draw(); }}, t(SECOND[key][1]))),
       S.second ? el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); S.second = null; draw(); }}, t("modeler.secondOff")) : null].filter(Boolean));
   }
+  // ---------- UV tools (docs/BLENDER-LITE.md, "UV tools") ----------
+  // Unwrap (U) lays the chosen faces flat; the UV editor shows them over their texture.
+  const uvPick = el('select', {class: 'modeler-uv-select', 'aria-label': t("modeler.uv.texture"), title: t("modeler.uv.textureHint"), onchange: e => useTexture(Number(e.target.value))});
+  const uvFile = el('input', {type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, onchange: e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) openTextureFile(file); }});
+  const uvEditor = createUVEditor({t, source: uvSource,
+    begin: () => { S.uvBefore = snapshot(); S.lastOp = null; },
+    changed: () => { S.cache.delete(S.active); draw(); },
+    end: keep => { if (keep && S.uvBefore) { S.undo.push(S.uvBefore); if (S.undo.length > 120) S.undo.shift(); S.redo = []; } S.uvBefore = null; touch(S.active); },
+    header: [uvPick,
+      el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.uv.newHint"), onclick: () => newTexture()}, t("modeler.uv.new")),
+      el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.uv.openHint"), onclick: () => uvFile.click()}, t("modeler.uv.open")),
+      el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.uv.unwrapHint"), onclick: e => unwrapMenu(e.currentTarget)}, t("modeler.uv.unwrap")),
+      el('span', {class: 'modeler-spacer'}),
+      el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.close"), 'aria-label': t("modeler.close"), onclick: () => toggleUVEditor(false)}, '×'), uvFile]});
+  stage.append(uvEditor.root);
+  /** Faces of a part the UV tools work on: the selected faces in Edit mode, else all of them. */
+  function uvFacesOf(p, {unwrapped = true} = {}) {
+    const picked = S.mode === 'edit' && p.id === S.active ? selectedFaces(p) : null;
+    const list = picked?.size ? [...picked] : p.mesh.faces.map((_, i) => i);
+    return new Set(unwrapped ? list.filter(fi => p.mesh.faces[fi].uv) : list);
+  }
+  const shownTexture = p => { const faces = p ? uvFacesOf(p) : new Set(); return S.uvTexture ?? (faces.size ? p.mesh.faces[[...faces][0]].t : undefined) ?? model.textures?.[0]?.id; };
+  function uvSource() { const p = activePart(); if (!p) return null; return {mesh: p.mesh, faces: uvFacesOf(p), image: textureImages().get(shownTexture(p)) ?? null}; }
+  function syncUVBar() {
+    if (!uvEditor.open) return;
+    const p = activePart(), id = shownTexture(p);
+    uvPick.replaceChildren(el('option', {value: '0'}, t("modeler.uv.noTexture")), ...(model.textures ?? []).map(tex => el('option', {value: String(tex.id)}, tex.name)));
+    uvPick.value = String(id ?? 0);
+  }
+  function toggleUVEditor(on = !uvEditor.open) { uvEditor.show(on); if (on) { S.showTextures = true; syncUVBar(); } refresh(); }
+  /** Unwrap targets: the selected parts in Object mode (one shared texture), else the part being edited. */
+  function uvTargets() {
+    const ids = S.mode === 'object' && S.parts.size ? [...S.parts] : S.active ? [S.active] : [];
+    return ids.map(part).filter(p => p && p.mesh.faces.length && p.visible !== false).map(p => { const m = M.objectMatrix(p); return {p, mesh: p.mesh, faces: uvFacesOf(p, {unwrapped: false}), points: p.mesh.verts.map(v => [...X.transformPoint(m, v)])}; });
+  }
+  function unwrapMenu(anchor) {
+    menu(anchor, [
+      menuItem(t("modeler.uv.smart"), () => unwrap('smart'), {title: t("modeler.uv.smartHint")}),
+      menuItem(t("modeler.uv.cube"), () => unwrap('cube'), {title: t("modeler.uv.cubeHint")}),
+      menuItem(t("modeler.uv.view"), () => unwrap('view'), {title: t("modeler.uv.viewHint")}),
+      menuItem(t("modeler.uv.reset"), () => unwrap('reset'), {title: t("modeler.uv.resetHint")})]);
+  }
+  /** Unwrap with a method. Faces without a texture get the one picked in the UV
+   * editor, or the one their part already uses, or a new texture that keeps
+   * every face's colour, so the model looks the same until painted. */
+  function unwrap(kind) {
+    const targets = uvTargets();
+    if (!targets.length) { toast(t("modeler.selectAPartToEdit")); return; }
+    const ok = commit(() => {
+      unwrapParts(kind, targets, {project: q => { const s = frame.project(q); return [s.x, s.y]; }});
+      const used = targets.flatMap(({mesh, faces}) => [...faces].map(fi => mesh.faces[fi].t)).find(id => id !== undefined && model.textures?.some(tex => tex.id === id));
+      let id = S.uvTexture ?? used;
+      if (id === undefined) {
+        if ((model.textures?.length ?? 0) >= TEXTURE_LIMIT) throw Object.assign(new RangeError(t("modeler.uv.tooMany", {limit: TEXTURE_LIMIT})), {modelerMessage: true});
+        id = addTexture(model, {name: t("modeler.uv.textureName", {n: (model.textures?.length ?? 0) + 1}), ...bakeColours(targets)}).id;
+      }
+      for (const {mesh, faces} of targets) for (const fi of faces) mesh.faces[fi].t = id;
+      for (const {p} of targets) S.cache.delete(p.id);
+      return true;
+    });
+    if (!ok) return;
+    toast(t("modeler.uv.unwrapped", {faces: targets.reduce((s, x) => s + x.faces.size, 0)}));
+    toggleUVEditor(true);
+  }
+  /** A texture painted with each face's colour at its UVs (edges grown a little so no gaps show). */
+  function bakeColours(targets, size = 1024) {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const g = c.getContext('2d'); g.fillStyle = hex(model.palette[0] ?? [200, 200, 200]); g.fillRect(0, 0, size, size);
+    g.lineJoin = 'round'; g.lineWidth = 3;
+    for (const {mesh, faces} of targets) for (const fi of faces) {
+      const f = mesh.faces[fi]; if (!f.uv) continue;
+      g.fillStyle = g.strokeStyle = hex(model.palette[f.c] ?? model.palette[0] ?? [200, 200, 200]);
+      g.beginPath(); f.uv.forEach(([u, v], i) => i ? g.lineTo(u * size, (1 - v) * size) : g.moveTo(u * size, (1 - v) * size)); g.closePath(); g.fill(); g.stroke();
+    }
+    return {src: c.toDataURL('image/png'), width: size, height: size};
+  }
+  /** Picking a texture in the UV editor shows it and puts it on the faces shown. */
+  function useTexture(id) {
+    const p = activePart(); S.uvTexture = id || undefined;
+    if (!p || !id) { refresh(); return; }
+    commit(() => { for (const fi of uvFacesOf(p)) p.mesh.faces[fi].t = id; S.cache.delete(p.id); });
+  }
+  function newTexture() {
+    const targets = uvTargets().filter(x => [...x.faces].some(fi => x.mesh.faces[fi].uv));
+    commit(() => {
+      if ((model.textures?.length ?? 0) >= TEXTURE_LIMIT) throw Object.assign(new RangeError(t("modeler.uv.tooMany", {limit: TEXTURE_LIMIT})), {modelerMessage: true});
+      const tex = addTexture(model, {name: t("modeler.uv.textureName", {n: (model.textures?.length ?? 0) + 1}), ...bakeColours(targets)});
+      for (const {mesh, faces, p} of targets) { for (const fi of faces) if (mesh.faces[fi].uv) mesh.faces[fi].t = tex.id; S.cache.delete(p.id); }
+      S.uvTexture = tex.id;
+    });
+  }
+  async function openTextureFile(file) {
+    const entry = textureFromBytes(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.[^.]+$/, '') || t("modeler.uv.textureName", {n: 1}));
+    if (!entry) { toast(t("modeler.uv.badImage")); return; }
+    const p = activePart();
+    commit(() => {
+      if ((model.textures?.length ?? 0) >= TEXTURE_LIMIT) throw Object.assign(new RangeError(t("modeler.uv.tooMany", {limit: TEXTURE_LIMIT})), {modelerMessage: true});
+      const tex = addTexture(model, entry); S.uvTexture = tex.id;
+      if (p) { for (const fi of uvFacesOf(p)) p.mesh.faces[fi].t = tex.id; S.cache.delete(p.id); }
+    });
+  }
+
   /** Front view, close on the face: for placing a face set's mouths and eyes. */
   function lookAtFace() {
     const f = faceFrame(model); if (!f) return;
@@ -2498,6 +2615,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       else if (e.key === 'Enter') { e.preventDefault(); (confirmBox.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON' ? document.activeElement : confirmBox.querySelector('.modeler-primary'))?.click(); }
       e.stopPropagation(); return;
     }
+    // The UV editor takes the keys while the pointer is over it (or a move there is running).
+    if (uvEditor.key(e)) { e.preventDefault(); e.stopPropagation(); return; }
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key, ctrl = e.ctrlKey || e.metaKey;
     let handled = true;
     if (S.modal && TRANSFORMS.includes(S.modal.kind) && ['x', 'y', 'z'].includes(key) && !ctrl) setAxis(key.toUpperCase());
@@ -2526,6 +2645,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if ((key === 'j' || e.code === 'KeyJ') && e.altKey && S.mode === 'edit') trisToQuadsSelected();
     else if (S.modal?.kind === 'knife' && key === 'Backspace') { S.modal.path.pop(); setStatus(); draw(); }
     else if (key === 'k' && !ctrl && S.mode === 'edit' && !S.modal) startKnife();
+    else if (key === 'u' && !ctrl && (S.mode === 'edit' || S.mode === 'object') && !S.modal) { const r = canvas.getBoundingClientRect(); unwrapMenu(S.pointer ? pointAnchor({clientX: r.left + S.pointer.x, clientY: r.top + S.pointer.y}) : root); }
     else if (ctrl && key === 'l') { if (S.mode === 'edit' && activePart()) { S.verts = M.linkedVerts(activePart().mesh, S.verts); refresh(); } }
     else if (ctrl && (key === '+' || key === '=')) { if (S.mode === 'edit' && activePart()) { S.verts = M.growSelection(activePart().mesh, S.verts); refresh(); } }
     else if (ctrl) handled = false;
@@ -2606,7 +2726,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls,
+    showControls, closeControls, unwrap, toggleUVEditor, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.

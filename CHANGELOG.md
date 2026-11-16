@@ -10,6 +10,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 - 3D Nowdz models can have textures: images painted onto their faces show in 3D Nowdz, on the stage, in playback and in exports. Turn them off under View > Textures.
 - Textured models come in from .glb files and Open in Blender with their images and UVs, and textures painted in Blender come back too.
+- Unwrap 3D Nowdz models with U (Smart UV Project, Cube, Project from View) and arrange the UVs over the texture in the new UV editor. Unwrapping several parts gives them one shared texture with their colours already in it.
 
 - Stick Nodes filters such as tint, hue shift, glow, blur, outline and drop shadow now import as effects you can edit. Projects imported earlier get them when opened.
 - Stick Nodes camera wobble now comes in as a Handheld camera move.
