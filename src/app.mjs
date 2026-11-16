@@ -505,6 +505,8 @@ function queueUI() {
 }
 /** The band's session (experience.md §2): Build, a movieclip being edited, or the camera (outside Draw and Build). */
 function bandSession() {
+  if (paintSession && !projects.tabs.get(paintSession.tab)) paintSession = null; // its tab was closed by hand
+  if (paintSession && projects.tabs.activeId === paintSession.tab) return "paint";
   if (builderMode?.active) return "build";
   if (editor._movieclipScopes?.length) return "movieclip";
   if (!drawingController?.active && cameraSelected()) return "camera";
@@ -525,7 +527,8 @@ function syncStageHead() {
     size: `${editor.report.canvas_width} × ${editor.report.canvas_height}`,
     background: sceneBackground(),
     session: session === "movieclip" ? { done: "movieclip-done", name: scopes.map((scope) => scope.name).join(" › ") }
-      : session === "camera" ? { done: "camera-done", nameKey: "layers.camera" } : null,
+      : session === "camera" ? { done: "camera-done", nameKey: "layers.camera" }
+      : session === "paint" ? { done: "paint-texture-done", name: paintSession.name } : null,
     handles: state.handles, motionPaths: state.motionPaths, grid: Boolean(state.settings.canvasGrid), vfx: state.vfxEnabled,
     staticHandles: state.settings.builderShowStaticHandles !== false, highlight: Boolean(state.settings.builderHighlightSegment),
     isolate: Boolean(state.isolateMode),
@@ -4607,13 +4610,15 @@ try { const saved = JSON.parse(localStorage.getItem(MODEL_DRAFT_KEY) || "null");
 function keepModelDraft(key, draft) {
   if (draft) modelDrafts.set(key, draft); else modelDrafts.delete(key);
   if (key !== "new") return;
-  try { if (draft) localStorage.setItem(MODEL_DRAFT_KEY, JSON.stringify(draft)); else localStorage.removeItem(MODEL_DRAFT_KEY); }
+  // Undo history (draft.history) stays in this session: it can be large and isn't worth storing.
+  try { if (draft) localStorage.setItem(MODEL_DRAFT_KEY, JSON.stringify({...draft, history: undefined})); else localStorage.removeItem(MODEL_DRAFT_KEY); }
   catch { /* too large for storage: kept for this session only */ }
 }
 /** The Model tab: 3D Nowdz on the selected 3D model, or a new model. Pressing it again keeps it open. */
 function openModelWorkspace() {
   if (modelerOpen) return;
   if (builderMode?.active) { toast(interfaceText("modeler.finishBuildFirst"), "modeler.finishBuildFirst", {}); return; }
+  if (bandSession() === "paint") { toast(interfaceText("modeler.paint.finishFirst"), "modeler.paint.finishFirst", {}); return; }
   openBlenderLite(canEditModel());
 }
 // While 3D Nowdz is open, Animate, Draw and Build close it (an unfinished model is kept for next time), then switch.
@@ -4623,7 +4628,7 @@ document.addEventListener("click", (e) => {
   e.preventDefault(); e.stopImmediatePropagation();
   modelerApi.requestClose(() => button.click());
 }, true);
-async function openBlenderLite(editing = false) {
+async function openBlenderLite(editing = false, {quiet = false} = {}) {
   if (modelerOpen || builderMode?.active) return;
   if (editing && !canEditModel()) { toast(interfaceText("modeler.notAModel"), "modeler.notAModel", {}); return; }
   pause(); finishCurrentEdit();
@@ -4641,9 +4646,13 @@ async function openBlenderLite(editing = false) {
     onClose: (unfinished) => {
       modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling;
       keepModelDraft(draftKey, unfinished);
-      if (unfinished) notify(interfaceText("modeler.draftKept"), "modeler.draftKept", {});
+      const painting = paintRequest; paintRequest = null;
+      if (painting && unfinished) void startTexturePainting({...painting, draftKey, editing, typeId});
+      else if (unfinished) notify(interfaceText("modeler.draftKept"), "modeler.draftKept", {});
       syncShell(); requestRender();
     },
+    // Paint texture: 3D Nowdz closes keeping its model, and the texture opens in the Draw tab.
+    onPaintTexture: (request) => { paintRequest = request; modelerApi?.requestClose(); },
     onDone: (model) => {
       if (editing) {
         const previous = editor.report.figure_types.find((f) => f.figure_type_id === typeId);
@@ -4663,9 +4672,87 @@ async function openBlenderLite(editing = false) {
       requestRender();
     },
   });
-  if (draft) notify(interfaceText("modeler.draftResumed"), "modeler.draftResumed", {});
+  if (draft && !quiet) notify(interfaceText("modeler.draftResumed"), "modeler.draftResumed", {});
   syncShell(); requestRender();
 }
+// ---------- Paint texture (docs/BLENDER-LITE.md, "Paint texture") ----------
+// A 3D Nowdz texture opens as a project of its own, the size of the image: a
+// drawing layer holding the texture, under a locked drawing layer with the UV
+// layout. The band's Done writes the painted pixels into the model and goes back
+// to 3D Nowdz; Cancel goes back unchanged. The animation itself is never touched.
+let paintRequest = null, paintSession = null;
+async function startTexturePainting({texture, guide, draftKey, editing, typeId}) {
+  const origin = projects.tabs.activeId;
+  pause();
+  const [{createImageFigure}, {createFrame, createObject}, {drawingSheetPlan, drawingSheetPublish}, {drawingId}, {createBlankDocument}] = await Promise.all([
+    import("./media-authoring.mjs"), import("./demo.mjs"), import("./editor-layer-sheet.mjs"), import("./drawing-model.mjs"), import("./startup-document.mjs")]);
+  try {
+    const name = interfaceText("modeler.paint.projectName", {name: texture.name});
+    if (!await openProject((session) => editor.load(createBlankDocument({canvas: {width: texture.width, height: texture.height}}), name, session))) { await reopenModel({draftKey, editing, typeId, origin}); return; }
+    // Each image becomes a drawing cel whose pixel (0, 0) sits on the canvas's top left.
+    const place = (layerId, dataUrl, label) => {
+      const typeIdNext = editor.report.figure_types.reduce((n, f) => Math.max(n, f.figure_type_id + 1), 1);
+      const figure = createImageFigure({width: texture.width, height: texture.height, dataUrl, figureTypeId: typeIdNext, name: label});
+      Object.assign(figure.image_assets[0], {display_width: texture.width, display_height: texture.height});
+      figure._styk.drawing = {version: 1, celId: drawingId(), width: texture.width, height: texture.height, pixelsPerUnit: 1, origin: {x: 0, y: 0},
+        crop: {x: 0, y: 0, width: texture.width, height: texture.height}, revision: 0, empty: false};
+      const anchor = figure.image_assets[0].anchor_start ?? {x: 0, y: 0}, object = createObject(figure, editor._identity(), anchor.x, anchor.y, {scale: 1});
+      const plan = drawingSheetPlan(editor, [layerId]); plan.definitions = [...editor.report.figure_types, figure];
+      plan.write(layerId, 0, createFrame([object]), {easing: {interpolation: "constant"}});
+      drawingSheetPublish(editor, plan, "Place texture", {assets: {figure_types: {added: [figure]}}});
+    };
+    const blankLayers = [...(editor.report._styk.layers?.order ?? [])];
+    const paintLayer = editor.createDrawingLayer(interfaceText("modeler.paint.textureLayer"));
+    place(paintLayer.id, texture.src, texture.name);
+    const guideLayer = editor.createDrawingLayer(interfaceText("modeler.paint.guideLayer"));
+    place(guideLayer.id, guide, interfaceText("modeler.paint.guideLayer"));
+    editor.setLayerLocked(guideLayer.id, true);
+    // The empty layer every new project starts with has no place here.
+    for (const id of blankLayers) if (id !== paintLayer.id && id !== guideLayer.id) try { editor.deleteLayer(id); } catch { /* keep it */ }
+    editor.setActiveLayer(paintLayer.id);
+    paintSession = {tab: projects.tabs.activeId, origin, textureId: texture.id, name, layer: paintLayer.id, width: texture.width, height: texture.height, draftKey, editing, typeId};
+    editor.markSaved();
+    fit();
+    document.querySelector('.workspace-switch [data-workspace-mode="draw"]')?.click();
+    notify(interfaceText("modeler.paint.started"), "modeler.paint.started", {});
+  } catch (error) { fail(error); }
+  syncShell(); queueUI();
+}
+/** Done (keep) or Cancel on the paint session: back to 3D Nowdz with the texture painted or as it was. */
+async function finishTexturePainting(keep) {
+  const session = paintSession; if (!session) return;
+  if (projects.tabs.activeId !== session.tab && !await projects.activate(session.tab)) return;
+  try {
+    if (keep) {
+      finishCurrentEdit(); await drawingController?.barrier();
+      const target = editor.drawingTarget(session.layer, 0);
+      if (target.figure) {
+        const [{encodeDrawingPNG}] = await Promise.all([import("./drawing-png.mjs")]);
+        const surface = await editor.drawingResources.surface(target.figure), pixels = surface.store.readRect(0, 0, session.width, session.height);
+        const src = await encodeDrawingPNG(pixels, session.width, session.height), draft = modelDrafts.get(session.draftKey);
+        const texture = draft?.model?.textures?.find((t) => t.id === session.textureId);
+        if (texture) { texture.src = src; keepModelDraft(session.draftKey, draft); }
+      }
+    }
+  } catch (error) { fail(error); return; }
+  paintSession = null;
+  editor.markSaved();
+  if (drawingController?.active) document.querySelector('.workspace-switch [data-workspace-mode="animate"]')?.click();
+  await projects.close(session.tab);
+  await reopenModel(session);
+  if (keep) notify(interfaceText("modeler.paint.saved"), "modeler.paint.saved", {});
+}
+/** Back to the project the model belongs to, and 3D Nowdz on its kept draft. */
+async function reopenModel({origin, editing, typeId}) {
+  if (origin && projects.tabs.get(origin) && projects.tabs.activeId !== origin) await projects.activate(origin);
+  if (editing) {
+    const placed = editor.frame?.objects.find((o) => o.figure_type_id === typeId);
+    if (placed && editor.figure?.figure_type_id !== typeId) editor.select?.(placed.unique_id);
+  }
+  syncShell();
+  await openBlenderLite(editing && editor.figure?.figure_type_id === typeId, {quiet: true});
+}
+
 /** Make 3D converts the selected figure's definition into a 3D rig (docs/PSEUDO-3D-PLAN.md). */
 function isFigure3D() { return Boolean(editor.figure?.segments.some(s => s._stykRig?.spatial)); }
 function canMakeFigure3D() {
@@ -5211,6 +5298,9 @@ const actions = {
     if(!cameraSelected())selectTrack({id:'camera',kind:'camera'});
     else editorSettings?.commit({showCamera:!state.settings.showCamera});
   },
+  // The band's Done and Cancel while painting a 3D Nowdz texture.
+  "paint-texture-done": () => finishTexturePainting(true),
+  "paint-texture-cancel": () => finishTexturePainting(false),
   // The band's Done in a camera session: back to the figure the camera session kept selected, or the Scene.
   "camera-done": () => {
     if (!cameraSelected()) return;

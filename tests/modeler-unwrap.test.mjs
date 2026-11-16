@@ -73,3 +73,12 @@ test('several parts unwrap into one shared square, sized by their world size', (
   assert.ok(Math.abs(uvArea(b.faces[0]) / uvArea(a.faces[0]) - 4) < 1e-6, 'twice the size, four times the room');
   for (const m of [a, b]) for (const f of m.faces) for (const p of f.uv) assert.ok(p.every(x => x >= 0 && x <= 1));
 });
+
+import {createBlankDocument} from '../src/startup-document.mjs';
+import {prepareEditorLoad} from '../src/editor-load.mjs';
+test('Paint texture opens on an empty one-frame project the size of the texture', () => {
+  const doc = createBlankDocument({canvas: {width: 512, height: 256}}); prepareEditorLoad(doc);
+  assert.deepEqual([doc.canvas_width, doc.canvas_height, doc.keyframes.length, doc.figure_types.length], [512, 256, 1, 0]);
+  assert.equal(doc._styk.layerSheet.duration, 1);
+  assert.throws(() => createBlankDocument({canvas: {width: 0, height: 4}}), RangeError);
+});

@@ -75,7 +75,7 @@ function listenToBlender() {
 /** `draft`: an unfinished model left open last time ({model, camera}), carried on from.
  * onClose(draft) gets the unfinished model when it was closed without Add / Update
  * (null when nothing was changed or it was added), so leaving never loses work. */
-export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose} = {}) {
+export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose, onPaintTexture = null} = {}) {
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
   const S = {mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, second: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
@@ -377,6 +377,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       choice ? menuItem(t("modeler.showChoice"), () => { showChoice(model, choice.key); refresh(); }) : null,
       choice ? menuItem(t("modeler.stickToFace"), () => stickParts(ids.map(part).filter(Boolean)), {title: t("modeler.stickToFaceHint")}) : null,
       choice ? menuLine() : null,
+      onPaintTexture && q.mesh.faces.some(f => f.t !== undefined && f.uv) ? menuItem(t("modeler.paint.button"), () => { S.active = q.id; paintTexture(q.mesh.faces.find(f => f.t !== undefined && f.uv).t); }, {title: t("modeler.paint.hint")}) : null,
+      menuItem(t("modeler.uv.unwrap"), () => { S.parts = new Set(ids); S.active = q.id; unwrapMenu(pointAnchor(e)); }, {title: t("modeler.uv.unwrapHint")}),
       menuItem(t("modeler.renameLayer"), () => rename(q)), menuItem(t("modeler.duplicate"), () => { S.parts = new Set(ids); S.active = q.id; if (S.mode === 'edit') setMode('object'); duplicateParts(); }),
       menuItem(ids.length > 1 ? t("modeler.groupIntoFolder") : t("modeler.putInNewFolder"), () => { S.parts = new Set(ids); if (S.mode !== 'object') setMode('object'); groupIntoFolder(); }),
       ...folders.filter(f => f.id !== q.folder).slice(0, 8).map(f => menuItem(t("modeler.moveToFolder", {name: f.name}), () => commit(() => { moveToFolder(model, ids, f.id); }))),
@@ -1095,8 +1097,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.uv.newHint"), onclick: () => newTexture()}, t("modeler.uv.new")),
       el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.uv.openHint"), onclick: () => uvFile.click()}, t("modeler.uv.open")),
       el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.uv.unwrapHint"), onclick: e => unwrapMenu(e.currentTarget)}, t("modeler.uv.unwrap")),
+      onPaintTexture ? el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.paint.hint"), onclick: () => paintTexture()}, t("modeler.paint.short")) : null,
       el('span', {class: 'modeler-spacer'}),
-      el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.close"), 'aria-label': t("modeler.close"), onclick: () => toggleUVEditor(false)}, '×'), uvFile]});
+      el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.close"), 'aria-label': t("modeler.close"), onclick: () => toggleUVEditor(false)}, '×'), uvFile].filter(Boolean)});
   stage.append(uvEditor.root);
   /** Faces of a part the UV tools work on: the selected faces in Edit mode, else all of them. */
   function uvFacesOf(p, {unwrapped = true} = {}) {
@@ -1183,6 +1186,29 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       const tex = addTexture(model, entry); S.uvTexture = tex.id;
       if (p) { for (const fi of uvFacesOf(p)) p.mesh.faces[fi].t = tex.id; S.cache.delete(p.id); }
     });
+  }
+
+  /** The UV layout of every face using a texture, as a picture the size of the
+   * texture: thin dark lines with a light edge, readable over any colour. */
+  function uvGuide(tex) {
+    const c = document.createElement('canvas'); c.width = tex.width; c.height = tex.height;
+    const g = c.getContext('2d'), w = Math.max(1, Math.round(Math.max(tex.width, tex.height) / 1024));
+    g.lineJoin = 'round';
+    const paths = [];
+    for (const q of model.parts) for (const f of q.mesh.faces) if (f.t === tex.id && f.uv) paths.push(f.uv.map(([u, v]) => [u * tex.width, (1 - v) * tex.height]));
+    for (const [width, colour] of [[w * 3, 'rgba(255,255,255,.55)'], [w, 'rgba(20,20,20,.85)']]) {
+      g.lineWidth = width; g.strokeStyle = colour;
+      for (const pts of paths) { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.stroke(); }
+    }
+    return c.toDataURL('image/png');
+  }
+  /** Paint texture: the texture opens in the Draw tab with its UV layout over it; 3D Nowdz comes back when done. */
+  function paintTexture(id = shownTexture(activePart())) {
+    const tex = model.textures?.find(x => x.id === id);
+    if (!tex) { toast(t("modeler.paint.unwrapFirst")); return; }
+    if (S.modal) cancelModal();
+    S.keepDraft = true;
+    onPaintTexture({texture: {id: tex.id, name: tex.name, src: tex.src, width: tex.width, height: tex.height}, guide: uvGuide(tex)});
   }
 
   /** Front view, close on the face: for placing a face set's mouths and eyes. */
@@ -2691,11 +2717,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function close() {
     if (blender.open?.owner === close) blender.open = null;
     listeners.abort(); cancelAnimationFrame(frameRequest); clearTimeout(flashTimer); root.remove();
-    const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model)) && (model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0);
+    const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model) || S.keepDraft) && (model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0);
     // The draft remembers where you were (mode, part and selection), so coming back
     // from another tab carries straight on instead of dropping to Object mode.
-    const where = {mode: S.mode, selectMode: S.selectMode, active: S.active, parts: [...S.parts], verts: [...S.verts]};
-    onClose?.(changed ? {model: structuredClone(model), camera: structuredClone(S.camera), where} : null);
+    const where = {mode: S.mode, selectMode: S.selectMode, active: S.active, parts: [...S.parts], verts: [...S.verts], uv: uvEditor.open};
+    // Undo history rides along in memory only (the app never stores it), so a trip to paint a texture keeps it.
+    const history = {undo: S.undo, redo: S.redo, images: [...imagePool]};
+    onClose?.(changed ? {model: structuredClone(model), camera: structuredClone(S.camera), where, history} : null);
   }
   function done() {
     if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t("modeler.addAPartFirst")); return; }
@@ -2710,6 +2738,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   syncRefs();
   if (!model.parts.length) S.camera = defaultCamera();
   if (draft?.camera) S.camera = {...S.camera, ...draft.camera};
+  if (draft?.history) {
+    for (const [key, src] of draft.history.images ?? []) { imagePool.set(key, src); imageKeys.set(src, key); }
+    S.undo = draft.history.undo ?? []; S.redo = draft.history.redo ?? [];
+  }
+  if (draft?.where?.uv) toggleUVEditor(true);
   if (draft?.where) {
     const w = draft.where, ids = new Set(model.parts.map(p => p.id));
     if (ids.has(w.active)) S.active = w.active;
@@ -2726,7 +2759,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls, unwrap, toggleUVEditor, get uvEditor() { return uvEditor; },
+    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.

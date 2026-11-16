@@ -61,3 +61,16 @@ export function createStartupDocument({canvas}={}) {
   for(const track of Object.values(report._styk.layerSheet.tracks))track.end=10;
   return report;
 }
+
+/** An empty one-frame project of a given canvas size (3D Nowdz's Paint texture opens one). */
+export function createBlankDocument({canvas}) {
+  if(![canvas?.width,canvas?.height].every(value=>Number.isInteger(value)&&value>=1&&value<=100000))throw new RangeError('Canvas dimensions must be 1-100000 pixels.');
+  const report=emptyDocument();
+  report.canvas_width=canvas.width;report.canvas_height=canvas.height;report.figure_types=[];
+  report.keyframes=[{...createFrame([],1),_styk:{easing:{interpolation:'constant'}}}];
+  ensureLayerState(report);
+  initializeLayerSheet(report);
+  report._styk.layerSheet.duration=1;
+  for(const track of Object.values(report._styk.layerSheet.tracks))track.end=1;
+  return report;
+}

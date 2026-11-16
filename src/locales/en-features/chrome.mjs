@@ -18,6 +18,8 @@ export default Object.freeze({
   "chrome.testRigPoseTheFigureInAPreview": "Test rig: pose the figure in a preview",
   "chrome.finishEditingTheMovieclip": "Finish editing the movieclip",
   "chrome.finishEditingTheCamera": "Finish editing the camera",
+  "chrome.paintTextureCancel": "Go back to 3D Nowdz without changing the texture",
+  "chrome.paintTextureDone": "Put the painted texture on the model and go back to 3D Nowdz",
   "chrome.finishBuildingTheFigure": "Finish building the figure",
   "chrome.editorTools": "Editor tools",
   "chrome.tools": "Tools",

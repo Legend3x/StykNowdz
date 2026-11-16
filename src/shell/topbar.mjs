@@ -197,7 +197,7 @@ export function watchBand(band, {window: win = globalThis.window, document: doc 
 }
 
 /** The sessions the band shows (experience.md §2): Build, a movieclip and the camera; '' at rest. */
-export const BAND_SESSIONS = Object.freeze(['build', 'movieclip', 'camera']);
+export const BAND_SESSIONS = Object.freeze(['build', 'movieclip', 'camera', 'paint']);
 
 /**
  * Shows the band's buttons for `session` (a BAND_SESSIONS name, or '' at

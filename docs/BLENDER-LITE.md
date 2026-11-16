@@ -523,7 +523,7 @@ stored downscaled (1024 px JPEG) with the model.
 
 ### Textures and UVs
 
-(src/modeler/uv.mjs; the UV tools follow below; painting in the Draw tab is still to come.)
+(src/modeler/uv.mjs; the UV tools and Paint texture follow below.)
 
 - A face may carry `uv`, one `[u, v]` per corner in the order of `v` (Blender's
   convention: 0..1 across the image, v up), and `t`, the id of one of
@@ -597,6 +597,26 @@ stored downscaled (1024 px JPEG) with the model.
 - Its header picks the texture shown (which also puts it on the faces shown),
   makes a New one (colours baked in), opens a PNG, JPEG or WebP, and unwraps.
 - Undo steps keep each texture image once (a pool keyed by image), not a copy per step.
+
+### Paint texture
+
+(src/app.mjs `startTexturePainting`, `finishTexturePainting`; src/modeler/modeler-ui.mjs `paintTexture`.)
+
+- Paint texture (a textured part's right-click menu, or Paint in the UV editor)
+  closes 3D Nowdz keeping its model as a draft, its undo history included (held in
+  memory only, never in the stored draft), and opens the texture as a project of
+  its own: a one-frame canvas the size of the image (`createBlankDocument`) with a
+  drawing layer "Texture" holding the image (a v1 cel at pixel (0, 0), so the Draw
+  tab's own migration and tools apply) under a locked drawing layer "UV layout"
+  with every face using that texture drawn as lines. Draw opens on it.
+- The band shows Cancel and Done for it (the `paint` band session). Done reads
+  the Texture layer's pixels over the image's rectangle, writes them as PNG into
+  the draft's texture, closes the paint project without asking and goes back to
+  the project the model belongs to, reopening 3D Nowdz (editing the same figure
+  when it was placed). Cancel does the same without the pixels. The animation is
+  never touched; a placed figure changes only with Update figure, as always.
+- While painting, the Model tab asks to finish first; closing the paint project
+  by hand simply ends the session (the draft stays as it was).
 
 ## Data integrity
 

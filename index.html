@@ -85,6 +85,10 @@
           <!-- The one Export: the ink primary at rest, a quiet button beside a session's Done. -->
           <button class="ui-button band-export" data-variant="primary" data-action="export" title="Export" data-icon="export"
              data-i18n-title="chrome.export"><span class="band-label" data-i18n-slot data-i18n="chrome.export">Export</span></button>
+          <button type="button" class="ui-button band-cancel" data-variant="ghost" data-action="paint-texture-cancel" data-band-session="paint"
+            title="Go back to 3D Nowdz without changing the texture" hidden data-i18n-title="chrome.paintTextureCancel"><span class="band-label" data-i18n="chrome.cancel">Cancel</span></button>
+          <button type="button" class="ui-button band-done" data-variant="primary" data-action="paint-texture-done" data-band-session="paint"
+            title="Put the painted texture on the model and go back to 3D Nowdz" data-icon="check" hidden data-i18n-title="chrome.paintTextureDone"><span class="band-label" data-i18n="chrome.done">Done</span></button>
           <button type="button" class="ui-button band-cancel" data-variant="ghost" data-action="movieclip-cancel" data-band-session="movieclip"
             title="Discard the changes to this movieclip" hidden data-i18n-title="chrome.discardTheChangesToThisMovieclip"><span class="band-label" data-i18n="chrome.cancel">Cancel</span></button>
           <button type="button" class="ui-button band-testrig" data-variant="ghost" data-action="rig-test" data-band-session="build"

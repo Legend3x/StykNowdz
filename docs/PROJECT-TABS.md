@@ -102,3 +102,9 @@ the desktop build (Electron), GPU memory, and resting projects with large drawin
   cross-project paste, closing, saving, recovery copies, twelve tabs, Ctrl+Tab, reordering)
 - `npm run test:project-tabs:desktop` (Electron: a save target per project, the window-close question for
   several unsaved projects, a recovery copy per project, and restoring them after a restart)
+
+## Projects opened by other tools
+
+3D Nowdz's Paint texture opens the texture as a project beside the one in front and closes it again when
+painting ends (docs/BLENDER-LITE.md, "Paint texture"). It marks the paint project saved first, so closing it
+never asks about changes; the project it came from comes back to the front.
