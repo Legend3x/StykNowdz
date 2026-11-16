@@ -88,7 +88,7 @@ test('effect pipelines compile ahead of first use without replacing one created 
   const gpu=new VfxWebGPU(device);
   const onDemand=gpu.pipeline(3);
   gpu.prewarm();gpu.prewarm();
-  assert.equal(pending.length,27,'Every other operation is requested once.');
+  assert.equal(pending.length,28,'Every other operation is requested once.');
   assert.ok(pending.every(request=>request.operation!==3));
   assert.equal(gpu.pipeline(7).sync,7,'A pipeline needed before its warm copy arrives is created on demand.');
   for(const request of pending){if(request.operation===9)request.reject(new Error('lost'));else request.resolve({warm:request.operation});}

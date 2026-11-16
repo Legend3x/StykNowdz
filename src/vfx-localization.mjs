@@ -231,6 +231,12 @@ export const effectMessages = Object.freeze({
       },
       "gamma": {
         "labelKey": "vfxCatalog.parameter.grade.gamma.label"
+      },
+      "hue": {
+        "labelKey": "vfxCatalog.parameter.grade.hue.label"
+      },
+      "invert": {
+        "labelKey": "vfxCatalog.parameter.grade.invert.label"
       }
     }
   },

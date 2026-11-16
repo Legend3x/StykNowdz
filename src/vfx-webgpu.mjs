@@ -69,6 +69,7 @@ fn noiseAt(pos:vec2f,seed:f32,smoothness:f32)->f32{let i=floor(pos);var f=fract(
  if(operation==24){let xy=globalPixel(uv);let pos=xy/params.outputSize*2.-vec2f(1.);let warped=(pos*(1.+p.z*dot(pos,pos))*.5+vec2f(.5))*params.outputSize;var s=sampleGlobal(warped);if(any(warped<vec2f(0.))||any(warped>=params.outputSize)){s=vec4f(0.);}if(p.w>0.){s.r=sampleGlobal(warped+vec2f(p.w,0.)).r;s.b=sampleGlobal(warped-vec2f(p.w,0.)).b;s=vec4f(min(s.rgb,vec3f(s.a)),s.a);}let line=(.5+.5*cos((xy.y+q.x)*2.*PI/p.y))*p.x;let b=brush(uv);return vec4f(mix(s.rgb,b.rgb*s.a,vec3f(line*b.a)),s.a);}
  if(operation==25){let front=sampleOrig(uv);let inner=sampleMask(uv);let b=brush(uv);let outer=max(0.,c.a-front.a)*p.x*b.a;let ring=inner+vec4f(b.rgb*outer,outer)*(1.-inner.a);if(p.y>0.){return ring;}return ring+front*(1.-ring.a);}
  if(operation==26){return mix(sampleOrig(uv),c,p.x);}
+ if(operation==28){let h=p.x;let cs=cos(h);let sn=sin(h);let m=mat3x3f(.213+cs*.787-sn*.213,.213-cs*.213+sn*.143,.213-cs*.213-sn*.787,.715-cs*.715-sn*.715,.715+cs*.285+sn*.140,.715-cs*.715+sn*.715,.072-cs*.072+sn*.928,.072-cs*.072-sn*.283,.072+cs*.928+sn*.072);var o=clamp(m*rgb,vec3f(0.),vec3f(1.));o=mix(o,vec3f(1.)-o,vec3f(p.y));return vec4f(o*c.a,c.a);}
  if(operation==27){var xy=globalPixel(uv)/p.y+vec2f(p.z*.73,p.z*1.17);var offset=vec2f(0.);var weight=1.;var total=0.;for(var i=0;i<4;i++){if(f32(i)>=q.x){break;}offset+=vec2f(noiseAt(xy,p.w+f32(i)*37.,1.),noiseAt(xy+vec2f(19.1,7.7),p.w+131.+f32(i)*37.,1.))*weight;total+=weight;weight*=.5;xy*=2.;}return sampleGlobal(globalPixel(uv)+(offset/total*2.-vec2f(1.))*p.x);}
  return c;}`;
 const UNIFORM_SIZE=736,UNIFORM_STRIDE=1024,UNIFORM_SLOTS=64,IDLE_MS=30000;
@@ -95,7 +96,7 @@ export class VfxWebGPU{
  }
  descriptor(operation){return {layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vertex'},fragment:{module:this.module,entryPoint:'fragment',constants:{operation},targets:[{format:'rgba8unorm'}]}};}
  pipeline(operation){
-  if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
+  if(!Number.isInteger(operation)||operation<0||operation>28)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
   let entry=this.pipelines.get(operation);if(!entry){entry=this.device.createRenderPipeline(this.descriptor(operation));this.pipelines.set(operation,entry);}return entry;
  }
  /** Compile every operation ahead of the frame that first needs it. A pipeline
@@ -105,7 +106,7 @@ export class VfxWebGPU{
   * demand as before, and whichever finishes first is kept. */
  prewarm(){
   if(this.prewarmed||!this.device.createRenderPipelineAsync)return;this.prewarmed=true;
-  for(let operation=0;operation<=27;operation++)if(!this.pipelines.has(operation))
+  for(let operation=0;operation<=28;operation++)if(!this.pipelines.has(operation))
    this.device.createRenderPipelineAsync(this.descriptor(operation)).then(pipeline=>{if(!this.destroyed&&!this.pipelines.has(operation))this.pipelines.set(operation,pipeline);},()=>{});
  }
  slot(index,width,height){
@@ -151,7 +152,7 @@ export class VfxWebGPU{
    const strengthSource=p.effectStrength<1?save(7):null;
     if(p.color!==undefined)paint(p.color);
    if(type==='tint')pass(1,[p.mix,0,0,0]);
-   else if(type==='grade')pass(2,[p.exposure,p.contrast,p.saturation,p.temperature],[p.tint,p.shadows,p.highlights,p.gamma]);
+   else if(type==='grade'){pass(2,[p.exposure,p.contrast,p.saturation,p.temperature],[p.tint,p.shadows,p.highlights,p.gamma]);if(p.hue||p.invert)pass(28,[p.hue*Math.PI/180,p.invert,0,0]);}
    else if(type==='blur'){if(!p.mode)blur(p.radius*scale);else pass(16,[p.radius*scale,p.mode,p.angle*Math.PI/180,0],[p.centerX,p.centerY,0,0]);}
    else if(type==='glow'||type==='shadow'){
     if(type==='glow'&&p.coreMix){paint(p.coreColor);pass(1,[p.coreMix,0,0,0]);paint(p.color);}

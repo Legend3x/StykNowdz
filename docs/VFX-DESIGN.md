@@ -19,7 +19,7 @@ No captions, effect-cost badges, or additional animation modes appear in this pa
 | Outline | Paint, width, opacity, placement, rounded, outline only |
 | Blur | Mode, radius, angle, center |
 | Shadow | Paint, softness, X/Y offset, angle/distance, spread, opacity, placement |
-| Color grading | Exposure, contrast, saturation, temperature, tint, shadows, highlights, gamma |
+| Color grading | Exposure, contrast, saturation, temperature, tint, shadows, highlights, gamma, hue, invert |
 | Pixelate | Linked cell width/height, grid X/Y |
 | Noise | Amount, grain size, color grain, pattern, contrast, softness, seed, evolution |
 | Vignette | Amount, softness, paint, center, roundness, aspect, radius |

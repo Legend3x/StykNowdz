@@ -306,6 +306,14 @@ export class VfxCPU {
         } else if (operation === 26) {
           const front = texelOriginal(uvx, uvy, tmp2);
           r = front[0] + (c[0] - front[0]) * p[0]; g = front[1] + (c[1] - front[1]) * p[0]; b = front[2] + (c[2] - front[2]) * p[0]; a = front[3] + (ca - front[3]) * p[0];
+        } else if (operation === 28) {
+          // Hue rotation (the CSS hue-rotate matrix), then invert, in straight colour.
+          const cs = Math.cos(p[0]), sn = Math.sin(p[0]);
+          let rr = clamp01(cr * (.213 + cs * .787 - sn * .213) + cg * (.715 - cs * .715 - sn * .715) + cb * (.072 - cs * .072 + sn * .928));
+          let gg = clamp01(cr * (.213 - cs * .213 + sn * .143) + cg * (.715 + cs * .285 + sn * .140) + cb * (.072 - cs * .072 - sn * .283));
+          let bb2 = clamp01(cr * (.213 - cs * .213 - sn * .787) + cg * (.715 - cs * .715 + sn * .715) + cb * (.072 + cs * .928 + sn * .072));
+          rr += (1 - 2 * rr) * p[1]; gg += (1 - 2 * gg) * p[1]; bb2 += (1 - 2 * bb2) * p[1];
+          r = rr * ca; g = gg * ca; b = bb2 * ca; a = ca;
         } else if (operation === 27) {
           const g2 = globalPixel(uvx, uvy);
           let xx = g2.x / p[1] + p[2] * 0.73, yy = g2.y / p[1] + p[2] * 1.17;
@@ -381,7 +389,7 @@ export class VfxCPU {
       const strengthSource = p.effectStrength < 1 ? save(7) : null;
       if (p.color !== undefined) paint(p.color);
       if (type === 'tint') pass(1, [p.mix, 0, 0, 0]);
-      else if (type === 'grade') pass(2, [p.exposure, p.contrast, p.saturation, p.temperature], [p.tint, p.shadows, p.highlights, p.gamma]);
+      else if (type === 'grade') { pass(2, [p.exposure, p.contrast, p.saturation, p.temperature], [p.tint, p.shadows, p.highlights, p.gamma]); if (p.hue || p.invert) pass(28, [p.hue * Math.PI / 180, p.invert, 0, 0]); }
       else if (type === 'blur') { if (!p.mode) blur(p.radius * scale); else pass(16, [p.radius * scale, p.mode, p.angle * Math.PI / 180, 0], [p.centerX, p.centerY, 0, 0]); }
       else if (type === 'glow' || type === 'shadow') {
         if (type === 'glow' && p.coreMix) { paint(p.coreColor); pass(1, [p.coreMix, 0, 0, 0]); paint(p.color); }

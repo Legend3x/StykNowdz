@@ -78,6 +78,8 @@ export default Object.freeze({
   "vfxCatalog.parameter.grade.shadows.label": "Shadows",
   "vfxCatalog.parameter.grade.highlights.label": "Highlights",
   "vfxCatalog.parameter.grade.gamma.label": "Gamma",
+  "vfxCatalog.parameter.grade.hue.label": "Hue",
+  "vfxCatalog.parameter.grade.invert.label": "Invert",
   "vfxCatalog.category.texture": "Texture",
   "vfxCatalog.effect.pixelate": "Pixelate",
   "vfxCatalog.parameter.pixelate.effectStrength.label": "Effect strength",

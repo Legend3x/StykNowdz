@@ -74,8 +74,8 @@ test('a software presenter compiles the remaining effect programs one per task b
   assert.equal(tasks.length,1,'Repeated requests share one sequence.');
   let steps=0;
   while(tasks.length){const before=gpu.programs.size;tasks.shift()();steps++;assert.ok(gpu.programs.size-before<=1,'Each task compiles at most one program.');}
-  assert.equal(gpu.programs.size,28);assert.equal(gpu.programs.get(3),onDemand);
-  assert.equal(steps,28,'Twenty-seven compilations and the task that finds nothing left.');
+  assert.equal(gpu.programs.size,29);assert.equal(gpu.programs.get(3),onDemand);
+  assert.equal(steps,29,'Twenty-eight compilations and the task that finds nothing left.');
   const stopped=new VfxGPU(),pending=[];stopped.prewarm(task=>pending.push(task));stopped.destroy();
   pending.shift()();assert.equal(pending.length,0,'A destroyed executor compiles nothing more.');
   gpu.destroy();

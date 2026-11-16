@@ -16,7 +16,7 @@ export class VfxGPU {
   this.slots=[];this.framebuffer=gl.createFramebuffer();this.stats={passes:0,bytes:0,calls:0};
  }
  program(operation){
-  if(!Number.isInteger(operation)||operation<0||operation>27)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
+  if(!Number.isInteger(operation)||operation<0||operation>28)throw messageError(new RangeError(''), "errors.vfxGpu.unknownVfxGraphicsOperation", {});
   let entry=this.programs.get(operation);if(entry)return entry;
   const gl=this.gl,shader=this.compile(gl.FRAGMENT_SHADER,fragment.replace('uniform int operation,paintType,stopCount;',`const int operation=${operation}; uniform int paintType,stopCount;`)),program=gl.createProgram();gl.attachShader(program,this.vertexShader);gl.attachShader(program,shader);gl.linkProgram(program);gl.deleteShader(shader);
   if(!gl.getProgramParameter(program,gl.LINK_STATUS)){const reason=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw messageError(new Error(''), "errors.vfxGpu.vfxProgram", {reason: reason});}
@@ -58,7 +58,7 @@ export class VfxGPU {
     const strengthSource=p.effectStrength<1?save(7):null;
     if(p.color!==undefined)paint(p.color);
     if(type==='tint')pass(1,[p.mix,0,0,0]);
-    else if(type==='grade')pass(2,[p.exposure,p.contrast,p.saturation,p.temperature],[p.tint,p.shadows,p.highlights,p.gamma]);
+    else if(type==='grade'){pass(2,[p.exposure,p.contrast,p.saturation,p.temperature],[p.tint,p.shadows,p.highlights,p.gamma]);if(p.hue||p.invert)pass(28,[p.hue*Math.PI/180,p.invert,0,0]);}
     else if(type==='blur'){if(!p.mode)blur(p.radius*scale);else pass(16,[p.radius*scale,p.mode,p.angle*Math.PI/180,0],[p.centerX,p.centerY,0,0]);}
     else if(type==='glow'||type==='shadow'){
       if(type==='glow'&&p.coreMix){paint(p.coreColor);pass(1,[p.coreMix,0,0,0]);paint(p.color);}
@@ -93,8 +93,8 @@ export class VfxGPU {
   if(this.prewarming)return;this.prewarming=true;let operation=0;
   const step=()=>{
    if(!this.prewarming||this.gl.isContextLost())return;
-   while(operation<=27&&this.programs.has(operation))operation++;
-   if(operation>27)return;
+   while(operation<=28&&this.programs.has(operation))operation++;
+   if(operation>28)return;
    try{this.program(operation++);}catch{return;}
    schedule(step);
   };

@@ -25,6 +25,16 @@ test('tint applies in straight alpha and stays premultiplied', () => {
   assert.deepEqual(px(out.pixels, 2, 0, 0).map(Math.round), [128, 0, 0, 128]);
 });
 
+test('grade hue turns the colour wheel and invert flips colours, both keeping alpha', () => {
+  const pixels = buffer(2, 2); pixels.set([128, 0, 0, 128], 0); // half-alpha pure red
+  const shifted = px(run(pixels, 2, 2, [fx('grade', 'g', {hue: 120})]).pixels, 2, 0, 0);
+  assert.equal(shifted[3], 128); assert.ok(shifted[1] > shifted[0] && shifted[1] > shifted[2], `red turned 120° is green: ${shifted}`);
+  const inverted = px(run(pixels, 2, 2, [fx('grade', 'g', {invert: 1})]).pixels, 2, 0, 0).map(Math.round);
+  assert.deepEqual(inverted, [0, 128, 128, 128]);
+  const half = hue => px(run(pixels, 2, 2, [fx('grade', 'g', {hue})]).pixels, 2, 0, 0).map(Math.round);
+  assert.deepEqual(half(180), half(-180), 'half a turn either way lands on the same colour');
+});
+
 test('blur keeps interior uniform, darkens borders like the shader, and spreads impulses', () => {
   const flat = buffer(16, 16, () => 40);
   const blurred = run(flat, 16, 16, [fx('blur', 'a', {radius: 6})]);

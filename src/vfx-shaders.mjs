@@ -45,6 +45,7 @@ void main(){
  if(operation==24){vec2 xy=globalPixel(),pos=xy/outputSize*2.-1.;vec2 warped=(pos*(1.+p.z*dot(pos,pos))*.5+.5)*outputSize;vec4 s=sampleGlobal(warped);if(any(lessThan(warped,vec2(0)))||any(greaterThanEqual(warped,outputSize)))s=vec4(0);if(p.w>0.){s.r=sampleGlobal(warped+vec2(p.w,0)).r;s.b=sampleGlobal(warped-vec2(p.w,0)).b;s.rgb=min(s.rgb,vec3(s.a));}float line=(.5+.5*cos((xy.y+q.x)*2.*PI/p.y))*p.x;vec4 b=brush();pixel=vec4(mix(s.rgb,b.rgb*s.a,line*b.a),s.a);return;}
  if(operation==25){vec4 front=texture(originalImage,uv),inner=texture(maskImage,uv),b=brush();float outer=max(0.,c.a-front.a)*p.x*b.a;vec4 ring=inner+vec4(b.rgb*outer,outer)*(1.-inner.a);pixel=p.y>0.?ring:ring+front*(1.-ring.a);return;}
  if(operation==26){pixel=mix(texture(originalImage,uv),c,p.x);return;}
+ if(operation==28){float h=p.x,cs=cos(h),sn=sin(h);mat3 m=mat3(.213+cs*.787-sn*.213,.213-cs*.213+sn*.143,.213-cs*.213-sn*.787,.715-cs*.715-sn*.715,.715+cs*.285+sn*.140,.715-cs*.715+sn*.715,.072-cs*.072+sn*.928,.072-cs*.072-sn*.283,.072+cs*.928+sn*.072);rgb=clamp(m*rgb,0.,1.);rgb=mix(rgb,1.-rgb,p.y);pixel=vec4(rgb*c.a,c.a);return;}
  if(operation==27){vec2 xy=globalPixel()/p.y+vec2(p.z*.73,p.z*1.17),offset=vec2(0);float weight=1.,total=0.;for(int i=0;i<4;i++){if(float(i)>=q.x)break;offset+=vec2(noiseAt(xy,p.w+float(i)*37.,1.),noiseAt(xy+vec2(19.1,7.7),p.w+131.+float(i)*37.,1.))*weight;total+=weight;weight*=.5;xy*=2.;}pixel=sampleGlobal(globalPixel()+(offset/total*2.-1.)*p.x);return;}
  pixel=c;
 }`;
