@@ -9,7 +9,7 @@ import {createUVEditor} from './uv-editor.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged} from './armature.mjs';
+import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged} from './armature.mjs';
 import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
   originOf, setOrigin, connections, tracedLines, lineOf, otherEnd, swapChoiceOf, hiddenBySwap, showChoice, swapSetProblem, makeSwapSet, plainFolder, choiceKey, choicesOf} from './layers.mjs';
 import {starterFace, stickToFace, faceFrame, facePart} from './face-sets.mjs';
@@ -78,6 +78,14 @@ function listenToBlender() {
 /** `draft`: an unfinished model left open last time ({model, camera}), carried on from.
  * onClose(draft) gets the unfinished model when it was closed without Add / Update
  * (null when nothing was changed or it was added), so leaving never loses work. */
+/** A Mirror mode part's mesh with its mirrored half made real (its own points and faces,
+ * weights naming the other side's bones resolved to them), in the part's own space. */
+export function appliedMirror(model, p) {
+  const m = M.objectMatrix(p), mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m)), X.invert(m)), resolve = sideResolver(model);
+  const skin = mesh.vdata?.skin;
+  if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([b, w]) => [resolve(b), w]);
+  return mesh;
+}
 /** What a .nowdz model file says it is. */
 const MODEL_FILE_FORMAT = 'stykNowdz.model';
 export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose, onPaintTexture = null, onSave = null} = {}) {
@@ -891,7 +899,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         // Mirror mode (Blender's Mirror modifier) where it's needed: while editing.
         el('label', {class: 'modeler-check modeler-mirror-toggle', title: t("modeler.mirrorHint")}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => setMirror(p, e.target.checked)}), t("modeler.mirrorX")]),
         p.mirror ? el('label', {class: 'modeler-check', title: t("modeler.clippingHint")}, [el('input', {type: 'checkbox', checked: p.clip !== false, onchange: e => commit(() => { if (e.target.checked) delete p.clip; else p.clip = false; })}), t("modeler.clipping")]) : null,
-        p.mirror ? actions([[t("modeler.joinToMiddle"), joinToMiddle, t("modeler.joinToMiddleHint")]]) : null,
+        p.mirror ? actions([[t("modeler.joinToMiddle"), joinToMiddle, t("modeler.joinToMiddleHint")], [t("modeler.applyMirror"), () => applyMirror(p), t("modeler.applyMirrorHint")]]) : null,
         actions([[t("modeler.extrude"), extrude, 'E'], [t("modeler.inset"), startInset, 'I'], [t("modeler.bevel"), () => startBevel(S.selectMode === 'vert' && !M.edgesFromVerts(activePart().mesh, S.verts).length), 'Ctrl+B'], [t("modeler.loopCut"), startLoopCut, 'Ctrl+R'], [t("modeler.knife"), startKnife, 'K'],
           [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge") + ' ▾', e => merge(e?.currentTarget), 'M'], [t("modeler.fill"), fill, 'F'], [t("modeler.gridFill"), gridFillSelected, t("modeler.gridFillHint")], [t("modeler.fillHoles"), fillHolesSelected, t("modeler.fillHolesHint")],
           [t("modeler.smoothVerts"), smoothSelected, t("modeler.smoothVertsHint")], [t("modeler.triangulate"), triangulateSelected, 'Ctrl+T'], [t("modeler.trisToQuads"), trisToQuadsSelected, 'Alt+J'],
@@ -1250,7 +1258,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode !== 'object') setMode('object');
     const made = commit(() => {
       // A mirrored head becomes whole first: each side of the face is drawn on its own.
-      if (p.mirror) { const m = M.objectMatrix(p); p.mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m)), X.invert(m)); p.mirror = false; }
+      if (p.mirror) { p.mesh = appliedMirror(model, p); p.mirror = false; }
       const target = wholeTarget(p), frame = faceFrame(model, [evaluatePart(p)]);
       if (!frame) throw Object.assign(new RangeError(t("modeler.face2d.noHead")), {modelerMessage: true});
       // Keep a texture whose front already shows the face; otherwise lay the head out for one.
@@ -2424,12 +2432,25 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Mirror mode on or off. Turning it on with points on both sides of the middle says
    * so: the mirror would double them (Symmetrize, or deleting one half, fixes that). */
   function setMirror(p, on) {
+    // Turning it off with a mirrored half showing asks whether to keep that half (Blender's Apply).
+    if (!on && p.mirror && (sidesOf(p).plus || sidesOf(p).minus)) {
+      askConfirm(t("modeler.mirrorOffAsk"), () => applyMirror(p), {yesLabel: t("modeler.keepBothHalves"), noLabel: t("modeler.removeMirroredHalf"),
+        no: () => { commit(() => { p.mirror = false; S.cache.delete(p.id); }); }, dismissed: renderProps});
+      return;
+    }
     commit(() => { p.mirror = on; S.cache.delete(p.id); });
     if (!on) return;
     const {plus, minus} = sidesOf(p);
     if (plus && minus) toast(t("modeler.mirrorBothSides"));
     else if (!plus && !minus && p.mesh.verts.length) toast(t("modeler.mirrorAllMiddle"));
     else if (p.mesh.verts.length && sidesOf(p).plus + sidesOf(p).minus === p.mesh.verts.length) toast(t("modeler.mirrorNotJoined"));
+  }
+  /** Apply mirror (Blender's Apply on the Mirror modifier): the mirrored half becomes real
+   * points of the part and Mirror mode goes off, so both halves stay and can differ. */
+  function applyMirror(p) {
+    if (!p?.mirror) return;
+    commit(() => { p.mesh = appliedMirror(model, p); p.mirror = false; S.verts = new Set(); S.cache.delete(p.id); });
+    toast(t("modeler.mirrorApplied"));
   }
   /** Join to middle: the selected points go onto the mirror line (world X = 0), where the
    * two halves share them, so the halves join there. Clipping then keeps them on it. */
@@ -2663,11 +2684,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** A question in the middle of the viewport (Enter answers yes, Esc no), so it can't
    * end up off screen or under a message along the bottom of the window. */
   let confirmBox = null;
-  function askConfirm(message, yes, {yesLabel = t("modeler.replace"), noLabel = t("modeler.keep"), extra = null} = {}) {
+  function askConfirm(message, yes, {yesLabel = t("modeler.replace"), noLabel = t("modeler.keep"), extra = null, no: onNo = null, dismissed = null} = {}) {
     closePopover(); closeConfirm();
     const ok = el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: () => { closeConfirm(); yes(); }}, yesLabel);
-    const no = el('button', {type: 'button', class: 'modeler-button', onclick: closeConfirm}, noLabel);
-    confirmBox = el('div', {class: 'modeler-controls modeler-confirm-layer', onpointerdown: e => { if (e.target === confirmBox) closeConfirm(); }},
+    const no = el('button', {type: 'button', class: 'modeler-button', onclick: () => { closeConfirm(); (onNo ?? dismissed)?.(); }}, noLabel);
+    confirmBox = el('div', {class: 'modeler-controls modeler-confirm-layer', onpointerdown: e => { if (e.target === confirmBox) { closeConfirm(); dismissed?.(); } }},
       [el('div', {class: 'modeler-controls-card modeler-confirm', role: 'alertdialog', 'aria-label': message}, [el('p', {class: 'modeler-confirm-text', text: message}), extra, el('div', {class: 'modeler-row modeler-confirm-row'}, [no, ok])])]);
     stage.append(confirmBox);
     ok.focus();

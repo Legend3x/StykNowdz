@@ -524,6 +524,13 @@ then keeps those points on the line. Turning Mirror on for a part that is all
 on one side and touches the line nowhere says how to join it (or that arms and
 legs stay apart).
 
+**Apply mirror** (Blender's Apply on the Mirror modifier) makes the mirrored
+half real points of the part and turns Mirror off (`appliedMirror`: the
+mirrored mesh taken back into the part's space, weights on the copy resolved
+from negated ids to the other side's bones). Turning Mirror off while a half
+shows asks: **Keep both halves** applies it, **Remove mirrored half** just
+turns Mirror off; dismissing changes nothing.
+
 ### Modifiers
 
 - **Mirror left and right** builds the −X half from the +X half (across the
