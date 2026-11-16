@@ -521,6 +521,32 @@ that faces the other way. In a perspective view the image is drawn in pieces
 on a scratch canvas, then laid on at its opacity, so no seams show. Images are
 stored downscaled (1024 px JPEG) with the model.
 
+### Textures and UVs
+
+(src/modeler/uv.mjs; in progress: the viewport, files, stage, UV tools and painting follow.)
+
+- A face may carry `uv`, one `[u, v]` per corner in the order of `v` (Blender's
+  convention: 0..1 across the image, v up), and `t`, the id of one of
+  `model.textures` (`{id, name, src, width, height}`, src a PNG, JPEG or WebP data
+  URL; at most 16 textures, 4096 px a side). A face with both is textured; every
+  face keeps its palette colour `c` as well.
+- Edits keep UVs without each tool knowing about them: every atomic edit ends with
+  `keepUVs`. A face the edit kept keeps its UVs; a corner whose point the edit
+  swapped (inset and extrude reuse the face with new points) takes the UV at its
+  new place on the old face. A new face lying inside an old textured face
+  (subdivide, inset, loop cut, knife, triangulate, poke, dissolve, tris to quads)
+  takes its corners' UVs from that face by mean value interpolation, which keeps
+  any linear mapping exact. As in Blender, the sides of an extrusion start as
+  strips along their edge's UVs. A face lying on no old face (fill, bridge, grid
+  fill) starts without UVs and shows its colour.
+- Copies, clones, joins and flips keep each UV with its corner; mirrored copies
+  (Mirror, Symmetrize, mirrored scale) reuse the same UVs, so both sides show the
+  same image, as Blender's Mirror modifier does by default.
+- Smooth subdivides UVs linearly; Solidify gives the inner layer the outer UVs
+  and each rim face its edge's UVs.
+- `readModel` drops textures that are not image data URLs or are oversized, and
+  UVs or texture ids that don't match their face.
+
 ## Data integrity
 
 Three rules keep every model valid, whatever the tool or file it came from.

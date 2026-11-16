@@ -4,6 +4,7 @@
 import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, vertexNormals, VDATA_KEYS} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
+import {faceCopy, reversedFace, flipFace, textured, readTextures} from './uv.mjs';
 
 export const MODEL_VERSION = 1;
 export const SMOOTH_MAX = 3;
@@ -106,6 +107,8 @@ export function readModel(value) {
   if (model.origin !== undefined) { if (finite(model.origin, 3) && model.origin.some(v => v !== 0)) model.origin = model.origin.slice(); else delete model.origin; }
   model.palette = Array.isArray(model.palette) && model.palette.length ? model.palette : DEFAULT_PALETTE.map(c => c.slice());
   model.references = Array.isArray(model.references) ? model.references : [];
+  // Textures and each face's UVs (uv.mjs).
+  readTextures(model);
   for (const ref of model.references) if (ref && typeof ref === 'object' && ref.flip !== true) delete ref.flip;
   model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1), ...(model.folders ?? []).map(f => f.id + 1));
   return model;
@@ -158,7 +161,14 @@ export function catmullClark(mesh) {
     const n = f.v.length;
     for (let i = 0; i < n; i++) {
       const a = f.v[i], next = edgeIndex.get(edgeKey(a, f.v[(i + 1) % n])), prev = edgeIndex.get(edgeKey(f.v[(i + n - 1) % n], a));
-      out.faces.push({v: [a, next, faceBase + fi, prev], c: f.c});
+      const face = {v: [a, next, faceBase + fi, prev], c: f.c};
+      // UVs subdivide linearly: edge points halfway along their edge, the face point at the middle.
+      if (textured(f)) {
+        const at = k => f.uv[(k + n) % n], half = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+        face.uv = [at(i).slice(), half(at(i), at(i + 1)), [f.uv.reduce((s, p) => s + p[0], 0) / n, f.uv.reduce((s, p) => s + p[1], 0) / n], half(at(i - 1), at(i))];
+        face.t = f.t;
+      }
+      out.faces.push(face);
     }
   });
   // Per-point data follows: original points keep theirs; new points take the mean
@@ -204,11 +214,12 @@ export function catmullClark(mesh) {
 export function solidify(mesh, thickness) {
   const t = Number(thickness);
   if (!t || !mesh.faces.length) return mesh;
-  const n = mesh.verts.length, normals = vertexNormals(mesh), out = {verts: mesh.verts.map(p => p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c}))};
+  const n = mesh.verts.length, normals = vertexNormals(mesh), out = {verts: mesh.verts.map(p => p.slice()), faces: mesh.faces.map(f => faceCopy(f, f.v.slice()))};
   mesh.verts.forEach((p, i) => out.verts.push(add(p, scale(normals[i], -t))));
-  for (const f of mesh.faces) out.faces.push({v: f.v.map(i => i + n).reverse(), c: f.c});
+  for (const f of mesh.faces) out.faces.push(reversedFace(f, f.v.map(i => i + n).reverse()));
   const half = new Set(); mesh.faces.forEach(f => f.v.forEach((a, i) => half.add(`${a}>${f.v[(i + 1) % f.v.length]}`)));
-  for (const f of mesh.faces) f.v.forEach((a, i) => { const b = f.v[(i + 1) % f.v.length]; if (!half.has(`${b}>${a}`)) out.faces.push({v: [b, a, a + n, b + n], c: f.c}); });
+  // The rim takes the texture along its edge: both layers' points keep the edge's UVs.
+  for (const f of mesh.faces) f.v.forEach((a, i) => { const j = (i + 1) % f.v.length, b = f.v[j]; if (!half.has(`${b}>${a}`)) { const rim = {v: [b, a, a + n, b + n], c: f.c}; if (textured(f)) { rim.uv = [f.uv[j], f.uv[i], f.uv[i], f.uv[j]].map(p => p.slice()); rim.t = f.t; } out.faces.push(rim); } });
   // Point data: the inner layer copies its outer point's (its custom normal turned inward).
   if (mesh.vdata) {
     out.vdata = {};
@@ -229,7 +240,7 @@ export function evaluatePart(part, {smooth = true} = {}) {
   // Only the surface: traced wires and loose points are editing aids, never shown or exported.
   let mesh = surfaceOf(transformMesh(part.mesh, objectMatrix(part)));
   // A negative scale turns faces inside out; flip them back.
-  if (objectMirrors(part)) mesh.faces.forEach(f => f.v.reverse());
+  if (objectMirrors(part)) mesh.faces.forEach(flipFace);
   if (part.mirror) mesh = mirrored(mesh);
   if (part.solidify) mesh = solidify(mesh, part.solidify * (Math.abs(part.scale?.[0] ?? 1) + Math.abs(part.scale?.[1] ?? 1) + Math.abs(part.scale?.[2] ?? 1)) / 3);
   if (smooth) for (let k = 0; k < (part.smooth ?? 0); k++) mesh = catmullClark(mesh);

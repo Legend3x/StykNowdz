@@ -3,6 +3,7 @@
  * Bones mode builds the skeleton the figure is posed with. Everything works
  * on a plain model document (model.mjs); `onDone(model)` hands it back. */
 import {t} from '../localization.mjs';
+import {faceCopy, reversedFace} from './uv.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
@@ -2020,7 +2021,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         const transform = M.objectTransform(other), base = target.mesh.verts.length;
         target.mesh.verts.push(...other.mesh.verts.map(v => inverse(transform(v))));
         const flip = M.objectMirrors(other) !== M.objectMirrors(target);
-        target.mesh.faces.push(...other.mesh.faces.map(f => ({v: (flip ? f.v.slice().reverse() : f.v).map(i => i + base), c: f.c})));
+        target.mesh.faces.push(...other.mesh.faces.map(f => flip ? reversedFace(f, f.v.slice().reverse().map(i => i + base)) : faceCopy(f, f.v.map(i => i + base))));
         if (other.mesh.edges?.length) target.mesh.edges = [...(target.mesh.edges ?? []), ...other.mesh.edges.map(e => e.map(i => i + base))];
         if (other.mesh.loose?.length) target.mesh.loose = [...(target.mesh.loose ?? []), ...other.mesh.loose.map(i => i + base)];
       }

@@ -19,19 +19,23 @@
  *   matters. */
 import {fromTRS, invert, transformPoint, transformDirection, determinant3} from './matrix.mjs';
 import {assertValidMesh} from './topology.mjs';
+import {faceCopy, reversedFace, keepUVs, textured, flipFace} from './uv.mjs';
 
 /** Run a topology edit atomically: validate afterwards, roll back and throw if it broke a rule. */
 function atomic(operation, edit) {
   const run = (mesh, ...args) => {
     const before = {verts: mesh.verts, faces: mesh.faces, edges: mesh.edges, loose: mesh.loose, vdata: mesh.vdata};
     // Work on fresh arrays so a failed edit can't leave half-written data behind.
-    mesh.verts = mesh.verts.map(v => v.slice()); mesh.faces = mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0}));
+    mesh.verts = mesh.verts.map(v => v.slice()); mesh.faces = mesh.faces.map(f => faceCopy(f, f.v.slice()));
+    const origins = new Map(mesh.faces.map((f, i) => [f, before.faces[i]]));
     if (mesh.edges) mesh.edges = mesh.edges.map(e => e.slice());
     if (mesh.loose) mesh.loose = mesh.loose.slice();
     if (mesh.vdata) mesh.vdata = copyVData(mesh).vdata;
     try {
       const result = edit(mesh, ...args);
       tidyWires(mesh);
+      // Textures: faces the edit made or reshaped take their UVs from the face they came from (uv.mjs).
+      if (before.faces.some(textured)) keepUVs(before, mesh, origins); else for (const f of mesh.faces) { delete f.uv; delete f.t; }
       // Vertex numbers in the report refer to the result the edit would have made.
       assertValidMesh(mesh, operation, {label: `${operation} (the result it would have made)`});
       return result;
@@ -62,9 +66,9 @@ export const keyVerts = key => key.split(',').map(Number);
 export const emptyMesh = () => ({verts: [], faces: []});
 /** Copies of a mesh's wire edges and loose points, for building a new mesh (only the keys it has). */
 export const copyWires = mesh => ({...(mesh.edges?.length ? {edges: mesh.edges.map(e => e.slice())} : {}), ...(mesh.loose?.length ? {loose: mesh.loose.slice()} : {})});
-export const cloneMesh = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh), ...copyVData(mesh)});
+export const cloneMesh = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => faceCopy(f, f.v.slice())), ...copyWires(mesh), ...copyVData(mesh)});
 /** Just the surface (faces and the points they use, with their point data), as the stage and the modifiers see it. */
-export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyVData(mesh)});
+export const surfaceOf = mesh => ({verts: mesh.verts.map(v => v.slice()), faces: mesh.faces.map(f => faceCopy(f, f.v.slice())), ...copyVData(mesh)});
 
 // ---------- per-point data (Blender's point attributes) ----------
 // `mesh.vdata` holds optional sparse per-point values keyed by point index:
@@ -284,8 +288,10 @@ export const edgesFromVerts = (mesh, verts) => allEdges(mesh).filter(([a, b]) =>
  * face order, then wire points, then loose points. Returns old → new index map. */
 export function cleanup(mesh) {
   mesh.faces = mesh.faces.map(f => {
-    const v = f.v.filter((x, i) => x !== f.v[(i + 1) % f.v.length]);
-    return {...f, v};
+    const keep = f.v.map((x, i) => x !== f.v[(i + 1) % f.v.length]), v = f.v.filter((_, i) => keep[i]);
+    const out = {...f, v};
+    if (f.uv) { if (f.uv.length === f.v.length) out.uv = f.uv.filter((_, i) => keep[i]); else delete out.uv; }
+    return out;
   }).filter(f => f.v.length >= 3 && new Set(f.v).size === f.v.length);
   tidyWires(mesh);
   const used = new Map(), verts = [], keep = i => { if (!used.has(i)) { used.set(i, verts.length); verts.push(mesh.verts[i]); } };
@@ -310,14 +316,14 @@ function normalMatrix(m) {
  * Pure: the input mesh is not touched. Topology is unchanged by construction. */
 export function transformMesh(mesh, matrix, verts = null) {
   const chosen = verts ? new Set(verts) : null;
-  return {verts: mesh.verts.map((p, i) => !chosen || chosen.has(i) ? [...transformPoint(matrix, p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh), ...copyVData(mesh, chosen ? null : normalMatrix(matrix))};
+  return {verts: mesh.verts.map((p, i) => !chosen || chosen.has(i) ? [...transformPoint(matrix, p)] : p.slice()), faces: mesh.faces.map(f => faceCopy(f, f.v.slice())), ...copyWires(mesh), ...copyVData(mesh, chosen ? null : normalMatrix(matrix))};
 }
 
 /** Move each listed vertex by its own matrix (`matrices`: Map vertex → matrix).
  * Pure: returns a new mesh; topology is untouched. Used by soft selection,
  * where points near the selection move part of the way. */
 export function transformMeshEach(mesh, matrices) {
-  return {verts: mesh.verts.map((p, i) => matrices.has(i) ? [...transformPoint(matrices.get(i), p)] : p.slice()), faces: mesh.faces.map(f => ({v: f.v.slice(), c: f.c ?? 0})), ...copyWires(mesh), ...copyVData(mesh)};
+  return {verts: mesh.verts.map((p, i) => matrices.has(i) ? [...transformPoint(matrices.get(i), p)] : p.slice()), faces: mesh.faces.map(f => faceCopy(f, f.v.slice())), ...copyWires(mesh), ...copyVData(mesh)};
 }
 
 /** Mirror clipping (the Mirror modifier's "Clipping"): for a part mirrored
@@ -615,7 +621,7 @@ function windConsistently(mesh, faces, facing = null) {
     // Against older faces: a shared edge must run the other way.
     let vote = 0;
     for (const fi of group) { const v = mesh.faces[fi].v; v.forEach((a, i) => { const b = v[(i + 1) % v.length]; if (half.has(`${a}>${b}`)) vote--; else if (half.has(`${b}>${a}`)) vote++; }); }
-    if (vote < 0 || (vote === 0 && facing && dot(group.reduce((n, fi) => add(n, faceNormal(mesh, mesh.faces[fi])), [0, 0, 0]), facing) < 0)) for (const fi of group) mesh.faces[fi].v.reverse();
+    if (vote < 0 || (vote === 0 && facing && dot(group.reduce((n, fi) => add(n, faceNormal(mesh, mesh.faces[fi])), [0, 0, 0]), facing) < 0)) for (const fi of group) flipFace(mesh.faces[fi]);
   }
 }
 
@@ -853,7 +859,7 @@ function fillVertsEdit(mesh, verts, color = 0, {facing = null} = {}) {
     break;
   }
   mesh.faces.push({v: list, c: color});
-  if (!list.some((a, i) => (uses.get(edgeKey(a, list[(i + 1) % list.length])) ?? []).length) && facing && dot(faceNormal(mesh, mesh.faces.at(-1)), facing) < 0) mesh.faces.at(-1).v.reverse();
+  if (!list.some((a, i) => (uses.get(edgeKey(a, list[(i + 1) % list.length])) ?? []).length) && facing && dot(faceNormal(mesh, mesh.faces.at(-1)), facing) < 0) flipFace(mesh.faces.at(-1));
   return mesh.faces.length - 1;
 }
 
@@ -988,7 +994,7 @@ function flipFacesEdit(mesh, faces) {
     const fi = queue.pop(); if (seen.has(fi)) continue; seen.add(fi);
     for (const v of mesh.faces[fi].v) for (const other of around[v]) if (!seen.has(other)) queue.push(other);
   }
-  for (const fi of seen) mesh.faces[fi].v.reverse();
+  for (const fi of seen) flipFace(mesh.faces[fi]);
   return seen;
 }
 
@@ -1015,7 +1021,7 @@ function recalculateNormalsEdit(mesh) {
     const closed = piece.every(fi => mesh.faces[fi].v.every((a, i, v) => (uses.get(edgeKey(a, v[(i + 1) % v.length])) ?? []).length === 2));
     let volume = 0;
     for (const fi of piece) { const v = mesh.faces[fi].v, p0 = mesh.verts[v[0]]; for (let i = 1; i + 1 < v.length; i++) volume += dot(p0, cross(mesh.verts[v[i]], mesh.verts[v[i + 1]])); }
-    if (closed && volume < 0) for (const fi of piece) mesh.faces[fi].v.reverse();
+    if (closed && volume < 0) for (const fi of piece) flipFace(mesh.faces[fi]);
   }
 }
 
@@ -1766,7 +1772,7 @@ function symmetrizeEdit(mesh, fromPositive = true, matrix = null, tolerance = 1e
     mesh.verts.push([-p[0], p[1], p[2]]); return mesh.verts.length - 1;
   });
   const faces = mesh.faces.length;
-  for (let i = 0; i < faces; i++) mesh.faces.push({v: mesh.faces[i].v.map(j => map[j]).reverse(), c: mesh.faces[i].c});
+  for (let i = 0; i < faces; i++) mesh.faces.push(reversedFace(mesh.faces[i], mesh.faces[i].v.map(j => map[j]).reverse()));
   mirrorVData(mesh, map);
   if (mesh.edges) mesh.edges = [...mesh.edges, ...mesh.edges.map(e => e.map(j => map[j]))];
   if (mesh.loose) mesh.loose = [...mesh.loose, ...mesh.loose.map(j => map[j])];
@@ -1791,7 +1797,7 @@ export function mirrored(mesh, tolerance = 1e-4) {
     out.verts.push([-p[0], p[1], p[2]]); return out.verts.length - 1;
   });
   const faces = out.faces.length;
-  for (let i = 0; i < faces; i++) out.faces.push({v: out.faces[i].v.map(j => map[j]).reverse(), c: out.faces[i].c});
+  for (let i = 0; i < faces; i++) out.faces.push(reversedFace(out.faces[i], out.faces[i].v.map(j => map[j]).reverse()));
   mirrorVData(out, map);
   cleanup(out);
   return out;
