@@ -24,7 +24,7 @@ test('a model sent to Blender and saved untouched comes back exactly as it was',
   assert.ok(doc.parts.every(p => Object.keys(p.weights).length), 'every part carries the weights the animation uses');
   const json = JSON.parse(JSON.stringify(untouched(doc)));
   const report = applyBlenderLink(model, json, session);
-  assert.deepEqual(report, {changed: 0, added: 0, removed: 0, kept: model.parts.length, baked: 0, painted: 0, bones: {changed: 0, added: 0, removed: 0}});
+  assert.deepEqual(report, {changed: 0, added: 0, removed: 0, kept: model.parts.length, baked: 0, painted: 0, textures: 0, bones: {changed: 0, added: 0, removed: 0}});
   assert.equal(JSON.stringify(model), before);
 });
 

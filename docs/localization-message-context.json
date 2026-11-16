@@ -29642,7 +29642,7 @@
   },
   "modeler.addAPartFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2580"
+      "src/modeler/modeler-ui.mjs:2581"
     ],
     "context": "if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t(\"modeler.addAPartFirst\")); return; }"
   },
@@ -29750,38 +29750,38 @@
   },
   "modeler.blenderClosed": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2212"
+      "src/modeler/modeler-ui.mjs:2213"
     ],
     "context": "function blenderClosed() { toast(t(\"modeler.blenderClosed\")); }"
   },
   "modeler.blenderLinked": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2185"
+      "src/modeler/modeler-ui.mjs:2186"
     ],
     "context": "toast(t(\"modeler.blenderLinked\"));"
   },
   "modeler.blenderMerged": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2204"
+      "src/modeler/modeler-ui.mjs:2205"
     ],
     "context": "const said = touched ? t(\"modeler.blenderMerged\", {changed: report.changed, added: report.added, removed: report.removed, bones: report.bones.changed + report.b"
   },
   "modeler.blenderNoChanges": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2205"
+      "src/modeler/modeler-ui.mjs:2206"
     ],
     "context": ": t(\"modeler.blenderNoChanges\");"
   },
   "modeler.blenderOtherModel": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2198"
+      "src/modeler/modeler-ui.mjs:2199"
     ],
     "context": "if (model.parts.length && link.session.parts.size && ![...link.session.parts.values()].some(entry => ids.has(entry.id))) { toast(t(\"modeler.blenderOtherModel\"))"
   },
   "modeler.blenderTooDetailed": {
     "locations": [
       "src/modeler/modeler-ui.mjs:658",
-      "src/modeler/modeler-ui.mjs:2208"
+      "src/modeler/modeler-ui.mjs:2209"
     ],
     "context": "toast(points > MESH_LIMITS.vertices ? `${done} ${t(\"modeler.blenderTooDetailed\", {points: points.toLocaleString(), limit: MESH_LIMITS.vertices.toLocaleString()}"
   },
@@ -30025,7 +30025,7 @@
   },
   "modeler.chooseAnObjFile": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2223"
+      "src/modeler/modeler-ui.mjs:2224"
     ],
     "context": "if (!objFile) { toast(t(\"modeler.chooseAnObjFile\")); return; }"
   },
@@ -30066,7 +30066,7 @@
   "modeler.close": {
     "locations": [
       "src/modeler/modeler-ui.mjs:183",
-      "src/modeler/modeler-ui.mjs:2320"
+      "src/modeler/modeler-ui.mjs:2321"
     ],
     "context": "button(t(\"modeler.close\"), requestClose),"
   },
@@ -30098,8 +30098,8 @@
   },
   "modeler.connectCancelled": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2410",
-      "src/modeler/modeler-ui.mjs:2519"
+      "src/modeler/modeler-ui.mjs:2411",
+      "src/modeler/modeler-ui.mjs:2520"
     ],
     "context": "if (v !== null && v !== from) joinPoints(q, from, v); else { toast(t(\"modeler.connectCancelled\")); draw(); }"
   },
@@ -30136,56 +30136,56 @@
   },
   "modeler.controlsBones": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.controlsHide": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2329"
+      "src/modeler/modeler-ui.mjs:2330"
     ],
     "context": "el('div', {class: 'modeler-controls-foot'}, [el('label', {class: 'modeler-check'}, [hide, t(\"modeler.controlsHide\")]), ok])]);"
   },
   "modeler.controlsLede": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2323"
+      "src/modeler/modeler-ui.mjs:2324"
     ],
     "context": "el('p', {class: 'modeler-controls-lede', text: t(\"modeler.controlsLede\")}),"
   },
   "modeler.controlsLook": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.controlsOk": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2319"
+      "src/modeler/modeler-ui.mjs:2320"
     ],
     "context": "const ok = el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: closeControls}, t(\"modeler.controlsOk\"));"
   },
   "modeler.controlsSelect": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.controlsShape": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.controlsTitle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2321",
-      "src/modeler/modeler-ui.mjs:2322"
+      "src/modeler/modeler-ui.mjs:2322",
+      "src/modeler/modeler-ui.mjs:2323"
     ],
     "context": "const card = el('div', {class: 'modeler-controls-card', role: 'dialog', 'aria-label': t(\"modeler.controlsTitle\")}, ["
   },
   "modeler.couldNotAdd": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2582"
+      "src/modeler/modeler-ui.mjs:2583"
     ],
     "context": "catch (error) { toast(error.modelerMessage ? error.message : (error.message || t(\"modeler.couldNotAdd\"))); }"
   },
@@ -30279,7 +30279,7 @@
   "modeler.deleteSelected": {
     "locations": [
       "src/modeler/modeler-ui.mjs:868",
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "[t(\"modeler.deleteSelected\"), deleteSelection, 'X'], [t(\"modeler.dissolve\"), dissolve, 'Ctrl+X'], [t(\"modeler.duplicateSelected\"), duplicateSelected, 'Shift+D']"
   },
@@ -30507,14 +30507,14 @@
   "modeler.extrude": {
     "locations": [
       "src/modeler/modeler-ui.mjs:864",
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "actions([[t(\"modeler.extrude\"), extrude, 'E'], [t(\"modeler.inset\"), startInset, 'I'], [t(\"modeler.bevel\"), () => startBevel(S.selectMode === 'vert' && !M.edgesF"
   },
   "modeler.extrudeBone": {
     "locations": [
       "src/modeler/modeler-ui.mjs:412",
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "menuLine(), menuItem(t(\"modeler.extrudeBone\"), () => { S.bones = new Set([b.id]); if (S.mode !== 'bones') setMode('bones'); extrudeBone(); }, {title: 'E'}),"
   },
@@ -30601,7 +30601,7 @@
   "modeler.fill": {
     "locations": [
       "src/modeler/modeler-ui.mjs:865",
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "[t(\"modeler.subdivide\"), subdivide, t(\"modeler.subdivideHint\")], [t(\"modeler.merge\") + ' ▾', e => merge(e?.currentTarget), 'M'], [t(\"modeler.fill\"), fill, 'F'],"
   },
@@ -30707,7 +30707,7 @@
   },
   "modeler.frameSelected": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
@@ -30857,19 +30857,19 @@
   },
   "modeler.importedGltf": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2168"
+      "src/modeler/modeler-ui.mjs:2169"
     ],
     "context": "toast(t(\"modeler.importedGltf\", {parts: result.parts.length, bones: result.bones.length}));"
   },
   "modeler.importedObj": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2232"
+      "src/modeler/modeler-ui.mjs:2233"
     ],
     "context": "if (added) { frameSelected(); toast(uncolored ? t(\"modeler.importedObjNoMtl\", {count: uncolored}) : t(\"modeler.importedObj\")); }"
   },
   "modeler.importedObjNoMtl": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2232"
+      "src/modeler/modeler-ui.mjs:2233"
     ],
     "context": "if (added) { frameSelected(); toast(uncolored ? t(\"modeler.importedObjNoMtl\", {count: uncolored}) : t(\"modeler.importedObj\")); }"
   },
@@ -30913,7 +30913,7 @@
   "modeler.keep": {
     "locations": [
       "src/modeler/modeler-ui.mjs:392",
-      "src/modeler/modeler-ui.mjs:2287"
+      "src/modeler/modeler-ui.mjs:2288"
     ],
     "context": "{yesLabel: t(\"modeler.delete\"), noLabel: t(\"modeler.keep\")}), {danger: true})]);"
   },
@@ -30931,133 +30931,133 @@
   },
   "modeler.keepModeling": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2305"
+      "src/modeler/modeler-ui.mjs:2306"
     ],
     "context": "{yesLabel: t(\"modeler.startOver\"), noLabel: t(\"modeler.keepModeling\")});"
   },
   "modeler.keysAddPoint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysAxis": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysClick": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysClickKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysDrag": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysDragKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysEdgeSlide": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysLoopCut": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysLoopSelect": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysOrbit": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysOrbitKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysPan": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysPanKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysSelectMode": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysStretch": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysStretchKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysTab": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysTransform": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysViews": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysWheel": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysZoom": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
@@ -31069,7 +31069,7 @@
   },
   "modeler.knifeClickEdge": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2392"
+      "src/modeler/modeler-ui.mjs:2393"
     ],
     "context": "if (hit) { S.modal.path.push(hit); setStatus(); draw(); } else toast(t(\"modeler.knifeClickEdge\"));"
   },
@@ -31245,7 +31245,7 @@
   "modeler.merge": {
     "locations": [
       "src/modeler/modeler-ui.mjs:865",
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "[t(\"modeler.subdivide\"), subdivide, t(\"modeler.subdivideHint\")], [t(\"modeler.merge\") + ' ▾', e => merge(e?.currentTarget), 'M'], [t(\"modeler.fill\"), fill, 'F'],"
   },
@@ -31541,7 +31541,7 @@
     "locations": [
       "src/modeler/modeler-ui.mjs:2142",
       "src/modeler/modeler-ui.mjs:2148",
-      "src/modeler/modeler-ui.mjs:2174"
+      "src/modeler/modeler-ui.mjs:2175"
     ],
     "context": "if (!model.parts.length) { toast(t(\"modeler.nothingToExport\")); return; }"
   },
@@ -31601,7 +31601,7 @@
   },
   "modeler.openingBlender": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2178"
+      "src/modeler/modeler-ui.mjs:2179"
     ],
     "context": "toast(t(\"modeler.openingBlender\"));"
   },
@@ -31968,7 +31968,7 @@
   "modeler.replace": {
     "locations": [
       "src/modeler/modeler-ui.mjs:934",
-      "src/modeler/modeler-ui.mjs:2287"
+      "src/modeler/modeler-ui.mjs:2288"
     ],
     "context": "button(ref ? t(\"modeler.replace\") : t(\"modeler.load\"), () => loadReference(view)),"
   },
@@ -32103,7 +32103,7 @@
   "modeler.selectAll": {
     "locations": [
       "src/modeler/modeler-ui.mjs:878",
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "actions([[t(\"modeler.selectAll\"), selectAll, 'A'], [t(\"modeler.selectLinked\"), () => { S.verts = M.linkedVerts(mesh, S.verts); refresh(); }, 'Ctrl+L'],"
   },
@@ -32178,7 +32178,7 @@
   "modeler.selectLinked": {
     "locations": [
       "src/modeler/modeler-ui.mjs:878",
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "actions([[t(\"modeler.selectAll\"), selectAll, 'A'], [t(\"modeler.selectLinked\"), () => { S.verts = M.linkedVerts(mesh, S.verts); refresh(); }, 'Ctrl+L'],"
   },
@@ -32462,13 +32462,13 @@
   },
   "modeler.softConnectedOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2538"
+      "src/modeler/modeler-ui.mjs:2539"
     ],
     "context": "else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? \"mo"
   },
   "modeler.softConnectedOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2538"
+      "src/modeler/modeler-ui.mjs:2539"
     ],
     "context": "else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? \"mo"
   },
@@ -32492,13 +32492,13 @@
   },
   "modeler.softOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2539"
+      "src/modeler/modeler-ui.mjs:2540"
     ],
     "context": "else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? \"modeler.softOn\" : \"modeler.softOff\")); renderProps(); }"
   },
   "modeler.softOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2539"
+      "src/modeler/modeler-ui.mjs:2540"
     ],
     "context": "else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? \"modeler.softOn\" : \"modeler.softOff\")); renderProps(); }"
   },
@@ -32511,7 +32511,7 @@
   "modeler.softSelect": {
     "locations": [
       "src/modeler/modeler-ui.mjs:873",
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "el('label', {class: 'modeler-check', title: t(\"modeler.softHint\")}, [el('input', {type: 'checkbox', checked: S.soft, onchange: e => { S.soft = e.target.checked;"
   },
@@ -32593,13 +32593,13 @@
   "modeler.startOver": {
     "locations": [
       "src/modeler/modeler-ui.mjs:177",
-      "src/modeler/modeler-ui.mjs:2305"
+      "src/modeler/modeler-ui.mjs:2306"
     ],
     "context": "editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t(\"modeler.startOver\")),"
   },
   "modeler.startOverAsk": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2304"
+      "src/modeler/modeler-ui.mjs:2305"
     ],
     "context": "askConfirm(t(\"modeler.startOverAsk\"), () => { setMode('object'); commit(() => { model.parts = []; model.bones = []; model.references = []; S.parts = new Set(); "
   },
@@ -32889,7 +32889,7 @@
   "modeler.undo": {
     "locations": [
       "src/modeler/modeler-ui.mjs:167",
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2329"
     ],
     "context": "iconButton('undo', `${t(\"modeler.undo\")} (Ctrl+Z)`, undo), iconButton('redo', `${t(\"modeler.redo\")} (Ctrl+Shift+Z)`, redo),"
   },

@@ -3,7 +3,7 @@
  * Bones mode builds the skeleton the figure is posed with. Everything works
  * on a plain model document (model.mjs); `onDone(model)` hands it back. */
 import {t} from '../localization.mjs';
-import {faceCopy, reversedFace} from './uv.mjs';
+import {faceCopy, reversedFace, adoptTextures, remapFaceTextures} from './uv.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
@@ -2156,12 +2156,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const others = new Map(await Promise.all(files.filter(f => f !== main).map(async f => [f.name, await f.arrayBuffer()])));
     const source = /\.glb$/i.test(main.name) ? await main.arrayBuffer() : JSON.parse(await main.text());
     commit(() => {
-      const result = importGltf(source, {palette: model.palette, files: others}), ids = new Map();
+      const result = importGltf(source, {palette: model.palette, files: others}), ids = new Map(), textureIds = adoptTextures(model, result.textures ?? []);
       for (const b of result.bones) { const made = addBone(model, {name: b.name, head: b.head, tail: b.tail, parent: b.parent === null ? 0 : ids.get(b.parent) ?? 0}); ids.set(b.key, made.id); }
       const folder = result.parts.length > 1 ? addFolder(model, {name: main.name.replace(/\.(glb|gltf)$/i, '') || 'Model'}).id : 0;
       for (const p of result.parts) {
         const skin = p.mesh.vdata?.skin;
         if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([key, w]) => [ids.get(key), w]).filter(([id]) => id !== undefined);
+        remapFaceTextures(p.mesh, textureIds);
         const made = addPart(model, {name: p.name, mesh: p.mesh}); if (folder) made.folder = folder;
       }
       S.parts = new Set();

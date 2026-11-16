@@ -108,3 +108,89 @@ test('toon shadow cuts give textured corners perspective-correct UVs', () => {
   assert.deepEqual([...batch.done().surface], [.25, .75, 2]);
   assert.equal(vertexBatch().done().surface, undefined);
 });
+
+import {deflateSync} from 'node:zlib';
+import {exportGlb, importGltf, readGlb} from '../src/modeler/gltf-format.mjs';
+import {imageInfo, textureFromBytes, adoptTextures, remapFaceTextures, dataUrlBytes} from '../src/modeler/uv.mjs';
+/** A real w×h RGBA PNG. */
+export function png(w, h, rgba = (x, y) => [x * 40, y * 60, 200, 255]) {
+  const crcTable = Array.from({length: 256}, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = b => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const out = Buffer.alloc(12 + data.length); out.writeUInt32BE(data.length, 0); out.write(type, 4, 'latin1'); data.copy(out, 8); out.writeUInt32BE(crc(Buffer.concat([Buffer.from(type, 'latin1'), data])), 8 + data.length); return out; };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const raw = Buffer.alloc((w * 4 + 1) * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) Buffer.from(rgba(x, y)).copy(raw, y * (w * 4 + 1) + 1 + x * 4);
+  return new Uint8Array(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+}
+
+test('image headers give type and size; non-images are refused', () => {
+  assert.deepEqual(imageInfo(png(5, 3)), {mime: 'image/png', width: 5, height: 3});
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 11, 8, 0, 7, 0, 9, 3, 1, 1, 1]);
+  assert.deepEqual(imageInfo(jpeg), {mime: 'image/jpeg', width: 9, height: 7});
+  assert.equal(imageInfo(new Uint8Array([1, 2, 3])), null);
+  const t = textureFromBytes(png(5, 3), 'Skin'); assert.equal(t.width, 5); assert.deepEqual([...dataUrlBytes(t.src).bytes], [...png(5, 3)]);
+});
+
+test('a textured model goes through .glb and comes back with its image and every UV', () => {
+  const model = emptyModel(); const tex = addTexture(model, textureFromBytes(png(4, 2), 'Skin'));
+  const mesh = texturedCube(); for (const f of mesh.faces) f.t = tex.id;
+  // One face keeps its plain colour.
+  delete mesh.faces[5].uv; delete mesh.faces[5].t; mesh.faces[5].c = 3;
+  addPart(model, {name: 'Box', mesh});
+  const glb = exportGlb(model), {json} = readGlb(glb);
+  assert.equal(json.images.length, 1); assert.equal(json.materials.filter(m => m.pbrMetallicRoughness.baseColorTexture).length, 1);
+  const back = importGltf(glb, {palette: model.palette.map(c => c.slice())});
+  assert.equal(back.textures.length, 1); assert.equal(back.textures[0].src, tex.src); assert.equal(back.textures[0].name, 'Skin');
+  const into = emptyModel(), ids = adoptTextures(into, back.textures), part = back.parts[0];
+  remapFaceTextures(part.mesh, ids); valid(part.mesh);
+  assert.equal(into.textures[0].src, tex.src);
+  // Faces come back as triangles (welded); each corner's UV is still its point's projection on its plane.
+  const texturedFaces = part.mesh.faces.filter(textured);
+  assert.equal(texturedFaces.length, 10); assert.equal(part.mesh.faces.length - texturedFaces.length, 2);
+  for (const f of texturedFaces) { const n = normalOf(part.mesh, f); f.v.forEach((i, k) => { const want = project(n, part.mesh.verts[i]); assert.ok(Math.hypot(f.uv[k][0] - want[0], f.uv[k][1] - want[1]) < 1e-5, `${f.uv[k]} vs ${want}`); }); }
+  assert.equal(part.mesh.verts.length, 8, 'seam points are welded back into one surface');
+  // A second import of the same image reuses the texture.
+  assert.equal(adoptTextures(into, back.textures).get(1), into.textures[0].id); assert.equal(into.textures.length, 1);
+});
+
+import {startBlenderLink, applyBlenderLink} from '../src/modeler/blender-link.mjs';
+import {bytesToDataUrl} from '../src/modeler/uv.mjs';
+/** What desktop/blender/styk_link.py sends back for a scene nobody touched, textures included. */
+function echo(doc) {
+  const materials = [], index = new Map();
+  const colorOf = c => { const rgb = doc.palette[c], k = rgb.join(); if (!index.has(k)) { index.set(k, materials.length); materials.push(rgb.slice()); } return index.get(k); };
+  return JSON.parse(JSON.stringify({format: doc.format, version: doc.version, name: doc.name, materials, textures: doc.textures ?? [],
+    parts: doc.parts.map(p => ({...p, colors: p.colors.map(colorOf), baked: false})), bones: doc.bones}));
+}
+function texturedModel() {
+  const model = emptyModel(), tex = addTexture(model, textureFromBytes(png(4, 4), 'Skin'));
+  const mesh = texturedCube(); for (const f of mesh.faces) f.t = tex.id; delete mesh.faces[0].uv; delete mesh.faces[0].t;
+  addPart(model, {name: 'Box', mesh}); return model;
+}
+test('Open in Blender sends textures and UVs, and an untouched save changes nothing', () => {
+  const model = texturedModel(), before = JSON.stringify(model), {doc, session} = startBlenderLink(model);
+  assert.deepEqual(doc.textures.map(t => t.key), ['tex-1']); assert.equal(doc.textures[0].src, model.textures[0].src);
+  assert.equal(doc.parts[0].uvs[0], null); assert.equal(doc.parts[0].textures[1], 'tex-1'); assert.deepEqual(doc.parts[0].uvs[1], model.parts[0].mesh.faces[1].uv);
+  const report = applyBlenderLink(model, echo(doc), session);
+  assert.equal(report.kept, 1); assert.equal(report.textures, 0); assert.equal(JSON.stringify(model), before);
+});
+test('a texture painted in Blender comes back; so do UVs moved there and a new image', () => {
+  const model = texturedModel(), {doc, session} = startBlenderLink(model), reply = echo(doc);
+  const painted = bytesToDataUrl(png(8, 4, () => [255, 0, 0, 255]), 'image/png');
+  reply.textures[0].src = painted;
+  let report = applyBlenderLink(model, reply, session);
+  assert.equal(report.textures, 1); assert.equal(report.kept, 1, 'repainting the image leaves the mesh alone');
+  assert.deepEqual([model.textures[0].src, model.textures[0].width, model.textures[0].height], [painted, 8, 4]);
+  // Next save: UVs of one face moved, and another face given a new image Blender made.
+  const next = startBlenderLink(model), again = echo(next.doc);
+  again.parts[0].uvs[2] = again.parts[0].uvs[2].map(([u, v]) => [u / 2, v / 2]);
+  again.textures.push({key: 'blender-abc', name: 'Eyes', src: bytesToDataUrl(png(2, 2), 'image/png')});
+  again.parts[0].textures[3] = 'blender-abc';
+  report = applyBlenderLink(model, again, next.session);
+  assert.equal(report.changed, 1); assert.equal(report.textures, 1);
+  const faces = model.parts[0].mesh.faces;
+  assert.deepEqual(faces[2].uv, again.parts[0].uvs[2]); assert.equal(model.textures.find(t => t.id === faces[3].t).name, 'Eyes');
+  assert.equal(faces[0].t, undefined, 'a plain colour face stays plain');
+  // An image Blender couldn't read stays out; its faces show their colours.
+  const third = startBlenderLink(model), bad = echo(third.doc); bad.textures.push({key: 'blender-x', name: 'x', src: 'data:image/png;base64,AAAA'}); bad.parts[0].textures[4] = 'blender-x';
+  applyBlenderLink(model, bad, third.session); assert.equal(model.parts[0].mesh.faces[4].t, undefined);
+});

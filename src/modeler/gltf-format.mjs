@@ -7,11 +7,14 @@
  * a skin's joints become bones (head at the joint; tail from 3D Nowdz's own
  * `extras.tail`, else at its children, else along the joint's own Y axis, as
  * Blender's importer guesses) and the file's skin
- * weights are kept on the points (mesh.vdata.skin). Textures and animations are
- * not read.
+ * weights are kept on the points (mesh.vdata.skin). A material's base colour
+ * image becomes a texture and its faces keep their first UV set (TEXCOORD_0,
+ * V flipped: glTF counts it from the top, 3D Nowdz from the bottom as Blender
+ * does). Animations are not read.
  *
  * Export: the evaluated parts (mirror and smooth applied) as triangles with
- * smooth (or custom) normals, one material per palette colour, and, with a
+ * smooth (or custom) normals, one material per palette colour (per colour and
+ * texture for textured faces, the image embedded), and, with a
  * skeleton, a skin: one joint per bone, +Y along the bone like Blender's
  * exporter, with the same weights the animation uses (partWeights).
  */
@@ -20,6 +23,7 @@ import {add, sub, scale, normalize, cross, length, triangulate, vertexNormals, r
 import {partWeights, boneOrder} from './armature.mjs';
 import * as X from './matrix.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
+import {textureFromBytes, dataUrlBytes, textured} from './uv.mjs';
 
 const GLB_MAGIC = 0x46546c67, CHUNK_JSON = 0x4e4f534a, CHUNK_BIN = 0x004e4942;
 const COMPONENTS = {SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16};
@@ -107,7 +111,8 @@ function accessorReader(json, buffers) {
   };
 }
 
-/** Parse glTF 2.0 into {parts: [{name, mesh}], bones: [{key, name, head, tail, parent}]},
+/** Parse glTF 2.0 into {parts: [{name, mesh}], bones: [{key, name, head, tail, parent}],
+ * textures: [{key, name, src, width, height}]} (faces' `t` are those keys),
  * adding material colours to `palette`. `source` is an ArrayBuffer (.glb) or the
  * parsed JSON of a .gltf; `files` maps other chosen file names to their data. */
 export function importGltf(source, {palette = [], files = new Map()} = {}) {
@@ -148,6 +153,27 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
     return i;
   };
 
+  // Base colour images: one texture per image used (a broken or unknown image leaves its faces coloured).
+  const textures = [], textureOfImage = new Map();
+  const textureOf = material => {
+    const index = json.materials?.[material]?.pbrMetallicRoughness?.baseColorTexture?.index, image = json.textures?.[index]?.source;
+    if (image === undefined) return undefined;
+    if (!textureOfImage.has(image)) {
+      const def = json.images?.[image]; let bytes = null;
+      try {
+        if (def?.bufferView !== undefined) { const view = json.bufferViews[def.bufferView]; bytes = new Uint8Array(buffers[view.buffer], view.byteOffset ?? 0, view.byteLength); }
+        else if (typeof def?.uri === 'string') {
+          bytes = dataUrlBytes(def.uri.replace(/^data:application\/octet-stream/, 'data:image/png'))?.bytes ?? null;
+          if (!bytes) { const file = files.get(decodeURIComponent(def.uri).split('/').pop()); if (file) bytes = new Uint8Array(file); }
+        }
+      } catch { bytes = null; }
+      const entry = bytes ? textureFromBytes(bytes, def?.name || json.textures[index]?.name || `Texture ${textures.length + 1}`) : null;
+      if (entry) textures.push({key: textures.length + 1, ...entry});
+      textureOfImage.set(image, entry ? textures.length : undefined);
+    }
+    return textureOfImage.get(image);
+  };
+
   const parts = [];
   for (const ni of [...inScene].filter(i => nodes[i].mesh !== undefined)) {
     const node = nodes[ni], meshDef = json.meshes?.[node.mesh]; if (!meshDef) continue;
@@ -176,11 +202,15 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
           if (pairs.length) kept[verts.length - 1] = pairs;
         } else verts.push([...X.transformPoint(worldOf(ni), p)]);
       }
-      const color = colorOf(prim.material);
+      const color = colorOf(prim.material), key = textureOf(prim.material);
+      const uv = key !== undefined && prim.attributes.TEXCOORD_0 !== undefined ? read(prim.attributes.TEXCOORD_0) : null;
       const index = prim.indices !== undefined ? read(prim.indices).data : Float64Array.from({length: pos.count}, (_, i) => i);
       for (let t = 0; t + 2 < index.length; t += 3) {
-        const v = [index[t], index[t + 1], index[t + 2]].map(i => base + i);
-        if (new Set(v).size === 3 && length(cross(sub(verts[v[1]], verts[v[0]]), sub(verts[v[2]], verts[v[0]]))) > 1e-12) faces.push({v, c: color});
+        const local = [index[t], index[t + 1], index[t + 2]], v = local.map(i => base + i);
+        if (!(new Set(v).size === 3 && length(cross(sub(verts[v[1]], verts[v[0]]), sub(verts[v[2]], verts[v[0]]))) > 1e-12)) continue;
+        const face = {v, c: color};
+        if (uv) { face.uv = local.map(i => [uv.data[i * 2], 1 - uv.data[i * 2 + 1]]); face.t = key; }
+        faces.push(face);
       }
     }
     if (!faces.length) continue;
@@ -200,7 +230,7 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
       throw new TopologyError(`Importing part “${p.name}”`, check.ok ? error.result : check);
     }
   }
-  return {parts, bones: bones.map(({key, name, head, tail, parent}) => ({key, name, head, tail, parent}))};
+  return {parts, bones: bones.map(({key, name, head, tail, parent}) => ({key, name, head, tail, parent})), textures: textures.filter(t => parts.some(p => p.mesh.faces.some(f => f.t === t.key)))};
 }
 
 // ---------- writing ----------
@@ -226,24 +256,56 @@ export function exportGlb(model, {name = model.name || '3D Nowdz model'} = {}) {
     if (!materialOf.has(c)) { const rgb = model.palette[c] ?? [200, 200, 200]; materialOf.set(c, materials.length); materials.push({name: `Color ${c}`, pbrMetallicRoughness: {baseColorFactor: [...rgb.map(toLinear), 1], metallicFactor: 0, roughnessFactor: .9}}); }
     return materialOf.get(c);
   };
+  // Textures: each used image embedded once, one material per texture (its texels under
+  // half alpha cut out, as the viewport and stage draw them).
+  const images = [], gltfTextures = [], textureIndex = new Map();
+  const texturedMaterial = id => {
+    const key = `t${id}`;
+    if (materialOf.has(key)) return materialOf.get(key);
+    const tex = model.textures?.find(x => x.id === id), data = tex && dataUrlBytes(tex.src);
+    if (!data) return null;
+    if (!textureIndex.has(id)) {
+      images.push({name: tex.name, mimeType: data.mime, bufferView: addView(data.bytes)});
+      gltfTextures.push({source: images.length - 1, sampler: 0}); textureIndex.set(id, gltfTextures.length - 1);
+    }
+    materialOf.set(key, materials.length);
+    materials.push({name: tex.name, pbrMetallicRoughness: {baseColorTexture: {index: textureIndex.get(id)}, baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: .9}, alphaMode: 'MASK', alphaCutoff: .5});
+    return materialOf.get(key);
+  };
   const skinIndex = bones.length ? 0 : undefined;
   for (const part of model.parts.filter(p => p.visible !== false && p.mesh.faces.length)) {
-    const mesh = evaluatePart(part), n = mesh.verts.length;
+    const mesh = evaluatePart(part);
     const normals = vertexNormals(mesh).map((v, i) => mesh.vdata?.normal?.[i] ?? v);
-    const attributes = {
-      POSITION: addAccessor(Float32Array.from(mesh.verts.flat()), 'VEC3', 5126, 34962, {min: [0, 1, 2].map(k => Math.min(...mesh.verts.map(p => p[k]))), max: [0, 1, 2].map(k => Math.max(...mesh.verts.map(p => p[k])))}),
-      NORMAL: addAccessor(Float32Array.from(normals.flat().map(v => Number.isFinite(v) ? v : 0)), 'VEC3', 5126, 34962),
+    // glTF keeps one UV per point: a textured part's points are split where their UVs differ.
+    const anyTexture = mesh.faces.some(f => textured(f) && texturedMaterial(f.t) !== null);
+    const outPoints = [], outOf = new Map(), pointFor = (vi, uv) => {
+      if (!anyTexture) return vi;
+      const key = uv ? `${vi}|${uv[0]},${uv[1]}` : `${vi}|`;
+      if (!outOf.has(key)) { outOf.set(key, outPoints.length); outPoints.push([vi, uv]); }
+      return outOf.get(key);
     };
+    const byMaterial = new Map();
+    for (const [a, b, c, fi] of triangulate(mesh)) {
+      const face = mesh.faces[fi], tex = textured(face) ? texturedMaterial(face.t) : null, m = tex ?? material(face.c ?? 0);
+      if (!byMaterial.has(m)) byMaterial.set(m, []);
+      byMaterial.get(m).push(...[a, b, c].map(vi => pointFor(vi, tex !== null ? face.uv[face.v.indexOf(vi)] : null)));
+    }
+    if (!anyTexture) mesh.verts.forEach((_, i) => outPoints.push([i, null]));
+    const n = outPoints.length, src = outPoints.map(([vi]) => vi), positions = src.map(i => mesh.verts[i]);
+    const attributes = {
+      POSITION: addAccessor(Float32Array.from(positions.flat()), 'VEC3', 5126, 34962, {min: [0, 1, 2].map(k => Math.min(...positions.map(p => p[k]))), max: [0, 1, 2].map(k => Math.max(...positions.map(p => p[k])))}),
+      NORMAL: addAccessor(Float32Array.from(src.flatMap(i => normals[i]).map(v => Number.isFinite(v) ? v : 0)), 'VEC3', 5126, 34962),
+    };
+    // V flipped back to glTF's top-down count.
+    if (anyTexture) attributes.TEXCOORD_0 = addAccessor(Float32Array.from(outPoints.flatMap(([, uv]) => uv ? [uv[0], 1 - uv[1]] : [0, 0])), 'VEC2', 5126, 34962);
     if (bones.length) {
       const skin = partWeights(model, mesh, part), joints = new Uint16Array(n * 4), weights = new Float32Array(n * 4);
-      for (let i = 0; i < n * 4; i++) { joints[i] = boneIndex.get(skin.bones[i]) ?? 0; weights[i] = skin.bones[i] && boneIndex.has(skin.bones[i]) ? skin.weights[i] : 0; }
+      for (let o = 0; o < n; o++) for (let k = 0; k < 4; k++) { const i = src[o] * 4 + k; joints[o * 4 + k] = boneIndex.get(skin.bones[i]) ?? 0; weights[o * 4 + k] = skin.bones[i] && boneIndex.has(skin.bones[i]) ? skin.weights[i] : 0; }
       for (let v = 0; v < n; v++) { let s = 0; for (let k = 0; k < 4; k++) s += weights[v * 4 + k]; if (s > 0) for (let k = 0; k < 4; k++) weights[v * 4 + k] /= s; else { weights[v * 4] = 1; joints[v * 4] = 0; } }
       attributes.JOINTS_0 = addAccessor(joints, 'VEC4', 5123, 34962);
       attributes.WEIGHTS_0 = addAccessor(weights, 'VEC4', 5126, 34962);
     }
-    const byColor = new Map();
-    for (const [a, b, c, fi] of triangulate(mesh)) { const k = mesh.faces[fi].c ?? 0; if (!byColor.has(k)) byColor.set(k, []); byColor.get(k).push(a, b, c); }
-    const primitives = [...byColor].map(([c, list]) => ({attributes, indices: addAccessor(n > 65535 ? Uint32Array.from(list) : Uint16Array.from(list), 'SCALAR', n > 65535 ? 5125 : 5123, 34963), material: material(c)}));
+    const primitives = [...byMaterial].map(([m, list]) => ({attributes, indices: addAccessor(n > 65535 ? Uint32Array.from(list) : Uint16Array.from(list), 'SCALAR', n > 65535 ? 5125 : 5123, 34963), material: m}));
     meshes.push({name: part.name || 'Part', primitives});
     nodes.push({name: part.name || 'Part', mesh: meshes.length - 1, ...(skinIndex !== undefined ? {skin: skinIndex} : {})});
     sceneNodes.push(nodes.length - 1);
@@ -270,6 +332,7 @@ export function exportGlb(model, {name = model.name || '3D Nowdz model'} = {}) {
     sceneNodes.push(...roots);
   }
   const json = {asset: {version: '2.0', generator: 'StykNowdz 3D Nowdz'}, scene: 0, scenes: [{name, nodes: sceneNodes}], nodes, meshes, materials,
+    ...(images.length ? {images, textures: gltfTextures, samplers: [{magFilter: 9729, minFilter: 9729, wrapS: 10497, wrapT: 10497}]} : {}),
     accessors, bufferViews: views, buffers: [{byteLength: offset}], ...(skins ? {skins} : {})};
   const text = new TextEncoder().encode(JSON.stringify(json)), jsonPad = (4 - (text.length % 4)) % 4;
   const total = 12 + 8 + text.length + jsonPad + 8 + offset, out = new Uint8Array(total), view = new DataView(out.buffer);

@@ -13,6 +13,13 @@
 # metaball), is sent "baked": its final shape (the Armature modifier left out).
 # Boolean cutters, cameras, lights and empties stay in Blender.
 #
+# Textures (docs/BLENDER-LITE.md, "Textures and UVs"): each 3D Nowdz texture
+# becomes a packed image (tagged styk_key) used by a material whose Image
+# Texture node feeds Base Color and Alpha (alpha clip), and faces' UVs a
+# "UVMap" layer. Back to 3D Nowdz, a face's texture is the image wired straight
+# into its material's Base Color; images painted here (or never saved) are
+# written out from their current pixels, so Texture Paint comes back too.
+#
 # 3D Nowdz is Y up; Blender is Z up: (x, y, z) here is (x, -z, y) in Blender.
 
 import bpy
@@ -103,6 +110,50 @@ def material_for(rgb, cache):
     return mat
 
 
+def image_ext(head):
+    return ".png" if "png" in head else ".webp" if "webp" in head else ".jpg"
+
+
+def build_texture(tex, folder):
+    head, data = tex["src"].split(",", 1)
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in tex["key"])
+    path = os.path.join(folder, "texture-%s%s" % (safe, image_ext(head)))
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(data))
+    image = bpy.data.images.load(path)
+    image.name = tex.get("name") or "Texture"
+    image.pack()
+    image["styk_key"] = tex["key"]
+    return image
+
+
+def texture_material(image, key, cache):
+    if ("t", key) in cache:
+        return cache[("t", key)]
+    mat = bpy.data.materials.new("3D Nowdz " + image.name)
+    if bpy.app.version < (5, 0, 0):
+        mat.use_nodes = True  # always on from Blender 5.0
+    tree = mat.node_tree
+    bsdf = next((n for n in tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
+    node = tree.nodes.new("ShaderNodeTexImage")
+    node.image = image
+    node.location = (bsdf.location.x - 400, bsdf.location.y)
+    tree.links.new(node.outputs["Color"], bsdf.inputs["Base Color"])
+    tree.links.new(node.outputs["Alpha"], bsdf.inputs["Alpha"])
+    bsdf.inputs["Roughness"].default_value = 0.9
+    # Texels under half alpha are cut out, as 3D Nowdz draws them.
+    for name, value in (("blend_method", "CLIP"), ("alpha_threshold", 0.5), ("surface_render_method", "DITHERED")):
+        try:
+            setattr(mat, name, value)
+        except (AttributeError, TypeError):
+            pass
+    mat["styk_texture"] = key
+    cache[("t", key)] = mat
+    return mat
+
+
 def build_reference(ref, folder, collection):
     head, data = ref["src"].split(",", 1)
     ext = ".png" if "png" in head else ".webp" if "webp" in head else ".jpg"
@@ -184,16 +235,35 @@ def build(doc, folder):
             bone["Strength"] = float(b.get("strength", 1))
             bone["Reach"] = float(b.get("range", 0))
 
-    palette, materials = doc["palette"], {}
+    palette, materials, images = doc["palette"], {}, {}
+    for tex in doc.get("textures", []):
+        try:
+            images[tex["key"]] = build_texture(tex, folder)
+        except Exception as error:  # a broken image only loses its texture
+            print("3D Nowdz: texture skipped:", error)
     for order, p in enumerate(doc["parts"]):
         mesh = bpy.data.meshes.new(p["name"])
         loose_edges = [tuple(e) for e in p.get("edges", [])]
         mesh.from_pydata([to_b(v) for v in p["verts"]], loose_edges, [tuple(f) for f in p["faces"]])
-        used = {}
-        for c in sorted(set(p["colors"])):
-            used[c] = len(mesh.materials)
-            mesh.materials.append(material_for(palette[c] if 0 <= c < len(palette) else (200, 200, 200), materials))
-        mesh.polygons.foreach_set("material_index", [used[c] for c in p["colors"]])
+        used, slots, keys, uvs = {}, [], p.get("textures") or [], p.get("uvs") or []
+        for i, c in enumerate(p["colors"]):
+            image = images.get(keys[i]) if i < len(keys) and keys[i] else None
+            k = ("t", keys[i]) if image is not None else ("c", c)
+            if k not in used:
+                used[k] = len(mesh.materials)
+                mesh.materials.append(texture_material(image, keys[i], materials) if image is not None
+                                      else material_for(palette[c] if 0 <= c < len(palette) else (200, 200, 200), materials))
+            slots.append(used[k])
+        mesh.polygons.foreach_set("material_index", slots)
+        if any(uvs):
+            # Loops follow each face's corners in order, so corner k of face i is loop start + k.
+            layer = mesh.uv_layers.new(name="UVMap")
+            flat = []
+            for i, f in enumerate(p["faces"]):
+                face_uv = uvs[i] if i < len(uvs) and uvs[i] else None
+                for k in range(len(f)):
+                    flat.extend(face_uv[k] if face_uv else (0.0, 0.0))
+            layer.data.foreach_set("uv", flat)
         mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
         if p.get("crease"):
             index = {tuple(sorted(e.vertices)): e.index for e in mesh.edges}
@@ -390,8 +460,67 @@ def mesh_data(mesh, obj, bone_names):
             pairs = [[names[g.group], round(g.weight, 5)] for g in v.groups if g.group in names and names[g.group] in bone_names and g.weight > 1e-4]
             if pairs:
                 weights[v.index] = pairs
+    uvs = None
+    layer = mesh.uv_layers.active
+    if layer is not None and len(mesh.loops):
+        flat = np.empty(len(mesh.loops) * 2, dtype=np.float64)
+        layer.data.foreach_get("uv", flat)
+        flat = np.round(flat, 6).tolist()
+        uvs = [[[flat[2 * l], flat[2 * l + 1]] for l in range(s, s + t)] for s, t in zip(starts.tolist(), totals.tolist())]
     return {"verts": verts, "faces": faces, "mats": mats.tolist(), "edges": edges, "loose": loose,
-            "crease": crease, "line": line, "normal": normal, "weights": weights}
+            "crease": crease, "line": line, "normal": normal, "weights": weights, "uvs": uvs}
+
+
+def material_image(mat):
+    """The image wired straight into a material's Base Color, or None."""
+    if mat is None or not mat.node_tree or (bpy.app.version < (5, 0, 0) and not mat.use_nodes):
+        return None
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None or not bsdf.inputs["Base Color"].is_linked:
+        return None
+    node = bsdf.inputs["Base Color"].links[0].from_node
+    return node.image if node.type == "TEX_IMAGE" and node.image is not None else None
+
+
+def image_data_url(image, folder):
+    """An image as a PNG, JPEG or WebP data URL: its file or packed bytes when
+    unchanged, else its current pixels written out as PNG (painted here)."""
+    import numpy as np
+    w, h = image.size
+    if not w or not h or w > 4096 or h > 4096:
+        return None
+    data = None
+    if not image.is_dirty:
+        try:
+            if image.packed_file:
+                data = bytes(image.packed_file.data)
+            else:
+                path = bpy.path.abspath(image.filepath)
+                if path and os.path.isfile(path):
+                    with open(path, "rb") as f:
+                        data = f.read()
+        except Exception:
+            data = None
+    mime = None
+    if data:
+        mime = ("image/png" if data[:4] == b"\x89PNG" else "image/jpeg" if data[:2] == b"\xff\xd8"
+                else "image/webp" if data[:4] == b"RIFF" and data[8:12] == b"WEBP" else None)
+    if mime is None:
+        pixels = np.empty(w * h * 4, dtype=np.float32)
+        image.pixels.foreach_get(pixels)
+        out = bpy.data.images.new("3D Nowdz export", w, h, alpha=True)
+        try:
+            out.pixels.foreach_set(pixels)
+            path = os.path.join(folder, "texture-out.png")
+            out.filepath_raw = path
+            out.file_format = "PNG"
+            out.save()
+            with open(path, "rb") as f:
+                data = f.read()
+            mime = "image/png"
+        finally:
+            bpy.data.images.remove(out)
+    return "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii"))
 
 
 def collect():
@@ -416,7 +545,18 @@ def collect():
                           "strength": float(bone.get("Strength", 1.0)), "range": float(bone.get("Reach", 0.0))})
     bone_names = {b["name"] for b in bones}
 
-    materials, material_index = [], {}
+    materials, material_index, textures = [], {}, {}
+
+    def texture_of(mat):
+        image = material_image(mat)
+        if image is None:
+            return None
+        key = image.get("styk_key")
+        if not isinstance(key, str):
+            key = image["styk_key"] = "blender-" + uuid.uuid4().hex
+        if key not in textures:
+            textures[key] = image
+        return key
 
     def color_of(mat):
         rgb = tuple(material_rgb(mat))
@@ -471,7 +611,14 @@ def collect():
                 if not data["faces"] and obj.type != "MESH":
                     continue  # a curve with no thickness (a path for a Curve modifier) is a guide, not a part
             palette_of_slots = [color_of(m) for m in slots] or [color_of(None)]
-            colors = [palette_of_slots[m] if 0 <= m < len(palette_of_slots) else palette_of_slots[0] for m in data.pop("mats")]
+            texture_of_slots = [texture_of(m) for m in slots]
+            mats = data.pop("mats")
+            colors = [palette_of_slots[m] if 0 <= m < len(palette_of_slots) else palette_of_slots[0] for m in mats]
+            uvs = data.pop("uvs")
+            face_keys = [texture_of_slots[m] if uvs is not None and 0 <= m < len(texture_of_slots) else None for m in mats]
+            if any(face_keys):
+                data["textures"] = face_keys
+                data["uvs"] = [uvs[i] if face_keys[i] else None for i in range(len(mats))]
             parts.append({"key": key, "name": obj.name, "matrix": flat(Z_TO_Y @ obj.matrix_world @ Y_TO_Z),
                           "follows": follows(obj, arm_obj, bones),
                           "colors": colors, "baked": obj.type != "MESH" or live_modifiers(obj, middle) is None,
@@ -479,8 +626,17 @@ def collect():
     finally:
         for mod in paused:
             mod.show_viewport = True
+    sent = []
+    for key, image in textures.items():
+        try:
+            src = image_data_url(image, state["session"] or bpy.app.tempdir)
+        except Exception as error:  # an unreadable image only loses its texture
+            print("3D Nowdz: texture not sent:", error)
+            src = None
+        if src:
+            sent.append({"key": key, "name": image.name, "src": src})
     return {"format": LINK_FORMAT, "version": LINK_VERSION, "blender": bpy.app.version_string,
-            "name": scene.get("styk_name", "3D model"), "materials": materials, "parts": parts, "bones": bones}
+            "name": scene.get("styk_name", "3D model"), "materials": materials, "textures": sent, "parts": parts, "bones": bones}
 
 
 def send(*_):

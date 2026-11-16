@@ -553,6 +553,18 @@ stored downscaled (1024 px JPEG) with the model.
   UVs interpolate with perspective; toon shadow cuts interpolate UVs the same way.
   Texels under half alpha are cut out. UVs outside 0..1 repeat. X-ray and
   machines without WebGL draw each triangle with an affine image transform.
+- glTF: import reads each material's base colour image as a texture (one per
+  image, up to the model's limit; the same picture twice is one texture) and the
+  faces' first UV set, V flipped (glTF counts it from the top). Seam points are
+  welded as before, each face keeping its corners' UVs. Export embeds each used
+  image with an alpha-clip material and splits points where their UVs differ.
+- Open in Blender: textures travel as packed images (key `tex-<id>`) on materials
+  whose Image Texture feeds Base Color and Alpha (alpha clip), UVs as a "UVMap"
+  layer. Coming back, a face's texture is the image wired straight into its
+  material's Base Color, with the active UV layer. An image painted in Blender
+  (Texture Paint) or never saved is sent from its current pixels as PNG and
+  replaces that texture's picture; an image Blender added becomes a new texture.
+  UV and texture changes count as edits; a repaint alone leaves the mesh as it is.
 
 ## Data integrity
 

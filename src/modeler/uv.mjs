@@ -181,3 +181,65 @@ export function addTexture(model, {name = 'Texture', src, width, height}) {
 }
 /** Whether any part uses a texture. */
 export const usesTextures = model => (model.parts ?? []).some(p => p.mesh?.faces?.some(textured));
+
+/** Type and size of PNG, JPEG or WebP image bytes, read from their headers; null otherwise. */
+export function imageInfo(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (b.length >= 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return {mime: 'image/png', width: view.getUint32(16), height: view.getUint32(20)};
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
+    // Walk the markers to the first start-of-frame, which holds the size.
+    for (let at = 2; at + 9 < b.length;) {
+      if (b[at] !== 0xff) { at++; continue; }
+      const marker = b[at + 1];
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { at += 2; continue; }
+      const size = view.getUint16(at + 2);
+      if ((marker >= 0xc0 && marker <= 0xcf) && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return {mime: 'image/jpeg', width: view.getUint16(at + 7), height: view.getUint16(at + 5)};
+      at += 2 + size;
+    }
+    return null;
+  }
+  if (b.length >= 30 && String.fromCharCode(...b.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...b.subarray(8, 12)) === 'WEBP') {
+    const kind = String.fromCharCode(...b.subarray(12, 16));
+    if (kind === 'VP8 ') return {mime: 'image/webp', width: view.getUint16(26, true) & 0x3fff, height: view.getUint16(28, true) & 0x3fff};
+    if (kind === 'VP8L') { const bits = view.getUint32(21, true); return {mime: 'image/webp', width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1}; }
+    if (kind === 'VP8X') return {mime: 'image/webp', width: 1 + (b[24] | b[25] << 8 | b[26] << 16), height: 1 + (b[27] | b[28] << 8 | b[29] << 16)};
+  }
+  return null;
+}
+/** Image bytes as a data URL. */
+export function bytesToDataUrl(bytes, mime) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let text = '';
+  for (let i = 0; i < b.length; i += 0x8000) text += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return `data:${mime};base64,${btoa(text)}`;
+}
+/** The bytes and type of an image data URL. */
+export function dataUrlBytes(src) {
+  const m = /^data:(image\/[a-z]+);base64,(.*)$/.exec(src ?? '');
+  if (!m) return null;
+  const raw = atob(m[2]), bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return {mime: m[1], bytes};
+}
+/** A texture entry for image bytes (name, data URL, size), or null when they are
+ * not a PNG, JPEG or WebP of a usable size. */
+export function textureFromBytes(bytes, name = 'Texture') {
+  const info = imageInfo(bytes);
+  if (!info || !(info.width >= 1 && info.height >= 1 && info.width <= TEXTURE_MAX_SIDE && info.height <= TEXTURE_MAX_SIDE)) return null;
+  return {name, src: bytesToDataUrl(bytes, info.mime), width: info.width, height: info.height};
+}
+/** Add imported textures ({key, ...entry}) to the model, returning key → texture
+ * id; those past the model's limit are left out (their faces show colours). */
+export function adoptTextures(model, list) {
+  const ids = new Map();
+  for (const entry of list) {
+    if ((model.textures?.length ?? 0) >= TEXTURE_LIMIT) break;
+    const same = model.textures?.find(t => t.src === entry.src);
+    ids.set(entry.key, same ? same.id : addTexture(model, entry).id);
+  }
+  return ids;
+}
+/** Point imported faces' texture keys at the model's texture ids (unknown keys drop the texture). */
+export function remapFaceTextures(mesh, ids) {
+  for (const f of mesh.faces) { if (f.t === undefined) continue; const id = ids.get(f.t); if (id === undefined) { delete f.t; delete f.uv; } else f.t = id; }
+}

@@ -22,6 +22,12 @@
  * Mirror + Solidify + Smooth (a Boolean, Remesh, a text or curve object) come
  * back "baked": their final shape as plain faces.
  *
+ * Textures (docs/BLENDER-LITE.md, "Textures and UVs") travel as `textures`
+ * ({key, name, src}: `tex-<id>` for 3D Nowdz's, any key for an image Blender
+ * added) and, per object, `uvs` and `textures`: one entry per face, its corner
+ * UVs and its texture key, or null for a plain colour face. An image painted
+ * or swapped in Blender comes back as that texture's new picture.
+ *
  * Everything here is in 3D Nowdz's space (Y up, metres); the script converts
  * to and from Blender's Z up. Colours are 0–255 sRGB. */
 import {objectMatrix, transformMesh, recalculateNormals, repairImportedMesh, normalize} from './mesh.mjs';
@@ -29,6 +35,7 @@ import {decomposeTRS} from './matrix.mjs';
 import {addPart} from './model.mjs';
 import {addBone, deleteBones, boneOrder, partWeights, autoWeights, pullOf, setPull} from './armature.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
+import {textured, dataUrlBytes, imageInfo, addTexture, TEXTURE_LIMIT, TEXTURE_MAX_SIDE} from './uv.mjs';
 
 export const LINK_FORMAT = 'styk-blender-link';
 export const LINK_VERSION = 1;
@@ -58,6 +65,7 @@ function partData(model, part, names) {
     follows,
     key: `part-${part.id}`, name: part.name || 'Part', matrix: [...objectMatrix(part)],
     verts: mesh.verts.map(p => p.slice()), faces: mesh.faces.map(f => f.v.slice()), colors: mesh.faces.map(f => f.c ?? 0),
+    ...(mesh.faces.some(textured) ? {uvs: mesh.faces.map(f => textured(f) ? f.uv.map(p => p.slice()) : null), textures: mesh.faces.map(f => textured(f) ? `tex-${f.t}` : null)} : {}),
     edges: (mesh.edges ?? []).map(e => e.slice()), loose: (mesh.loose ?? []).slice(),
     mirror: Boolean(part.mirror), clip: part.clip !== false, smooth: part.smooth ?? 0, solidify: part.solidify ?? 0, visible: part.visible !== false,
     crease: {...(vdata.crease ?? {})}, line: {...(vdata.line ?? {})}, normal: Object.fromEntries(Object.entries(vdata.normal ?? {}).map(([i, n]) => [i, n.slice()])),
@@ -75,10 +83,12 @@ export function startBlenderLink(model) {
   const bones = ordered.map(b => ({key: `bone-${b.id}`, name: b.name, head: b.head.slice(), tail: b.tail.slice(), parent: byId.get(b.parent)?.name ?? null, ...pullOf(b)}));
   const references = (model.references ?? []).filter(r => r && /^data:image\/(png|jpeg|webp);base64,/.test(r.src ?? ''))
     .map(r => ({view: r.view === 'side' ? 'side' : 'front', src: r.src, opacity: r.opacity ?? .5, height: r.height ?? 2, offsetX: r.offsetX ?? 0, offsetY: r.offsetY ?? 0, flip: r.flip === true}));
-  const doc = {format: LINK_FORMAT, version: LINK_VERSION, name: model.name || '3D model', palette: model.palette.map(c => c.slice()), parts, bones, references};
+  const textures = (model.textures ?? []).map(t => ({key: `tex-${t.id}`, name: t.name, src: t.src}));
+  const doc = {format: LINK_FORMAT, version: LINK_VERSION, name: model.name || '3D model', palette: model.palette.map(c => c.slice()), parts, bones, references, ...(textures.length ? {textures} : {})};
   const session = {
     parts: new Map(model.parts.map((part, i) => [parts[i].key, {id: part.id, last: {...parts[i], colors: parts[i].colors.map(c => model.palette[c] ?? [200, 200, 200])}}])),
     bones: new Map(bones.map((b, i) => [b.key, {id: ordered[i].id, last: b}])),
+    textures: new Map(textures.map(t => [t.key, t.src])),
   };
   return {doc, session};
 }
@@ -115,6 +125,12 @@ function sameAsLast(back, last, rgbOf) {
     const a = back.faces[i], b = last.faces[i];
     if (a.length !== b.length || a.some((v, k) => v !== b[k]) || !closeList(rgbOf(back.colors?.[i]), last.colors[i], 1)) return false;
   }
+  // UVs and texture keys, face by face (absent means no textured face).
+  for (let i = 0; i < back.faces.length; i++) {
+    if ((back.textures?.[i] ?? null) !== (last.textures?.[i] ?? null)) return false;
+    const a = back.uvs?.[i] ?? null, b = last.uvs?.[i] ?? null;
+    if ((a === null) !== (b === null) || (a && (a.length !== b.length || a.some((p, k) => !closeList(p, b[k], 1e-5))))) return false;
+  }
   const sameMap = (x = {}, y = {}, same) => { const kx = Object.keys(x); return kx.length === Object.keys(y).length && kx.every(k => k in y && same(x[k], y[k])); };
   return sameMap(back.crease, last.crease, (p, q) => close(p, q, 1e-3)) && sameMap(back.line, last.line, (p, q) => close(p, q, 1e-3))
     && sameMap(back.normal, last.normal, (p, q) => closeList(p, q, 1e-3))
@@ -122,9 +138,13 @@ function sameAsLast(back, last, rgbOf) {
 }
 
 /** A 3D Nowdz mesh from one object in the reply (object space), with its point data. */
-function meshFrom(back, colorOf, boneId) {
+function meshFrom(back, colorOf, boneId, textureOf = () => undefined) {
   const n = back.verts.length, inRange = i => Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n;
-  const mesh = {verts: back.verts.map(p => p.slice()), faces: back.faces.map((v, i) => ({v: v.slice(), c: colorOf(back.colors?.[i])}))};
+  const mesh = {verts: back.verts.map(p => p.slice()), faces: back.faces.map((v, i) => {
+    const face = {v: v.slice(), c: colorOf(back.colors?.[i])}, t = textureOf(back.textures?.[i]), uv = back.uvs?.[i];
+    if (t !== undefined && Array.isArray(uv) && uv.length === v.length && uv.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))) { face.uv = uv.map(p => [p[0], p[1]]); face.t = t; }
+    return face;
+  })};
   const edges = (back.edges ?? []).filter(e => Array.isArray(e) && e.length === 2 && e.every(inRange) && e[0] !== e[1]);
   if (edges.length) mesh.edges = edges.map(e => e.slice());
   const loose = (back.loose ?? []).filter(inRange);
@@ -167,8 +187,8 @@ function keepPaintedWeights(model, part) {
 /** One object of a reply as a 3D Nowdz part: its mesh (object space, rules
  * checked), placement, and the settings that ride along (Mirror, Smooth,
  * Solidify, clipping). Throws a TopologyError when the shape can't be used. */
-export function readBlenderPart(back, colorOf, boneId = new Map()) {
-  const mesh = meshFrom(back, colorOf, boneId);
+export function readBlenderPart(back, colorOf, boneId = new Map(), textureOf) {
+  const mesh = meshFrom(back, colorOf, boneId, textureOf);
   let transform;
   try { transform = decomposeTRS(back.matrix); }
   catch {
@@ -202,7 +222,25 @@ export function setExtras(part, {solidify, clip}) {
  * {changed, added, removed, kept, baked, painted, bones: {changed, added, removed}}. */
 export function applyBlenderLink(model, rawReply, session) {
   const reply = readBlenderReply(rawReply);
-  const report = {changed: 0, added: 0, removed: 0, kept: 0, baked: 0, painted: 0, bones: {changed: 0, added: 0, removed: 0}};
+  const report = {changed: 0, added: 0, removed: 0, kept: 0, baked: 0, painted: 0, textures: 0, bones: {changed: 0, added: 0, removed: 0}};
+
+  // Textures: 3D Nowdz's own by key (a new picture replaces theirs); images Blender added become new ones.
+  const textureId = new Map(), sentTextures = session.textures ?? new Map();
+  for (const back of Array.isArray(rawReply.textures) ? rawReply.textures : []) {
+    if (!back || typeof back.key !== 'string' || typeof back.src !== 'string') continue;
+    const data = dataUrlBytes(back.src), info = data && imageInfo(data.bytes);
+    if (!info || !(info.width >= 1 && info.height >= 1 && info.width <= TEXTURE_MAX_SIDE && info.height <= TEXTURE_MAX_SIDE)) continue;
+    const own = /^tex-(\d+)$/.exec(back.key), mine = own ? model.textures?.find(t => t.id === Number(own[1])) : null;
+    if (mine) {
+      if (back.src !== sentTextures.get(back.key) && back.src !== mine.src) { Object.assign(mine, {src: back.src, width: info.width, height: info.height}); report.textures++; }
+      textureId.set(back.key, mine.id);
+    } else if ((model.textures?.length ?? 0) < TEXTURE_LIMIT) {
+      const same = model.textures?.find(t => t.src === back.src);
+      textureId.set(back.key, same ? same.id : addTexture(model, {name: String(back.name ?? 'Texture').slice(0, 120) || 'Texture', src: back.src, width: info.width, height: info.height}).id);
+      if (!same) report.textures++;
+    }
+  }
+  const textureOf = key => typeof key === 'string' ? textureId.get(key) : undefined;
 
   // Colours: Blender's materials become palette colours (a match within rounding is reused).
   const colorIndex = new Map(), rgbOf = m => reply.materials[m] ?? [200, 200, 200];
@@ -253,7 +291,7 @@ export function applyBlenderLink(model, rawReply, session) {
       remember(known.id);
       continue;
     }
-    const {mesh, placed, settings, extra} = readBlenderPart(back, colorOf, boneId);
+    const {mesh, placed, settings, extra} = readBlenderPart(back, colorOf, boneId, textureOf);
     if (part) { Object.assign(part, {name: back.name, mesh}, placed, settings); report.changed++; }
     else { part = addPart(model, {name: back.name, mesh, ...placed, ...settings}); model.parts.pop(); report.added++; }
     if (back.baked) report.baked++;
@@ -271,5 +309,6 @@ export function applyBlenderLink(model, rawReply, session) {
   report.removed = model.parts.filter(p => !claimedParts.has(p.id) && sentParts.has(p.id)).length;
   model.parts = [...order, ...model.parts.filter(p => !claimedParts.has(p.id) && !sentParts.has(p.id))];
   session.parts = nextParts; session.bones = nextBones;
+  session.textures = new Map([...textureId].map(([key, id]) => [key, model.textures.find(t => t.id === id)?.src]));
   return report;
 }

@@ -442,7 +442,10 @@ export function repairImportedMesh(mesh, {weld = 0} = {}) {
       if (cell.has(k)) { report.welded++; return cell.get(k); }
       cell.set(k, i); return i;
     });
-    if (report.welded) mesh.faces.forEach(f => { f.v = f.v.map(i => to[i]).filter((x, i, v) => x !== v[(i + 1) % v.length]); });
+    if (report.welded) mesh.faces.forEach(f => {
+      const v = f.v.map(i => to[i]), keep = v.map((x, i) => x !== v[(i + 1) % v.length]);
+      f.v = v.filter((_, i) => keep[i]); if (f.uv) f.uv = f.uv.filter((_, i) => keep[i]);
+    });
   }
   const copyPoint = i => {
     const j = mesh.verts.length; mesh.verts.push(mesh.verts[i].slice());
@@ -484,7 +487,7 @@ export function repairImportedMesh(mesh, {weld = 0} = {}) {
         for (const other of uses.get(key(a, b)) ?? []) {
           if (placed.has(other)) continue;
           const w = mesh.faces[other].v, j = w.indexOf(a);
-          if (j >= 0 && w[(j + 1) % w.length] === b) { w.reverse(); report.flipped++; }
+          if (j >= 0 && w[(j + 1) % w.length] === b) { flipFace(mesh.faces[other]); report.flipped++; }
           placed.add(other); queue.push(other);
         }
       });
@@ -610,7 +613,7 @@ function windConsistently(mesh, faces, facing = null) {
         for (const other of byEdge.get(edgeKey(a, b)) ?? []) {
           if (seen.has(other)) continue;
           const w = mesh.faces[other].v, j = w.indexOf(a);
-          if (w[(j + 1) % w.length] === b) w.reverse();
+          if (w[(j + 1) % w.length] === b) flipFace(mesh.faces[other]);
           seen.add(other); group.push(other);
         }
       });
@@ -1012,7 +1015,7 @@ function recalculateNormalsEdit(mesh) {
           if (seen.has(other)) continue;
           const w = mesh.faces[other].v, j = w.indexOf(a);
           // Neighbours must run the shared edge the other way.
-          if (w[(j + 1) % w.length] === b) w.reverse();
+          if (w[(j + 1) % w.length] === b) flipFace(mesh.faces[other]);
           seen.add(other); piece.push(other);
         }
       });
