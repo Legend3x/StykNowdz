@@ -560,6 +560,8 @@ export default Object.freeze({
   "modeler.outlineEverythingHint": "Adds an ink outline to every part, in the darkest palette colour.",
   "modeler.removeOutlines": "Remove outlines",
   "modeler.toonPreview": "Toon preview (as on the stage)",
+  "modeler.showTextures": "Textures",
+  "modeler.showTexturesHint": "Show the model's texture images, as Blender's Material preview does. Off shows each face's colour.",
   "modeler.circle": "Circle",
   "modeler.shear": "Shear",
   "modeler.shearHint": "Slant the selection sideways (Ctrl+Alt+Shift+S). X, Y or Z picks the direction.",

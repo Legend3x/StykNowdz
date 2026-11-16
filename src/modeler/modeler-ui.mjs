@@ -77,7 +77,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
   const S = {mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, second: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
-    depth: createDepthPass(), camera: defaultCamera(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
+    depth: createDepthPass(), camera: defaultCamera(), showTextures: true, texImages: new Map(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
 
   // ---------- history ----------
@@ -921,6 +921,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode === 'object') blocks.push(section(t("modeler.toonLook"), toonLook()));
     blocks.push(section(t("modeler.view"), [
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.toonPreview, onchange: e => { S.toonPreview = e.target.checked; refresh(); }}), t("modeler.toonPreview")]),
+      // Blender's Material preview: only offered once the model has a texture.
+      ...(model.textures?.length ? [el('label', {class: 'modeler-check', title: t("modeler.showTexturesHint")}, [el('input', {type: 'checkbox', checked: S.showTextures, onchange: e => { S.showTextures = e.target.checked; refresh(); }}), t("modeler.showTextures")])] : []),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.wire, onchange: e => { S.wire = e.target.checked; refresh(); }}), t("modeler.wireframe")]),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.xray, onchange: e => { S.xray = e.target.checked; refresh(); }}), t("modeler.xray")]),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.showBones, onchange: e => { S.showBones = e.target.checked; refresh(); }}), t("modeler.showBones")]),
@@ -1025,7 +1027,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     const look = toonSettings(model);
     const toon = S.toonPreview && !showWeights ? {shadows: look.shadows, turn: look.turn, height: look.height, size: look.size, strength: look.strength} : null;
-    S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth}).filter(poly => !poly.item.hull);
+    S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth, textures: S.showTextures ? textureImages() : null}).filter(poly => !poly.item.hull);
     drawAllWires(ctx);
     if (S.mode === 'object') drawObjectOutline(ctx);
     if (S.mode === 'edit') { drawCage(ctx); drawLineEnds(ctx); }
@@ -1052,7 +1054,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Looks at what the main view looks at, from as far, straight on.
     const camera = {...S.camera, yaw, pitch, ortho: true};
     const second = cameraFrame(camera, w, h);
-    paint(ctx, second, items.map(item => ({...item, weights: item.weights, muted: false})), {references: [], refImages: new Map(), showGrid: true, toon, xray: false, wire: false});
+    paint(ctx, second, items.map(item => ({...item, weights: item.weights, muted: false})), {references: [], refImages: new Map(), showGrid: true, toon, xray: false, wire: false, textures: S.showTextures ? textureImages() : null});
     // The active part's points in Edit mode, so you see where the ones you move sit in depth.
     const c = S.mode === 'edit' ? activePart() : null;
     if (c && !hiddenBySwap(model, c)) {
@@ -2249,6 +2251,17 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       img.src = url;
     });
     input.click();
+  }
+  /** The model's texture images that have loaded, by texture id (a changed texture loads anew). */
+  function textureImages() {
+    const ready = new Map();
+    for (const tex of model.textures ?? []) {
+      let entry = S.texImages.get(tex.id);
+      if (!entry || entry.src !== tex.src) { const img = new Image(); img.onload = draw; img.src = tex.src; entry = {src: tex.src, img}; S.texImages.set(tex.id, entry); }
+      if (entry.img.complete && entry.img.naturalWidth) ready.set(tex.id, entry.img);
+    }
+    for (const id of S.texImages.keys()) if (!(model.textures ?? []).some(tex => tex.id === id)) S.texImages.delete(id);
+    return ready;
   }
   function syncRefs() {
     for (const ref of model.references) if (!S.refImages.has(ref.id)) { const img = new Image(); img.onload = draw; img.src = ref.src; S.refImages.set(ref.id, img); }

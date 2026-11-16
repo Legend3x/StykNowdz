@@ -94,3 +94,17 @@ test('keepUVs on its own: a face moved off its old place loses its texture', () 
   after.verts = after.verts.map(p => [p[0] + 5, p[1], p[2]]); for (const f of after.faces) { delete f.uv; }
   keepUVs(before, after); assert.ok(after.faces.every(f => f.uv === undefined && f.t === undefined));
 });
+
+import {splitByShadow} from '../src/modeler/viewport.mjs';
+import {vertexBatch} from '../src/modeler/depth-pass.mjs';
+test('toon shadow cuts give textured corners perspective-correct UVs', () => {
+  // A near corner (w 1) and a far one (w 3): the screen midpoint is a quarter of the way in UV.
+  const pts = [{x: 0, y: 0, d: 0, w: 1, uv: [0, 0]}, {x: 10, y: 0, d: 0, w: 3, uv: [1, 0]}, {x: 10, y: 10, d: 0, w: 3, uv: [1, 1]}, {x: 0, y: 10, d: 0, w: 1, uv: [0, 1]}];
+  const [[lit], [dark]] = splitByShadow(pts, [1, -1, -1, 1]);
+  const cut = lit.find(p => p.x === 5 && p.y === 0);
+  assert.ok(Math.abs(cut.uv[0] - .25) < 1e-9 && Math.abs(cut.w - 1.5) < 1e-9, JSON.stringify(cut));
+  assert.ok(dark.includes(cut));
+  const batch = vertexBatch({textured: true}); batch.push(0, 0, .5, [255, 255, 255], 255, .25, .75, 2);
+  assert.deepEqual([...batch.done().surface], [.25, .75, 2]);
+  assert.equal(vertexBatch().done().surface, undefined);
+});

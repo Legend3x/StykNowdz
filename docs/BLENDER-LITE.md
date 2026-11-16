@@ -546,6 +546,13 @@ stored downscaled (1024 px JPEG) with the model.
   and each rim face its edge's UVs.
 - `readModel` drops textures that are not image data URLs or are oversized, and
   UVs or texture ids that don't match their face.
+- The viewport shows textures while View > Textures is on (offered once the model
+  has one; Blender's Material preview). The depth pass draws one batch per image,
+  the image multiplied by the face's lighting colour, so lighting and toon shadows
+  fall across textures as across colours. Vertices carry their eye distance, so
+  UVs interpolate with perspective; toon shadow cuts interpolate UVs the same way.
+  Texels under half alpha are cut out. UVs outside 0..1 repeat. X-ray and
+  machines without WebGL draw each triangle with an affine image transform.
 
 ## Data integrity
 

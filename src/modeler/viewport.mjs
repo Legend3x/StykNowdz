@@ -27,10 +27,11 @@ export function cameraFrame(camera, w, h) {
   // it interpolates exactly across a face): 1 − near/distance in perspective.
   const project = p => {
     const c = toCamera(p);
-    if (camera.ortho) return {x: w / 2 + c[0] * orthoScale, y: h / 2 - c[1] * orthoScale, z: c[2], d: Math.max(0, Math.min(1, .5 - c[2] / (4 * dist + 200))), ok: true};
+    // `w`: distance from the eye (1 in orthographic views), for perspective-correct textures.
+    if (camera.ortho) return {x: w / 2 + c[0] * orthoScale, y: h / 2 - c[1] * orthoScale, z: c[2], d: Math.max(0, Math.min(1, .5 - c[2] / (4 * dist + 200))), w: 1, ok: true};
     const depth = dist - c[2];
     if (depth < NEAR) return {x: NaN, y: NaN, z: c[2], ok: false};
-    return {x: w / 2 + c[0] * focal / depth, y: h / 2 - c[1] * focal / depth, z: c[2], d: 1 - NEAR / depth, ok: true};
+    return {x: w / 2 + c[0] * focal / depth, y: h / 2 - c[1] * focal / depth, z: c[2], d: 1 - NEAR / depth, w: depth, ok: true};
   };
   /** World units per screen pixel at the depth of point p. */
   const unitsPerPixel = p => camera.ortho ? 1 / orthoScale : Math.max(.02, dist - toCamera(p)[2]) / focal;
@@ -134,6 +135,11 @@ export function splitByShadow(pts, side) {
     (a >= 0 ? lit : dark).push(pts[i]);
     if ((a >= 0) !== (b >= 0)) {
       const t = a / (a - b), p = {x: pts[i].x + (pts[j].x - pts[i].x) * t, y: pts[i].y + (pts[j].y - pts[i].y) * t, d: pts[i].d + (pts[j].d - pts[i].d) * t};
+      // Textured corners: UVs and eye distance follow the cut with perspective (1/w is affine on screen).
+      if (pts[i].uv && pts[j].uv) {
+        const ia = 1 / (pts[i].w ?? 1), ib = 1 / (pts[j].w ?? 1), iw = ia + (ib - ia) * t;
+        p.uv = [0, 1].map(k => (pts[i].uv[k] * ia + (pts[j].uv[k] * ib - pts[i].uv[k] * ia) * t) / iw); p.w = 1 / iw;
+      }
       lit.push(p); dark.push(p);
     }
   }
@@ -143,7 +149,7 @@ export function splitByShadow(pts, side) {
 /** Draw the model. With `toon` (the toon preview) faces are flat colours as on
  * the stage: lit or, when `toon.shadows`, in shadow (toon-shading.mjs), and
  * items marked `hull` are outline shells drawn with their far side only. */
-export function paint(ctx, frame, items, {xray = false, wire = false, references = [], showGrid = true, refImages = new Map(), toon = null, depth = null} = {}) {
+export function paint(ctx, frame, items, {xray = false, wire = false, references = [], showGrid = true, refImages = new Map(), toon = null, depth = null, textures = null} = {}) {
   const {w, h} = frame;
   ctx.fillStyle = VIEW_COLORS.background; ctx.fillRect(0, 0, w, h);
   // Reference images stand in the scene behind everything, as in Blender: both are
@@ -167,7 +173,9 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     // Both sides of an open mesh show, as in Blender (a closed mesh hides its far side anyway).
     const twoSided = item.twoSided ?? openOf(mesh);
     mesh.faces.forEach((face, fi) => {
-      const pts = face.v.map(i => projected[i]);
+      // Textured faces get their own corner copies carrying the UVs (points are shared between faces).
+      const image = textures && face.t !== undefined && face.uv?.length === face.v.length && !item.weights && !item.muted && face.ink === undefined ? textures.get(face.t) : null;
+      const pts = image ? face.v.map((i, k) => ({...projected[i], uv: face.uv[k]})) : face.v.map(i => projected[i]);
       if (pts.some(p => !p.ok)) return;
       const p0 = mesh.verts[face.v[0]];
       let n = [0, 0, 0];
@@ -176,7 +184,7 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
       const facing = dot(n, frame.toEye(p0));
       if (!xray && facing <= 0 && !twoSided) return;
       const z = pts.reduce((s, p) => s + p.z, 0) / pts.length;
-      polys.push({pts, z, n, facing, face, fi, item, side: smooth ? face.v.map(i => dot(smooth[i], toonDir) - cut) : null});
+      polys.push({pts, z, n, facing, face, fi, item, image, side: smooth ? face.v.map(i => dot(smooth[i], toonDir) - cut) : null});
     });
   }
   polys.sort((a, b) => a.z - b.z);
@@ -184,11 +192,13 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
   // other (hair through a head) meet along the right line; X-ray (see-through)
   // and setups without WebGL fill sorted faces on the canvas instead.
   const zbuffer = depth && !xray && !depth.unavailable, tris = zbuffer ? vertexBatch() : null, lines = zbuffer && wire ? vertexBatch() : null;
+  // One batch per texture image; a textured face's "colour" is its lighting, multiplied over the image.
+  const imageBatches = new Map(), batchOf = image => { if (!imageBatches.has(image)) imageBatches.set(image, vertexBatch({textured: true})); return imageBatches.get(image); };
   const sx = x => x / w * 2 - 1, sy = y => 1 - y / h * 2;
   ctx.lineJoin = 'round';
   for (const poly of polys) {
     const {item, face} = poly;
-    let rgb = item.palette[face.c] ?? item.palette[0] ?? [200, 200, 200];
+    let rgb = poly.image ? [255, 255, 255] : item.palette[face.c] ?? item.palette[0] ?? [200, 200, 200];
     if (face.ink !== undefined) rgb = inkColor(rgb, face.ink);
     if (item.weights) rgb = weightColor(item.weights[poly.fi] ?? 0);
     // Outside what the weight brush may paint: greyed.
@@ -198,7 +208,8 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
       ? (toonDir && !item.flat && poly.side ? splitByShadow(poly.pts, poly.side) : [[poly.pts, true]]).map(([pts, lit]) => [pts, shadeRgb(lit ? rgb : shadowColor(rgb, toon.strength), 1)])
       : [[poly.pts, shadeRgb(rgb, .42 + .62 * Math.abs(dot(poly.n, light)))]];
     if (zbuffer) {
-      for (const [pts, fill] of pieces) for (let i = 1; i + 1 < pts.length; i++) for (const p of [pts[0], pts[i], pts[i + 1]]) tris.push(sx(p.x), sy(p.y), p.d, fill);
+      const batch = poly.image ? batchOf(poly.image) : tris;
+      for (const [pts, fill] of pieces) for (let i = 1; i + 1 < pts.length; i++) for (const p of [pts[0], pts[i], pts[i + 1]]) batch.push(sx(p.x), sy(p.y), p.d, fill, 255, p.uv?.[0] ?? 0, p.uv?.[1] ?? 0, p.w ?? 1);
       if (lines) poly.pts.forEach((p, i) => { const q = poly.pts[(i + 1) % poly.pts.length]; lines.push(sx(p.x), sy(p.y), p.d, WIRE_RGBA[0], WIRE_RGBA[1]); lines.push(sx(q.x), sy(q.y), q.d, WIRE_RGBA[0], WIRE_RGBA[1]); });
       continue;
     }
@@ -206,6 +217,7 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     for (const [pts, rgbFill] of pieces) {
       if (pts.length < 3) continue;
       const fill = css(rgbFill);
+      if (poly.image) { drawTexturedPolygon(ctx, poly.image, pts, fill); continue; }
       ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
       ctx.fillStyle = fill; ctx.fill();
       // Hairline seams in the face colour hide gaps between neighbouring faces.
@@ -215,11 +227,42 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     ctx.globalAlpha = 1;
   }
   if (zbuffer) {
-    const image = depth.draw(ctx.canvas.width, ctx.canvas.height, tris.done(), lines?.done());
+    const image = depth.draw(ctx.canvas.width, ctx.canvas.height, tris.done(), lines?.done(), [...imageBatches].map(([image, batch]) => ({image, batch: batch.done()})));
     if (image) ctx.drawImage(image, 0, 0, w, h);
-    else return paint(ctx, frame, items, {xray, wire, references, showGrid, refImages, toon, depth: null});
+    else return paint(ctx, frame, items, {xray, wire, references, showGrid, refImages, toon, depth: null, textures});
   }
   return polys;
+}
+
+/** Without the depth pass (X-ray, no WebGL): a textured polygon as a fan of
+ * triangles, each the image mapped by the affine transform taking its UVs to
+ * its screen corners, then multiplied by the lighting colour `multiply`.
+ * Affine per triangle, so perspective bends textures slightly here. */
+export function drawTexturedPolygon(ctx, image, pts, multiply) {
+  const W = image.naturalWidth ?? image.width, H = image.naturalHeight ?? image.height;
+  if (!(W > 0 && H > 0)) return;
+  for (let i = 1; i + 1 < pts.length; i++) {
+    const tri = [pts[0], pts[i], pts[i + 1]];
+    if (tri.some(p => !p.uv)) continue;
+    const [a, b, c] = tri, [ua, va] = [a.uv[0] * W, (1 - a.uv[1]) * H], [ub, vb] = [b.uv[0] * W, (1 - b.uv[1]) * H], [uc, vc] = [c.uv[0] * W, (1 - c.uv[1]) * H];
+    const det = (ub - ua) * (vc - va) - (uc - ua) * (vb - va);
+    if (Math.abs(det) < 1e-9) continue;
+    // Screen = M · texel: solve the 2×3 matrix from the three corner pairs.
+    const m11 = ((b.x - a.x) * (vc - va) - (c.x - a.x) * (vb - va)) / det, m12 = ((c.x - a.x) * (ub - ua) - (b.x - a.x) * (uc - ua)) / det;
+    const m21 = ((b.y - a.y) * (vc - va) - (c.y - a.y) * (vb - va)) / det, m22 = ((c.y - a.y) * (ub - ua) - (b.y - a.y) * (uc - ua)) / det;
+    const dx = a.x - m11 * ua - m12 * va, dy = a.y - m21 * ua - m22 * va;
+    // Grow the clip by half a pixel so neighbouring triangles leave no seam.
+    const cx = (a.x + b.x + c.x) / 3, cy = (a.y + b.y + c.y) / 3, out = p => { const l = Math.hypot(p.x - cx, p.y - cy) || 1; return [p.x + (p.x - cx) / l * .5, p.y + (p.y - cy) / l * .5]; };
+    ctx.save();
+    ctx.beginPath(); tri.map(out).forEach(([x, y], k) => k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.clip();
+    ctx.setTransform(ctx.getTransform().multiply(new DOMMatrix([m11, m21, m12, m22, dx, dy])));
+    ctx.drawImage(image, 0, 0);
+    ctx.restore();
+    if (multiply !== 'rgb(255,255,255)') {
+      ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = multiply;
+      ctx.beginPath(); tri.map(out).forEach(([x, y], k) => k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+  }
 }
 
 // Open or closed is worked out again only when the mesh's faces change (edits
