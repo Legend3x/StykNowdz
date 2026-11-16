@@ -25,7 +25,7 @@ function shapeFor(n,p){
  if(['circle','ellipse'].includes(n.kind)&&n.half_arc){shape.half_arc=true;if(n.triangle_upside_down)shape.triangle_upside_down=true;}
  if(n.kind==='triangle'){if(n.triangle_upside_down)shape.triangle_upside_down=true;if(n.right_triangle_direction)shape.right_triangle_direction=n.right_triangle_direction;}
  if(n.kind==='circle'&&n.use_circle_outline){shape.use_circle_outline=true;shape.outline=rgb(n.circle_outline_color);shape.outlineAlpha=alpha(n.circle_outline_color);if(n.circle_is_hollow)shape.circle_is_hollow=true;}
- if(['polygon','filled-circle'].includes(n.kind))shape.num_polygon_vertices=clamp(n.num_polygon_vertices??5,3,256);
+ if(n.kind==='polygon')shape.num_polygon_vertices=clamp(n.num_polygon_vertices??5,3,256);
  if(n.kind==='trapezoid'){const ratio=n.trapezoid_top_thickness_ratio??.5;if(ratio!==.5)shape.trapezoid_top_thickness_ratio=ratio;
   if(ratio<0){shape.trapezoid_thickness_start=(n.trapezoid_thickness_start??p.thickness)*p.scale;shape.trapezoid_thickness_end=(n.trapezoid_thickness_end??p.thickness/2)*p.scale;}
   if(n.trapezoid_is_rounded_start)shape.trapezoid_is_rounded_start=true;if(n.trapezoid_is_rounded_end)shape.trapezoid_is_rounded_end=true;

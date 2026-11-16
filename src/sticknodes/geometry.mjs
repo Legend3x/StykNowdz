@@ -86,6 +86,7 @@ export function sticknodesDrawables(s){
   else if(n.use_circle_outline&&n.circle_is_hollow)circle(mid,r,n.outline,inner);
   else{circle(mid,r,n.use_circle_outline?n.outline:null);if(n.use_circle_outline&&inner>0)circle(mid,inner);}
  }else if(n.kind==='ellipse')poly(oval(n.half_arc?(n.triangle_upside_down?L:0):L/2,n.half_arc?L:L/2,T/2,n.half_arc,n.triangle_upside_down&&n.half_arc));
+ else if(n.kind==='filled-circle')circle(point(L/2),(L+T)/2);
  else if(n.kind==='triangle')poly([[0,-T/2],[0,T/2],[L,Math.sign(n.right_triangle_direction??0)*T/2]].map(([x,y])=>point(n.triangle_upside_down?L-x:x,y)));
  else {const count=Math.max(3,Math.min(256,n.num_polygon_vertices??5)),r=(L+T)/2;poly(Array.from({length:count},(_,i)=>point(L/2+r*Math.cos(i*2*Math.PI/count),r*Math.sin(i*2*Math.PI/count))));}
  return out;

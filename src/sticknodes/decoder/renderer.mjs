@@ -88,9 +88,11 @@ export function renderSVG(figure,options={}) {
    shape=`<path d="${pathLine([...left,...right.reverse()])} Z" fill="${fill}"/>`;
    if(n.trapezoid_is_rounded_start)shape+=`<circle cx="${f(a.x)}" cy="${f(a.y)}" r="${f(ws/2)}" fill="${fill}"/>`;
    if(n.trapezoid_is_rounded_end)shape+=`<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(we/2)}" fill="${fill}"/>`;
-  }else if(n.kind==='polygon'||n.kind==='filled-circle'){
+  }else if(n.kind==='filled-circle'){
+   // Legacy type 4 is a solid disc as wide as a plain circle; old files store no side count.
+   const r=(L+T)/2;shape=`<circle cx="${f(mid.x)}" cy="${f(mid.y)}" r="${f(r)}" fill="${fill}"/>`;addBounds(mid.x,mid.y,r);
+  }else if(n.kind==='polygon'){
    const count=clamp(n.num_polygon_vertices??5,3,256),r=(L+T)/2,pts=[];for(let j=0;j<count;j++){const t=j*Math.PI*2/count;pts.push(point(L/2+r*Math.cos(t),r*Math.sin(t)));}shape=`<polygon points="${pts.map(xy).join(' ')}" fill="${fill}"/>`;addBounds(mid.x,mid.y,r);
-   if(n.kind==='filled-circle')warnings.add('Legacy type 4 uses the loader polygon fallback; historical semantics need additional reference files.');
   }
   drawables.push({z:n.id,html:`<g data-node-id="${n.id}" data-static="${!!n.is_static}"><title>Node ${n.id} · ${escapeXml(n.kind)}${n.is_static?' · STATIC':''}</title>${shape}</g>`});
  }

@@ -87,6 +87,9 @@ stores the same `_sticknodes` shape the importer writes, so it renders, saves an
 undoes through the existing path. Choosing any other shape removes that shape again.
 The Stick Nodes filled circle (legacy type 4) and the circle's outline, hollow and
 half-arc options are not offered.
+Imported filled circles draw as solid circles as wide as a plain circle
+(length plus width); older files store no side count for them, so they are never
+drawn as polygons.
 
 | Shape | Options in the inspector | Stored as |
 | --- | --- | --- |

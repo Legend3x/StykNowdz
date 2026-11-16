@@ -12,11 +12,13 @@ import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {exportSVG} from '../src/svg-export.mjs';
 import {ImportClient} from '../src/import-client.mjs';
 import {openDocument} from '../src/sticknodes/decoder/project.mjs';
+import {parseNodes} from '../src/sticknodes/decoder/decoder.mjs';
+import {renderSVG} from '../src/sticknodes/decoder/renderer.mjs';
 import {gzipSync} from 'node:zlib';
 
-export function syntheticNodes(){
+export function syntheticNodes(kind=0){
  const i=n=>{const b=Buffer.alloc(4);b.writeInt32BE(n);return b;},f=n=>{const b=Buffer.alloc(4);b.writeFloatBE(n);return b;},color=Buffer.from([255,40,90,220]);
- const node=(root)=>Buffer.concat([Buffer.from([root?255:0]),i(root?0:7),Buffer.from([0,0,1,0]),f(0),f(0),f(1),f(root?0:80),f(root?0:80),i(4),i(4),f(root?0:30),color,i(root?1:0)]);
+ const node=(root)=>Buffer.concat([Buffer.from([root?255:kind]),i(root?0:7),Buffer.from([0,0,1,0]),f(0),f(0),f(1),f(root?0:80),f(root?0:80),i(4),i(4),f(root?0:30),color,i(root?1:0)]);
  return Buffer.concat([i(160),f(1),color,node(true),node(false)]);
 }
 const geometry=doc=>buildGeometry(doc,evaluatedFrame(doc,0,0,0));
@@ -55,6 +57,16 @@ test('source shape primitives use shared geometry and preserve transparent circl
  assert.deepEqual(sticknodesDrawables(s)[0].points,[{x:0,y:-10},{x:0,y:10},{x:100,y:0}]);
  s.seg._sticknodes={kind:'circle',use_circle_outline:true,circle_is_hollow:true,outline:[1,2,3]};const ring=sticknodesDrawables(s)[0];assert.equal(ring.seg.segment_kind,'circleClear');assert.equal(ring.length,100);assert.equal(ring.thickness,20);
  const a=sticknodesSpriteAsset({width:40,height:20},{_sticknodesSprite:{ratio:3,pivotX:.25,pivotY:.75}});assert.equal(a.display_height,60);assert.deepEqual(a.anchor_start,{x:10,y:15});
+});
+test('legacy filled circles (type 4) draw as round discs, not five-sided polygons',async()=>{
+ const s={seg:{segment_id:1,primitive_code:3,_sticknodes:{kind:'filled-circle',num_polygon_vertices:5}},obj:{scale:1},points:[],start:{x:0,y:0},end:{x:100,y:0},angle:0,length:100,thickness:20};
+ const [disc,...rest]=sticknodesDrawables(s);assert.equal(rest.length,0);assert.equal(disc.type,'circle');assert.equal(disc.seg.segment_kind,'circleFill');assert.equal(disc.length,120);assert.deepEqual(disc.points,[{x:50,y:0}]);
+ const result=await importStickNodes(syntheticNodes(4),{filename:'old-head.nodes'}),doc=result.document;prepareEditorLoad(doc);
+ const seg=doc.figure_types[0].segments.find(x=>x._sticknodes);assert.deepEqual(seg._sticknodes,{kind:'filled-circle'});
+ const drawn=geometry(doc).drawables.filter(d=>d.seg?._sticknodes?.kind==='filled-circle'||d.seg?.segment_id===seg.segment_id);
+ assert.ok(drawn.length>0);assert.ok(drawn.every(d=>d.type==='circle'),drawn.map(d=>d.type).join());
+ const svg=await (await exportSVG({report:doc})).text();assert.ok(svg.includes('<svg'));assert.ok(!/<polygon/.test(svg));
+ const preview=renderSVG(parseNodes(syntheticNodes(4)));assert.match(preview.svg??preview,/<circle/);assert.ok(!/<polygon/.test(preview.svg??preview));
 });
 test('imported figure SVG and normalization preserve its artwork',async()=>{
  const {document:doc}=await importStickNodes(syntheticNodes(),{filename:'rig.nodes'});const before=await (await exportSVG({report:doc})).text();synchronizeExistingDerived(doc);assert.equal(await (await exportSVG({report:doc})).text(),before);assert.ok(before.includes('<svg'));

@@ -47,6 +47,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 ### Fixed
 
 - Fixed movieclips made while another layer had figures joining their figures to the wrong part (or to itself), which could stop the project from opening with “Figures contain a cyclic join.” Such projects now open with their movieclips repaired.
+- Fixed heads and other parts of older Stick Nodes figures drawing as five-sided polygons after import. Stick Nodes' legacy Filled circle parts now import as round circles, in the editor, in exports and in the import preview.
 - Fixed the 3D Nowdz knife refusing to cut across a pushed-in panel or step.
 - Fixed parts of 3D figures that switch with a named pose, such as a prop's alternate parts, growing or shrinking between eased keys instead of switching.
 - Fixed 3D Nowdz weight painting where erasing a bone's paint didn't stop that spot from moving: the erased area went to the bone below it (erasing a shoulder gave the chest to the upper arm, which the shoulder carries along). Erased weight now goes to bones that stay still, such as the chest.
