@@ -517,6 +517,13 @@ Older versions kept a new model's draft in `localStorage`
   other, even for a part placed off the middle: it uses the selection's side,
   or the side holding more of the part, and says which side it kept.
 
+**Join to middle** (Edit mode, with Mirror on) moves the selected points onto
+the mirror line (world X = 0). `mirrored` shares points on the line between the
+halves and drops faces lying on it, so the halves become one piece; clipping
+then keeps those points on the line. Turning Mirror on for a part that is all
+on one side and touches the line nowhere says how to join it (or that arms and
+legs stay apart).
+
 ### Modifiers
 
 - **Mirror left and right** builds the −X half from the +X half (across the

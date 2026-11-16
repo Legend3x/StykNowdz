@@ -891,6 +891,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         // Mirror mode (Blender's Mirror modifier) where it's needed: while editing.
         el('label', {class: 'modeler-check modeler-mirror-toggle', title: t("modeler.mirrorHint")}, [el('input', {type: 'checkbox', checked: p.mirror, onchange: e => setMirror(p, e.target.checked)}), t("modeler.mirrorX")]),
         p.mirror ? el('label', {class: 'modeler-check', title: t("modeler.clippingHint")}, [el('input', {type: 'checkbox', checked: p.clip !== false, onchange: e => commit(() => { if (e.target.checked) delete p.clip; else p.clip = false; })}), t("modeler.clipping")]) : null,
+        p.mirror ? actions([[t("modeler.joinToMiddle"), joinToMiddle, t("modeler.joinToMiddleHint")]]) : null,
         actions([[t("modeler.extrude"), extrude, 'E'], [t("modeler.inset"), startInset, 'I'], [t("modeler.bevel"), () => startBevel(S.selectMode === 'vert' && !M.edgesFromVerts(activePart().mesh, S.verts).length), 'Ctrl+B'], [t("modeler.loopCut"), startLoopCut, 'Ctrl+R'], [t("modeler.knife"), startKnife, 'K'],
           [t("modeler.subdivide"), subdivide, t("modeler.subdivideHint")], [t("modeler.merge") + ' ▾', e => merge(e?.currentTarget), 'M'], [t("modeler.fill"), fill, 'F'], [t("modeler.gridFill"), gridFillSelected, t("modeler.gridFillHint")], [t("modeler.fillHoles"), fillHolesSelected, t("modeler.fillHolesHint")],
           [t("modeler.smoothVerts"), smoothSelected, t("modeler.smoothVertsHint")], [t("modeler.triangulate"), triangulateSelected, 'Ctrl+T'], [t("modeler.trisToQuads"), trisToQuadsSelected, 'Alt+J'],
@@ -2428,6 +2429,19 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const {plus, minus} = sidesOf(p);
     if (plus && minus) toast(t("modeler.mirrorBothSides"));
     else if (!plus && !minus && p.mesh.verts.length) toast(t("modeler.mirrorAllMiddle"));
+    else if (p.mesh.verts.length && sidesOf(p).plus + sidesOf(p).minus === p.mesh.verts.length) toast(t("modeler.mirrorNotJoined"));
+  }
+  /** Join to middle: the selected points go onto the mirror line (world X = 0), where the
+   * two halves share them, so the halves join there. Clipping then keeps them on it. */
+  function joinToMiddle() {
+    const p = editPart();
+    if (!p || !S.verts.size) { toast(t("modeler.joinToMiddleSelect")); return; }
+    const to = M.objectTransform(p), back = M.objectInverse(p);
+    commit(() => {
+      for (const i of S.verts) { const w = to(p.mesh.verts[i]); w[0] = 0; p.mesh.verts[i] = back(w); }
+      S.cache.delete(p.id);
+    });
+    toast(t("modeler.joinedToMiddle", {count: S.verts.size}));
   }
   /** Symmetrize: copy one side over the other about the middle the mirror uses, keeping
    * the side the selection is on (or the side with more of the part). */
@@ -3003,7 +3017,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
+    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.
