@@ -949,7 +949,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       // Blender's Material preview: only offered once the model has a texture.
       ...(model.textures?.length ? [el('label', {class: 'modeler-check', title: t("modeler.showTexturesHint")}, [el('input', {type: 'checkbox', checked: S.showTextures, onchange: e => { S.showTextures = e.target.checked; refresh(); }}), t("modeler.showTextures")])] : []),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.wire, onchange: e => { S.wire = e.target.checked; refresh(); }}), t("modeler.wireframe")]),
-      el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.xray, onchange: e => { S.xray = e.target.checked; refresh(); }}), t("modeler.xray")]),
+      el('label', {class: 'modeler-check', title: t("modeler.xrayHint")}, [el('input', {type: 'checkbox', checked: S.xray, onchange: e => { S.xray = e.target.checked; refresh(); }}), t("modeler.xray")]),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.showBones, onchange: e => { S.showBones = e.target.checked; refresh(); }}), t("modeler.showBones")]),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.grid, onchange: e => { S.grid = e.target.checked; refresh(); }}), t("modeler.grid")])]));
     blocks.push(section(t("modeler.references"), [el('p', {class: 'modeler-hint', text: t("modeler.referencesHint")}),
@@ -2845,6 +2845,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (S.modal?.kind === 'loopcut' && ['+', '=', '-'].includes(key)) { S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (key === '-' ? -1 : 1))); setStatus(); draw(); }
     else if (S.modal) handled = false;
     else if (ctrl && key === 'z') e.shiftKey ? redo() : undo();
+    // Alt+Z: X-ray, as in Blender (select and see points on the far side too).
+    else if (e.altKey && !ctrl && (key === 'z' || e.code === 'KeyZ')) { S.xray = !S.xray; toast(t(S.xray ? "modeler.xrayOn" : "modeler.xrayOff")); refresh(); }
     else if (ctrl && key === 'y') redo();
     else if (ctrl && key === 'g' && S.mode === 'object') groupIntoFolder();
     else if (key === 'Escape' && S.connect) { S.connect = null; toast(t("modeler.connectCancelled")); draw(); }
