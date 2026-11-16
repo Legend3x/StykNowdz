@@ -476,17 +476,35 @@ Selecting faces is selecting their points, so in Faces mode picking both caps
 of a cylinder picks every point and with them the sides: delete one cap at a
 time (Blender keeps a separate face selection).
 
-### Drafts and starting over
+### Saving progress, drafts and starting over
 
-Leaving 3D Nowdz without **Add to animation** (Close or
-another workspace tab) never asks and never loses work: the model and camera
-are kept as a draft, one for a new model and one per figure being edited, and
-saved in `localStorage` (`stykNowdz.modelDraft`) so they survive a restart.
-Opening the Model tab again resumes the draft in the mode, part and selection
-it was left in (`where` in the draft); a draft with one part comes back with
-that part selected. **File > Start over** asks once
-and clears parts, bones and references as one undoable step. Add to animation
-or Update figure clears the draft.
+An unfinished model is kept **with its project** (`_styk.modelDrafts` in the
+document: `new` for a new model, a figure type id for an edit of a placed
+one), so saving the project saves the modeling in progress and opening the
+project later carries on. The draft holds the model, the camera and where you
+were (mode, part and selection, `where`); the undo history stays in memory for
+the session only (app.mjs `modelHistories`, per document).
+
+- **Autosave**: while 3D Nowdz is open, the draft is updated within about five
+  seconds of a change (checked against the undo stacks) and the project's
+  recovery copy is scheduled, so a crash or closing the app keeps it. The
+  project shows unsaved changes.
+- **File › Save progress** (Ctrl+S) updates the draft and saves the project
+  (Save, or Save as for a project never saved).
+- Leaving without **Add to animation** (Close or another workspace tab) never
+  asks and never loses work. Opening the Model tab again resumes the draft; a
+  draft with one part comes back with that part selected.
+- **Add to animation** or **Update figure** clears the draft; drafts for
+  figures no longer in the project are dropped.
+- **File › Save model file** writes the whole model (parts, bones, weights,
+  references, textures, the 2D face) as a `.nowdz` file
+  (`{"format": "stykNowdz.model", "version": 1, "model"}`), and **Open model
+  file** opens one in place of the current model (asking first; one undo step).
+- **File › Start over** asks once and clears parts, bones and references as one
+  undoable step.
+
+Older versions kept a new model's draft in `localStorage`
+(`stykNowdz.modelDraft`); the next project to open 3D Nowdz picks it up.
 
 ### Mirror mode and Symmetrize
 

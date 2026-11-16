@@ -4607,17 +4607,36 @@ function disconnectSegment() {
 function modelSourceOf(figure) { return figure?._styk?.modelSource ?? null; }
 function canEditModel() { return !builderMode?.active && Boolean(modelSourceOf(editor.figure)) && !isLocked(editor.selectedUid); }
 let modelerOpen = false, modelerApi = null;
-/** Unfinished 3D Nowdz models, kept when the Model tab is left without Add / Update so
- * no work is lost: 'new' for a new model (also kept in localStorage, best effort, so it
- * survives restarting the app), a figure type id for edits of an existing model. */
-const modelDrafts = new Map(), MODEL_DRAFT_KEY = "stykNowdz.modelDraft";
-try { const saved = JSON.parse(localStorage.getItem(MODEL_DRAFT_KEY) || "null"); if (saved?.model) modelDrafts.set("new", saved); } catch { /* none kept */ }
-function keepModelDraft(key, draft) {
-  if (draft) modelDrafts.set(key, draft); else modelDrafts.delete(key);
-  if (key !== "new") return;
-  // Undo history (draft.history) stays in this session: it can be large and isn't worth storing.
-  try { if (draft) localStorage.setItem(MODEL_DRAFT_KEY, JSON.stringify({...draft, history: undefined})); else localStorage.removeItem(MODEL_DRAFT_KEY); }
-  catch { /* too large for storage: kept for this session only */ }
+/** Unfinished 3D Nowdz models are kept with their project (`_styk.modelDrafts`), so
+ * saving the project saves the modeling in progress and opening it carries on:
+ * 'new' for a new model, a figure type id for edits of an existing one. 3D Nowdz
+ * keeps them up to date while open, on Close, and with Save progress (Ctrl+S).
+ * Undo history stays in this session only (per document, in memory). Older
+ * versions kept a new model in localStorage: it is picked up once, by the next
+ * project to open 3D Nowdz. */
+const modelHistories = new WeakMap(), MODEL_DRAFT_KEY = "stykNowdz.modelDraft";
+function modelDraftOf(key, doc = editor.report) {
+  const stored = doc?._styk?.modelDrafts?.[key];
+  if (stored?.model) return {...stored, history: modelHistories.get(doc)?.get(key)};
+  if (key !== "new") return null;
+  try { const saved = JSON.parse(localStorage.getItem(MODEL_DRAFT_KEY) || "null"); return saved?.model ? saved : null; } catch { return null; }
+}
+function keepModelDraft(key, draft, {doc = editor.report, owner = editor} = {}) {
+  if (!doc) return;
+  const styk = doc._styk ??= {}, histories = modelHistories.get(doc) ?? new Map(), had = Boolean(styk.modelDrafts?.[key]);
+  modelHistories.set(doc, histories);
+  if (draft) {
+    styk.modelDrafts = {...styk.modelDrafts, [key]: {model: draft.model, camera: draft.camera, where: draft.where}};
+    if (draft.history) histories.set(key, draft.history);
+  } else {
+    histories.delete(key);
+    if (styk.modelDrafts) { delete styk.modelDrafts[key]; if (!Object.keys(styk.modelDrafts).length) delete styk.modelDrafts; }
+  }
+  // Drafts for models no longer in the project go with them.
+  for (const id of Object.keys(styk.modelDrafts ?? {})) if (id !== "new" && !doc.figure_types?.some((f) => String(f.figure_type_id) === id)) delete styk.modelDrafts[id];
+  if (draft || had) owner.dirty = true;
+  // A new model kept by an older version (outside any project) now belongs to this one.
+  if (key === "new") try { localStorage.removeItem(MODEL_DRAFT_KEY); } catch { /* storage unavailable */ }
 }
 /** The Model tab: 3D Nowdz on the selected 3D model, or a new model. Pressing it again keeps it open. */
 function openModelWorkspace() {
@@ -4642,7 +4661,8 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
   try { modules = await Promise.all([import("./modeler/modeler-ui.mjs"), import("./modeler/export-figure.mjs"), import("./rig-spatial.mjs"), import("./animation-origin.mjs")]); }
   catch (error) { modelerOpen = false; fail(error); return; }
   const [{openModeler}, {modelToFigure, modelDocument, originShift}, {spatialQuaternion, quatRotate}, {animationRotation}] = modules;
-  const typeId = editing ? editor.figure.figure_type_id : null, draftKey = editing ? typeId : "new", draft = modelDrafts.get(draftKey) ?? null;
+  const typeId = editing ? editor.figure.figure_type_id : null, draftKey = editing ? String(typeId) : "new", draft = modelDraftOf(draftKey);
+  const owner = editor, ownerDoc = editor.report;
   state.modeling = true; document.body.dataset.modeling = "";
   // Docked under the band, so the workspace tabs stay in reach.
   const band = document.querySelector(".shell-top"), top = band && !band.hidden ? Math.round(band.getBoundingClientRect().bottom) : 0;
@@ -4650,11 +4670,19 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
     model: editing ? modelSourceOf(editor.figure) : null, editing, top, draft,
     onClose: (unfinished) => {
       modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling;
-      keepModelDraft(draftKey, unfinished);
+      keepModelDraft(draftKey, unfinished, {doc: ownerDoc, owner});
       const painting = paintRequest; paintRequest = null;
       if (painting && unfinished) void startTexturePainting({...painting, draftKey, editing, typeId});
       else if (unfinished) notify(interfaceText("modeler.draftKept"), "modeler.draftKept", {});
       syncShell(); requestRender();
+    },
+    // Save progress (Ctrl+S): the model in progress goes into the project, which is then saved.
+    // Every few seconds after a change it is kept quietly, so closing or a crash keeps it too.
+    onSave: (progress, {quiet = false} = {}) => {
+      if (editor !== owner || editor.report !== ownerDoc) return;
+      keepModelDraft(draftKey, progress, {doc: ownerDoc, owner});
+      if (quiet) { scheduleRecovery(); return; }
+      return Promise.resolve(saveNative()).then((saved) => saved !== false && !editor.dirty, (error) => { fail(error); return false; });
     },
     // Paint texture: 3D Nowdz closes keeping its model, and the texture opens in the Draw tab.
     onPaintTexture: (request) => { paintRequest = request; modelerApi?.requestClose(); },
@@ -4770,8 +4798,7 @@ async function finishTexturePainting(keep) {
         let any = false; for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) { any = true; break; }
         images[layer.key] = any ? await encodeDrawingPNG(pixels, session.width, session.height) : null;
       }
-      const draft = modelDrafts.get(session.draftKey);
-      if (applyPainted(draft?.model, session.target, images)) keepModelDraft(session.draftKey, draft);
+      session.painted = images;
     }
   } catch (error) { fail(error); return; }
   paintSession = null;
@@ -4782,8 +4809,10 @@ async function finishTexturePainting(keep) {
   if (keep) notify(interfaceText(session.target.kind === "texture" ? "modeler.paint.saved" : "modeler.face2d.paintSaved"), session.target.kind === "texture" ? "modeler.paint.saved" : "modeler.face2d.paintSaved", {});
 }
 /** Back to the project the model belongs to, and 3D Nowdz on its kept draft. */
-async function reopenModel({origin, editing, typeId}) {
+async function reopenModel({origin, editing, typeId, draftKey, target, painted}) {
   if (origin && projects.tabs.get(origin) && projects.tabs.activeId !== origin) await projects.activate(origin);
+  // Painting done: into the model kept with the project it came from.
+  if (painted && draftKey !== undefined) { const draft = modelDraftOf(draftKey); if (applyPainted(draft?.model, target, painted)) keepModelDraft(draftKey, draft); }
   if (editing) {
     const placed = editor.frame?.objects.find((o) => o.figure_type_id === typeId);
     if (placed && editor.figure?.figure_type_id !== typeId) editor.select?.(placed.unique_id);

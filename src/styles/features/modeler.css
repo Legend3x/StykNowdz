@@ -326,6 +326,7 @@
     cursor: pointer;
   }
   .modeler-menu-item:hover { background: var(--surface-hover); }
+  .modeler-menu-item kbd { float: inline-end; margin-inline-start: var(--space-4); color: var(--text-3); font: var(--type-small); }
 
   /* The controls card: shown over the viewport when 3D Nowdz opens (until
    * "Don't show this again"), and from the keyboard button in the bar. */

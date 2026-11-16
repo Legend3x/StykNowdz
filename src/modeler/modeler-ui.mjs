@@ -78,7 +78,9 @@ function listenToBlender() {
 /** `draft`: an unfinished model left open last time ({model, camera}), carried on from.
  * onClose(draft) gets the unfinished model when it was closed without Add / Update
  * (null when nothing was changed or it was added), so leaving never loses work. */
-export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose, onPaintTexture = null} = {}) {
+/** What a .nowdz model file says it is. */
+const MODEL_FILE_FORMAT = 'stykNowdz.model';
+export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose, onPaintTexture = null, onSave = null} = {}) {
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
   const S = {facePreview: {}, faceImages: new Map(), faceCanvas: null, faceFeature: undefined, mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, second: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
@@ -193,6 +195,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       quiet(t("modeler.uv.editor"), () => toggleUVEditor(), t("modeler.uv.editorHint")),
       el('span', {class: 'modeler-spacer'}),
       quiet(t("modeler.file"), e => popover(e.currentTarget, [
+        onSave ? el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.saveProgressHint"), onclick: () => { closePopover(); saveProgress(); }}, [t("modeler.saveProgress"), el('kbd', {text: 'Ctrl S'})]) : null,
+        el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.saveModelFileHint"), onclick: () => { closePopover(); saveModelFile(); }}, t("modeler.saveModelFile")),
+        el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.openModelFileHint"), onclick: () => { closePopover(); openModelFile(); }}, t("modeler.openModelFile")),
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); importObjFile(); }}, t("modeler.importObj")),
         editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t("modeler.startOver")),
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportObjFile(); }}, t("modeler.exportObj")),
@@ -2475,6 +2480,37 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const name = (model.name || 'model').replace(/[^\w-]+/g, '_');
     try { download(`${name}.glb`, exportGlb(model, {name: model.name || name}), 'model/gltf-binary'); } catch (error) { toast(error.message); }
   }
+  /** File › Save model file: the whole model (parts, bones, weights, textures, face) as a
+   * .nowdz file to keep, back up or share, and open again with File › Open model file. */
+  async function saveModelFile() {
+    if (!hasWork()) { toast(t("modeler.nothingToSave")); return; }
+    const name = (model.name || 'model').replace(/[^\w-]+/g, '_'), text = JSON.stringify({format: MODEL_FILE_FORMAT, version: 1, model});
+    try {
+      if (desktop()?.saveFile) { const saved = await desktop().saveFile({data: text, encoding: 'utf8', defaultPath: `${name}.nowdz`, filters: [{name: t("modeler.modelFileType"), extensions: ['nowdz']}]}); if (saved?.saved) toast(t("modeler.modelFileSaved")); }
+      else download(`${name}.nowdz`, text, 'application/json');
+    } catch (error) { toast(error.message); }
+  }
+  function openModelFile() {
+    const input = el('input', {type: 'file', accept: '.nowdz,application/json'});
+    input.addEventListener('change', async () => {
+      const file = input.files[0]; if (!file) return;
+      let loaded;
+      try {
+        const data = JSON.parse(await file.text());
+        if (data?.format !== MODEL_FILE_FORMAT || !data.model) throw new Error(t("modeler.notAModelFile"));
+        loaded = readModel(data.model);
+      } catch (error) { toast(error instanceof SyntaxError ? t("modeler.notAModelFile") : error.message); return; }
+      const open = () => {
+        commit(() => {
+          model = loaded; S.parts = new Set(); S.active = model.parts[0]?.id ?? null; S.verts = new Set(); S.bones = new Set(); S.mode = 'object';
+          S.faceCanvas = null; S.cache.clear(); syncRefs();
+        });
+        refresh(); frameSelected(); toast(t("modeler.modelFileOpened", {name: file.name}));
+      };
+      if (hasWork()) askConfirm(t("modeler.replaceWithFile"), open, {yesLabel: t("modeler.openModelFile"), noLabel: t("modeler.keepModeling")}); else open();
+    });
+    input.click();
+  }
   /** glTF (.glb, or .gltf with its .bin): parts, colours, and the skeleton with its
    * weights. Imported bones join the model's; points keep the file's weights. */
   async function importGltfFiles(files) {
@@ -2844,6 +2880,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (S.modal && !ctrl && ['g', 'r', 's'].includes(key)) switchTransform({g: 'grab', r: 'rotate', s: 'scale'}[key]);
     else if (S.modal?.kind === 'loopcut' && ['+', '=', '-'].includes(key)) { S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (key === '-' ? -1 : 1))); setStatus(); draw(); }
     else if (S.modal) handled = false;
+    else if (ctrl && key === 's' && !e.shiftKey && !e.altKey) saveProgress();
     else if (ctrl && key === 'z') e.shiftKey ? redo() : undo();
     // Alt+Z: X-ray, as in Blender (select and see points on the far side too).
     else if (e.altKey && !ctrl && (key === 'z' || e.code === 'KeyZ')) { S.xray = !S.xray; toast(t(S.xray ? "modeler.xrayOn" : "modeler.xrayOff")); refresh(); }
@@ -2901,16 +2938,36 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   window.addEventListener('resize', draw, {signal});
 
   // ---------- lifecycle ----------
+  const hasWork = () => model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0;
+  /** The model as it stands, to come back to: where you were (mode, part and selection), so
+   * coming back carries straight on, and (in memory only, never stored) the undo history. */
+  function draftNow({history = true} = {}) {
+    const where = {mode: S.mode, selectMode: S.selectMode, active: S.active, parts: [...S.parts], verts: [...S.verts], uv: uvEditor.open};
+    return {model: structuredClone(model), camera: structuredClone(S.camera), where, ...(history ? {history: {undo: S.undo, redo: S.redo, images: [...imagePool]}} : {})};
+  }
+  // ---------- saving progress ----------
+  // The unfinished model is kept with the project: every few seconds after a change
+  // (so a crash or closing the app keeps it), on Close, and with File › Save progress
+  // (Ctrl+S), which also saves the project. Model files (.nowdz) hold it on their own.
+  const progressMark = () => `${S.undo.length}/${S.redo.length}/${imageKey(S.undo.at(-1) ?? '')}`;
+  let savedMark = progressMark();
+  const autosave = setInterval(() => {
+    if (finished || S.modal || S.drag) return;
+    const mark = progressMark(); if (mark === savedMark) return;
+    savedMark = mark; if (hasWork()) onSave?.(draftNow({history: false}), {quiet: true});
+  }, 5000);
+  function saveProgress() {
+    if (S.modal) cancelModal();
+    if (!hasWork()) { toast(t("modeler.nothingToSave")); return; }
+    savedMark = progressMark();
+    Promise.resolve(onSave?.(draftNow())).then(saved => { if (saved && !finished) toast(t("modeler.progressSaved")); });
+  }
   function close() {
     if (blender.open?.owner === close) blender.open = null;
+    clearInterval(autosave);
     listeners.abort(); cancelAnimationFrame(frameRequest); clearTimeout(flashTimer); root.remove();
-    const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model) || S.keepDraft) && (model.parts.length > 0 || model.references.length > 0 || model.bones.length > 0);
-    // The draft remembers where you were (mode, part and selection), so coming back
-    // from another tab carries straight on instead of dropping to Object mode.
-    const where = {mode: S.mode, selectMode: S.selectMode, active: S.active, parts: [...S.parts], verts: [...S.verts], uv: uvEditor.open};
-    // Undo history rides along in memory only (the app never stores it), so a trip to paint a texture keeps it.
-    const history = {undo: S.undo, redo: S.redo, images: [...imagePool]};
-    onClose?.(changed ? {model: structuredClone(model), camera: structuredClone(S.camera), where, history} : null);
+    const changed = !finished && (S.undo.length > 0 || Boolean(draft?.model) || S.keepDraft) && hasWork();
+    onClose?.(changed ? draftNow() : null);
   }
   function done() {
     if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t("modeler.addAPartFirst")); return; }

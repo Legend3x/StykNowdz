@@ -698,7 +698,20 @@ export default Object.freeze({
   "modeler.finishBuildFirst": "Finish building the figure (Done) before opening Model.",
   "modeler.startOver": "Start over",
   "modeler.startOverAsk": "Clear this model and start again? Ctrl+Z brings it back.",
-  "modeler.draftKept": "Your 3D Nowdz model is kept. Open the Model tab to carry on.",
+  "modeler.draftKept": "Your 3D Nowdz model is kept with this project. Save the project to keep it for next time, then open the Model tab to carry on.",
   "modeler.draftResumed": "Carrying on with your unfinished model. File › Start over clears it.",
-  "modeler.keepModeling": "Keep modeling"
+  "modeler.keepModeling": "Keep modeling",
+  "modeler.saveProgress": "Save progress",
+  "modeler.saveProgressHint": "Keep the model in progress with this project and save the project, so you can carry on another time",
+  "modeler.progressSaved": "Progress saved. Open this project and the Model tab to carry on.",
+  "modeler.nothingToSave": "Nothing to save yet",
+  "modeler.saveModelFile": "Save model file…",
+  "modeler.saveModelFileHint": "Save the whole model (parts, bones, textures and face) as a .nowdz file to back up, share or open in another project",
+  "modeler.openModelFile": "Open model file…",
+  "modeler.openModelFileHint": "Open a .nowdz model file saved from 3D Nowdz",
+  "modeler.modelFileType": "3D Nowdz model",
+  "modeler.modelFileSaved": "Model file saved",
+  "modeler.modelFileOpened": "Opened {name}",
+  "modeler.notAModelFile": "That isn't a 3D Nowdz model file",
+  "modeler.replaceWithFile": "Open the file in place of this model? Undo brings your model back."
 });
