@@ -5,6 +5,7 @@ import {openDocument} from './decoder/project.mjs';
 import {unpackZip,isZip} from './decoder/archive.mjs';
 import {toBase64} from './decoder/decoder.mjs';
 import {layoutFigure} from './decoder/renderer.mjs';
+import {filterEffects,cameraWobble,upgradeStickNodesFilters} from './filters.mjs';
 import {encodePNGPortable} from './decoder/png-browser.mjs';
 import {movieclipFigure} from '../movieclips.mjs';
 import {createImageFigure,createImageBackground} from '../media-authoring.mjs';
@@ -111,10 +112,11 @@ export async function importStickNodes(input,{filename='project.stknds',signal,o
      if(['Tl','Tr','Bl','Br'].some(c=>instance['distort'+c+'X']||instance['distort'+c+'Y']))warn('SPRITE_DISTORTION','Sprite corner distortion is retained in import metadata; the imported sprite uses its affine transform.');
     }
     object.object_slot=objects.length;object.field28=Math.round((1-clamp(instance.style?.opacity??1,0,1))*255);object._styk={...(instance.isLocked?{locked:true}:{}),sticknodes:{style:compact(instance.style)}};
-    if(instance.style?.blur||instance.style?.glow||instance.style?.motionBlur||instance.style?.pixelation>1||instance.style?.dropShadowAlpha)warn('EFFECTS','Some Stick Nodes GPU effects differ; source effect settings remain recorded in import metadata.');
+    if(Object.keys(filterEffects(instance.style)).length)warn('FILTERS','Stick Nodes filters become editable effects; sizes and blending can differ slightly.');
     usedTypes.add(object.figure_type_id);sourceSlots.set(sourceSlot,objects.length);objects.push(object);
    }
-   for(const join of frame.joins){const child=sourceSlots.get(join.child),parent=sourceSlots.get(join.parentIndex);if(child==null||parent==null)continue;const pi=frame.instances[join.parentIndex],handle=pi.type===0?figureInfo[pi.assetIndex].handles.get(join.nodeId):0;
+   for(const join of frame.joins){const child=sourceSlots.get(join.child),parent=sourceSlots.get(join.parentIndex);if(child==null||parent==null)continue;
+    if(frame.instances[join.child]?.useParentFilters){const inherited=compact(frame.instances[join.parentIndex]?.style);objects[child]._styk.sticknodes.filterStyle=inherited;if(Object.keys(filterEffects(inherited)).length)warn('FILTERS','Stick Nodes filters become editable effects; sizes and blending can differ slightly.');}const pi=frame.instances[join.parentIndex],handle=pi.type===0?figureInfo[pi.assetIndex].handles.get(join.nodeId):0;
     if(handle!=null){const p=handle===0?{x:pi.x,y:1080-pi.y}:layoutFigure(doc.posedFigure(pi)).get(join.nodeId)?.end,childObject=objects[child];
      const x=handle===0?p.x:pi.x+p.x,y=handle===0?p.y:1080-pi.y+p.y;
      if(Math.hypot(childObject.root_x-x,childObject.root_y-y)<.1)childObject.join={target_object_slot:parent,target_handle_id:handle};
@@ -127,7 +129,8 @@ export async function importStickNodes(input,{filename='project.stknds',signal,o
    out._styk={easing:{interpolation:tweens?(frame.settings?.easeIn&&frame.settings?.easeOut?'bezier':frame.settings?.easeIn?'ease-in':frame.settings?.easeOut?'ease-out':'linear'):'constant'}};
    out.background_id=background(frame);
    if(frame.camera){const c=frame.camera,z=c.zoom>0?c.zoom:1;out.camera={is_default:false,x:c.x+960/z-960,y:540-c.y-540/z,scale:1/z,angle_rad:-(c.rotation??0)*rad};
-    if(c.wobbleXY||c.wobbleRotation||c.wobbleScale||c.bindings?.length)warn('CAMERA_DYNAMICS','Camera position, zoom and rotation are imported; procedural wobble and tracking bindings are retained as metadata.');}
+    if(cameraWobble(c))warn('CAMERA_WOBBLE','Stick Nodes camera wobble becomes a Handheld camera move you can adjust; its sway can differ slightly.');
+    if(c.bindings?.length||c.secondaryBindings?.length)warn('CAMERA_TRACKING','Camera tracking bindings are kept with the project, but the camera does not follow them.');}
 
    const s=frame.settings;if(s&&!Array.isArray(s)){out._sticknodesFrame={settings:compact(s),camera:compact(frame.camera)};if(s.repeating)warn('REPEATS','Source repeat-loop settings are retained; native repeat-loop control flow is not expanded during import.');}
    const hold=Math.min(n,holdTicks(frame,settings));
@@ -149,6 +152,7 @@ export async function importStickNodes(input,{filename='project.stknds',signal,o
  else{const converted=await framesFor(doc.frames,doc.header.settings,durations(doc.frames,doc.header.settings));document=nativeDocument(doc.name,doc.header.settings.fps,definitions,converted.frames);kind='styk';}
  document.backgrounds=backgrounds;
  document._styk.sticknodes={version:1,format:doc.format,profile:doc.profile,filename,sourceSha256:doc.source.sha256,sourceSettings:compact(doc.header.settings),sounds:doc.sounds.map(s=>s.name),...(layoutGuesses.size?{layoutGuesses:[...layoutGuesses.values()]}:{}),warnings:[...warnings].map(([code,message])=>({code,message}))};
+ upgradeStickNodesFilters(document);
  if(kind==='stkz'||kind==='stykmov')document.figure_types[0]._styk.sticknodesImport=document._styk.sticknodes;
  check();return {ok:true,kind,filename,document,warnings:document._styk.sticknodes.warnings,timings:{decode_ms:performance.now()-started,total_ms:performance.now()-started,document_bytes:doc.payload.length*2}};
 }

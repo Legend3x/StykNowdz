@@ -6,8 +6,11 @@ export default Object.freeze({
   "importNotes.textGlyphs": "Unavailable font glyphs use question-mark placeholders; the original text is preserved in asset metadata.",
   "importNotes.textFont": "Text remains editable with bundled Noto Sans outlines; the original Stick Nodes font metrics may differ.",
   "importNotes.spriteDistortion": "Sprite corner distortion is retained in import metadata; the imported sprite uses its affine transform.",
+  "importNotes.filters": "Stick Nodes filters become effects you can edit; sizes and blending can look slightly different.",
   "importNotes.effects": "Some Stick Nodes GPU effects differ; source effect settings remain recorded in import metadata.",
   "importNotes.joinOffsets": "Offset attachments keep their stored poses. Reattach them with StykNowdz joints to author new attachment motion.",
+  "importNotes.cameraWobble": "Stick Nodes camera wobble becomes a Handheld camera move you can adjust; it may sway a little differently.",
+  "importNotes.cameraTracking": "Camera tracking is kept with the project, but the camera does not follow the tracked figures.",
   "importNotes.cameraDynamics": "Camera position, zoom and rotation are imported; procedural wobble and tracking bindings are retained as metadata.",
   "importNotes.repeats": "Source repeat-loop settings are retained; native repeat-loop control flow is not expanded during import.",
   "importNotes.externalAudio": {

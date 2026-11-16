@@ -16,6 +16,7 @@ import {nativeTimeline,timeline} from './pivot/geometry.mjs';
 import {validateLayerSheet,legacySheetReport} from './layer-sheet.mjs';
 import {validateAudioState, validateAudioAssetSteps} from './audio-model.mjs';
 import {validateDrawings} from './drawing-model.mjs';
+import {upgradeStickNodesFilters} from './sticknodes/filters.mjs';
 
 const own = (value,key) => Object.prototype.hasOwnProperty.call(value,key);
 export const yieldLoadTask = globalThis.scheduler?.yield
@@ -30,7 +31,8 @@ export const yieldLoadTask = globalThis.scheduler?.yield
  * definition arrays are never cloned; no current-editor field is changed here. */
 export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}={}) {
   const report=document?.document ?? document?.report ?? document;
-  if (!movieclipVisited) {validateMovieclipGraph(report); movieclipVisited = new Set();}
+  // Stick Nodes imports saved before filters became effects gain them once, movieclips included.
+  if (!movieclipVisited) {validateMovieclipGraph(report); upgradeStickNodesFilters(report); movieclipVisited = new Set();}
   movieclipVisited.add(report);
   yield* expandPoseSequencesSteps(report);
   // Pivot permits a zero-key animation. Keep one private editable working pose;

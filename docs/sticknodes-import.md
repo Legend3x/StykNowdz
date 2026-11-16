@@ -59,15 +59,16 @@ Import notes explicitly identify remaining differences:
 
 - Smart stretch, floaty motion, locks/connectors and other native solvers retain
   their stored poses; their procedural dynamics are not recreated.
-- Blur, glow, motion blur, pixelation and other effects can differ. Source effect
-  settings are recorded for future support.
+- Filters become editable effects (see Filters below). Their sizes and blending
+  are close to Stick Nodes' rather than pixel-exact.
 - Sprite corner distortion is retained as metadata; rendering uses the affine
   sprite transform, including separate X/Y scale, flips and pivot.
 - Text is editable using bundled Noto Sans outlines. Font metrics may differ;
   missing glyphs use `?`, with original text retained in metadata.
 - Audio names are preserved as external references. Audio files are not supplied
   by the project container and must be added separately.
-- Camera wobble/tracking and repeat-loop control flow are not simulated.
+- Camera wobble becomes a Handheld camera move (see Filters below). Camera
+  tracking bindings and repeat-loop control flow are retained but not simulated.
 - Attachments with matching joint positions become native joins. Offset joins
   retain stored poses and source join metadata, with a note to reattach them for
   new authored attachment motion.
@@ -78,6 +79,38 @@ The converted document carries source profile, filename, SHA-256, project
 settings and warnings under `_styk.sticknodes`. Inserted standalone assets carry
 the same provenance under `_styk.sticknodesImport`. Keep the original source
 file when exact native behavior or future reconversion matters.
+
+## Filters and camera wobble
+
+`src/sticknodes/filters.mjs` turns the filters each instance (figure, movieclip or
+sprite) records per pose into its figure effect stack, in this order:
+
+| Stick Nodes filter | Effect | Mapping |
+| --- | --- | --- |
+| Saturation, Hue shift, Invert | Color grading | Saturation as is; Hue shift is a fraction of a turn, wrapped to −180…180°; Invert on is 100% |
+| Tint colour and amount | Tint | Mix is the amount |
+| Pixelation | Pixelate | Cell size; 0 and 1 are off (older files store 0) |
+| Blur, Motion blur and angle | Blur | Radius is 16 px per unit of blur; Motion blur is Directional along the angle unless omnidirectional |
+| Outline thickness, colour, alpha | Outline | Outside, width in px |
+| Glow amount, colour, intensity | Glow | Outer, 24 px radius per unit of glow |
+| Drop shadow alpha, colour, distance, angle, blur | Shadow | The angle points at the light (135° casts down and right); 8 px softness per unit of blur |
+
+Opacity keeps its existing per-object transparency. A child that uses its parent's
+filters takes the parent's settings. All poses of one instance carry the same effects
+with stable `sn-<type>` IDs, so they tween between poses; a pose without a filter gets
+that effect at zero strength with the colour of the nearest pose that uses it, so fades
+never shift colour. The user's own effects on the instance stay after the converted ones.
+
+Camera wobble on main-timeline frames becomes one Handheld camera move per run of frames
+with the same wobble (`sticknodes-wobble-N`): XY intensity moves the camera in pixels,
+rotation intensity rolls it in degrees, and scale wobble (which stores no intensity of its
+own) zooms by the XY intensity / 250. Speed is halved into Hz, so Stick Nodes' default of
+3 sways at 1.5 Hz. Handheld's smooth noise is used instead of Wobble's sine, which falls
+on its zero crossings at every frame of low-frame-rate projects and would stand still.
+
+Conversion happens on import and marks `_styk.sticknodes.filters`. Projects imported and
+saved before it existed are converted once when opened (`editor-load.mjs`); effects and
+camera moves edited or removed afterwards stay as the user left them.
 
 ## Authoring Stick Nodes shapes
 

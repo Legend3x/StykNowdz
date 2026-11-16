@@ -7,8 +7,11 @@ const staticKeys = Object.freeze({
   "TEXT_FONT": "importNotes.textFont",
   "SPRITE_DISTORTION": "importNotes.spriteDistortion",
   "EFFECTS": "importNotes.effects",
+  "FILTERS": "importNotes.filters",
   "JOIN_OFFSETS": "importNotes.joinOffsets",
   "CAMERA_DYNAMICS": "importNotes.cameraDynamics",
+  "CAMERA_WOBBLE": "importNotes.cameraWobble",
+  "CAMERA_TRACKING": "importNotes.cameraTracking",
   "REPEATS": "importNotes.repeats"
 });
 export function importWarningMessage(warning, report) {
