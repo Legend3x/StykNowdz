@@ -3,6 +3,7 @@ import {restoreMessageError, messageError} from './localized-error.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 import {assetURL} from './image-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
+import {withMeshTextureImages} from './spatial-mesh.mjs';
 /** One serial worker per image owner. Originals stay in the document; Map values
  * are disposable CanvasImageSources with original logical dimensions. */
 export class PreviewImages extends Map {
@@ -33,7 +34,8 @@ export class PreviewImages extends Map {
   prepare(items, options = {}, {retain = false} = {}) {
     // v2 drawing cels render from their tile store through resources.drawing;
     // the 1×1 carrier PNG is never a decode target.
-    const images = items.filter(item => item.type === 'image' && item.asset && drawingMetadata(item.fig)?.version !== 2);
+    // Textured 3D meshes add their images as whole pictures.
+    const images = withMeshTextureImages(items).filter(item => item.type === 'image' && item.asset && drawingMetadata(item.fig)?.version !== 2);
     // Lazy background consumers wait for a particular URL. Keep those requests
     // in the coalesced batch until their pixels arrive, even when the viewport
     // replaces an unrelated queued preparation.

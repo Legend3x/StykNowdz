@@ -19,6 +19,7 @@ whatever the density of its surface.
 | `views`, `viewVertices`, `viewPoints` | Optional four- or eight-view targets for single-bone vertices, with the semantics of view-corrected skin. |
 | `groups` | Optional named, ordered triangle ranges, such as "Mask" or "Left boot". |
 | `normals` | Optional bind-space XYZ shading normal per vertex for toon shadows; all zero = the smooth normal of its faces. Each is turned by its vertex's (blended) bone rotation and the figure's rotation or reflection, and replaces the smooth normal in the lit/shadow test. |
+| `textures`, `uvs`, `textureIndex` | Optional, together (3D Nowdz textures): up to 16 images (`{src, width, height}`, a PNG, JPEG or WebP data URL up to 4096 px a side), each triangle corner's UV (two numbers per index, v up, repeating outside 0..1) and each triangle's image (-1 keeps its colour). |
 
 Validation bounds vertices (200,000), triangles (400,000), palette size and
 coordinates, requires every binding to name an articulated spatial bone and
@@ -36,7 +37,14 @@ stretched limb twisted between two bones keeps its thickness (no linear-blend
 blend around the bone heading. Vertices then take
 the figure rotation, scale, reflection and optional perspective. Faces are
 culled by the reference parity with the native edge-on tolerance and clipped
-against the perspective near plane. Positions and depth are typed arrays with
+against the perspective near plane. A textured mesh's evaluation also gives
+each drawn triangle its corner UVs and image, blended along toon shadow cuts and
+near-plane clips from the source triangle, and each point its perspective
+divisor, so the compositor (surface-raster.mjs) samples images with perspective.
+Textured meshes are drawn by the Canvas compositor in every renderer; image
+loaders decode their images as whole pictures (`withMeshTextureImages`).
+Attached movieclip meshes don't carry textures yet and show colours.
+Positions and depth are typed arrays with
 native Float32 rounding. An unchanged pose, including colours, returns the
 previous evaluation. Translation alone re-evaluates positions, but the artwork
 signature is root-relative, so rendered artwork is reused.

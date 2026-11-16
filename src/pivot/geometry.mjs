@@ -1300,7 +1300,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
     const s=items[itemIndex];
     if(paint&&depthSurface(s)){
       let end=itemIndex+1;while(end<items.length&&depthSurface(items[end]))end++;
-      paintDepthSurfaces(ctx,items.slice(itemIndex,end));itemIndex=end-1;forget();continue;
+      paintDepthSurfaces(ctx,items.slice(itemIndex,end),resources);itemIndex=end-1;forget();continue;
     }
     // Outline and brush-only passes have nothing to paint for a solid mesh.
     if(s.type==='mesh')continue;

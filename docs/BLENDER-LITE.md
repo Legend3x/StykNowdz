@@ -523,7 +523,7 @@ stored downscaled (1024 px JPEG) with the model.
 
 ### Textures and UVs
 
-(src/modeler/uv.mjs; in progress: the viewport, files, stage, UV tools and painting follow.)
+(src/modeler/uv.mjs; UV tools and painting in the Draw tab are still to come.)
 
 - A face may carry `uv`, one `[u, v]` per corner in the order of `v` (Blender's
   convention: 0..1 across the image, v up), and `t`, the id of one of
@@ -565,6 +565,11 @@ stored downscaled (1024 px JPEG) with the model.
   (Texture Paint) or never saved is sent from its current pixels as PNG and
   replaces that texture's picture; an image Blender added becomes a new texture.
   UV and texture changes count as edits; a repaint alone leaves the mesh as it is.
+- Add to animation stores the used images, each triangle's corner UVs and image
+  in the figure mesh (docs/SPATIAL-MESHES.md). On the stage, in playback and in
+  exports textured faces show their images under the toon shading; an image that
+  hasn't loaded yet shows the faces' colours meanwhile. A textured model inside a
+  movieclip shows its colours for now.
 
 ## Data integrity
 

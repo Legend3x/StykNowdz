@@ -5,6 +5,7 @@
  * in depth), and the evaluated mesh skinned to those bones. The model itself
  * rides along in `_styk.modelSource` so the figure can be reopened. */
 import {triangulate} from './mesh.mjs';
+import {textured} from './uv.mjs';
 import {scaling, transformPoint} from './matrix.mjs';
 import {assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings} from './toon.mjs';
@@ -108,6 +109,13 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   }
   // The mesh: every part's triangles, in part order, skinned to the bones.
   const positions = [], meshBones = [], weights = [], indices = [], materials = [], groups = [], normals = [];
+  // Textures (docs/BLENDER-LITE.md, "Textures and UVs"): the images used, each triangle's corner
+  // UVs and which image it shows (-1: its colour). Stored only when some face is textured.
+  const uvs = [], textureIndex = [], meshTextures = [], textureSlot = new Map();
+  const slotOf = id => {
+    if (!textureSlot.has(id)) { const tex = model.textures?.find(t => t.id === id); textureSlot.set(id, tex ? meshTextures.push({src: tex.src, width: tex.width, height: tex.height}) - 1 : -1); }
+    return textureSlot.get(id);
+  };
   let customNormals = false;
   const used = new Map(), colors = [];
   // One stage colour per palette colour used, and per (colour, darkening) for coloured outlines.
@@ -128,7 +136,13 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     // A swap choice's part rides its choice bone whole.
     if (direct) for (let v = 0; v < surface.verts.length; v++) { meshBones.push(direct, 0, 0, 0); weights.push(1, 0, 0, 0); }
     else for (let k = 0; k < skin.bones.length; k++) { const id = skin.bones[k]; meshBones.push(id ? boneSegment.get(id).segment_id : 0); weights.push(skin.weights[k]); }
-    for (const [a, b, c, fi] of triangulate(surface)) { indices.push(base + a, base + c, base + b); materials.push(color(surface.faces[fi].c, surface.faces[fi].ink)); }
+    for (const [a, b, c, fi] of triangulate(surface)) {
+      const face = surface.faces[fi], slot = textured(face) ? slotOf(face.t) : -1;
+      indices.push(base + a, base + c, base + b); materials.push(color(face.c, face.ink));
+      textureIndex.push(slot);
+      // Corners in the reversed order the triangle is stored in.
+      for (const v of [a, c, b]) { const uv = slot >= 0 ? face.uv[face.v.indexOf(v)] : [0, 0]; uvs.push(Math.fround(uv[0]), Math.fround(uv[1])); }
+    }
     const count = indices.length / 3 - start;
     if (count) { if (noShadow) flat.push(groups.length); groups.push({name: String(name).slice(0, 256), start, count}); }
   };
@@ -148,7 +162,8 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
   const figure = {figure_type_id: figureTypeId, name: String(model.name || '3D model').slice(0, 250), segments, segment_count: segments.length, polyfills: [], image_assets: [], text_assets: [],
     _styk: {colorMode: 'segments', spatialMesh: {positions, bones: meshBones, weights, indices, colors, materials, basis: [0, surfaceX.segment_id, surfaceY.segment_id], groups,
       ...(toon.shadows ? {toon: {light: [...toonLight(toon.turn, toon.height)], threshold: toonThreshold(toon.size), strength: toon.strength, flat}} : {}),
-      ...(toon.shadows && customNormals ? {normals} : {})}, modelSource: source}};
+      ...(toon.shadows && customNormals ? {normals} : {}),
+      ...(meshTextures.length ? {textures: meshTextures, uvs, textureIndex} : {})}, modelSource: source}};
   return {figure, hiddenChoices, stats: {vertices: positions.length / 3, triangles: indices.length / 3, bones: bones.length, parts: parts.length}};
 }
 

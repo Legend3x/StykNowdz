@@ -1,6 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {decodePreview, fitImage, imageInfo, imageBlob} from './preview-image.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
+import {meshTextureUrls, withMeshTextureImages} from './spatial-mesh.mjs';
 
 const tileDrawing=item=>item.type==='image'&&drawingMetadata(item.fig)?.version===2;
 
@@ -171,10 +172,10 @@ export class ImageResources {
     return source;
   }
   imageKey(items) {
-    return [...new Set(items.filter(item => item.type === 'image').map(item => {
+    return [...new Set([...items.filter(item => item.type === 'image').map(item => {
       const d = drawingMetadata(item.fig);
       return d?.version === 2 ? `drawing:${d.celId}:${d.revision}` : this.url(item.asset);
-    }))].map(url => {
+    }), ...items.flatMap(meshTextureUrls)])].map(url => {
       if (url.startsWith('drawing:')) return url;
       const image = this.images.get(url), source = image && bitmapSourceRect(image);
       return image ? `${image.width}x${image.height}@${source.x},${source.y},${source.width}x${source.height}` : '0x0';
@@ -213,7 +214,11 @@ export class ImageResources {
     }
     return createImageBitmap(blob);
   }
-  async preload(items, {scale = 1, maxDimension = 4096, visible, plan,viewFor} = {}) {
+  async preload(items, options = {}) {
+    // Textured 3D meshes: their images load as whole pictures (spatial-mesh.mjs).
+    return this.preloadImages(withMeshTextureImages(items), options);
+  }
+  async preloadImages(items, {scale = 1, maxDimension = 4096, visible, plan,viewFor} = {}) {
     if (this.disposed)
       throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {});
     const view = plan ? {matrix: plan.matrix, width: plan.width, height: plan.height}

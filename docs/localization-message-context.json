@@ -18504,15 +18504,15 @@
   },
   "errors.imageResources.playbackAssetsWereInvalidated": {
     "locations": [
-      "src/image-resources.mjs:151",
-      "src/image-resources.mjs:218",
-      "src/image-resources.mjs:374"
+      "src/image-resources.mjs:152",
+      "src/image-resources.mjs:223",
+      "src/image-resources.mjs:379"
     ],
     "context": "if (this.disposed) throw messageError(new DOMException('', \"AbortError\"), \"errors.imageResources.playbackAssetsWereInvalidated\", {});"
   },
   "errors.imageResources.thisFrameNeedsMoreImageMemoryThanThe": {
     "locations": [
-      "src/image-resources.mjs:155"
+      "src/image-resources.mjs:156"
     ],
     "context": "const error = messageError(new Error(''), \"errors.imageResources.thisFrameNeedsMoreImageMemoryThanThe\", {});"
   },
@@ -20493,7 +20493,7 @@
   "errors.playbackPatch.playbackFrameUpdateTargetsAreInvalid": {
     "locations": [
       "src/playback-patch.mjs:37",
-      "src/playback-worker.mjs:625"
+      "src/playback-worker.mjs:627"
     ],
     "context": "throw messageError(new Error(''), \"errors.playbackPatch.playbackFrameUpdateTargetsAreInvalid\", {});"
   },
@@ -20592,105 +20592,105 @@
   },
   "errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget": {
     "locations": [
-      "src/playback-worker.mjs:194",
-      "src/playback-worker.mjs:430"
+      "src/playback-worker.mjs:195",
+      "src/playback-worker.mjs:431"
     ],
     "context": "const error = messageError(new Error(''), \"errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget\", {});"
   },
   "errors.playbackWorker.invalidNativeSnapshotChunk": {
     "locations": [
-      "src/playback-worker.mjs:652"
+      "src/playback-worker.mjs:654"
     ],
     "context": "!Number.isSafeInteger(position) || position<0) throw messageError(new Error(''), \"errors.playbackWorker.invalidNativeSnapshotChunk\", {});"
   },
   "errors.playbackWorker.invalidNativeSnapshotExtent": {
     "locations": [
-      "src/playback-worker.mjs:656"
+      "src/playback-worker.mjs:658"
     ],
     "context": "throw messageError(new Error(''), \"errors.playbackWorker.invalidNativeSnapshotExtent\", {});"
   },
   "errors.playbackWorker.nativeFramesRequireAPendingSnapshot": {
     "locations": [
-      "src/playback-worker.mjs:649"
+      "src/playback-worker.mjs:651"
     ],
     "context": "if(incoming?.revision !== message.revision || incoming.completing) throw messageError(new Error(''), \"errors.playbackWorker.nativeFramesRequireAPendingSnapshot\""
   },
   "errors.playbackWorker.nativeSnapshotChunksArrivedOutOfOrder": {
     "locations": [
-      "src/playback-worker.mjs:661"
+      "src/playback-worker.mjs:663"
     ],
     "context": "throw messageError(new Error(''), \"errors.playbackWorker.nativeSnapshotChunksArrivedOutOfOrder\", {});"
   },
   "errors.playbackWorker.playbackCameraModeMustBeABoolean": {
     "locations": [
-      "src/playback-worker.mjs:155",
-      "src/playback-worker.mjs:404"
+      "src/playback-worker.mjs:156",
+      "src/playback-worker.mjs:405"
     ],
     "context": "if (typeof cameraEnabled !== 'boolean') throw messageError(new TypeError(''), \"errors.playbackWorker.playbackCameraModeMustBeABoolean\", {});"
   },
   "errors.playbackWorker.playbackFrameChunksArrivedBeforeTheirHeader": {
     "locations": [
-      "src/playback-worker.mjs:615"
+      "src/playback-worker.mjs:617"
     ],
     "context": "if (incomingFrames?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackFrameChunksArrivedBeforeTheirHeader\", {});"
   },
   "errors.playbackWorker.playbackFrameUpdatesRequireACompleteDocumentSnapshot": {
     "locations": [
-      "src/playback-worker.mjs:612"
+      "src/playback-worker.mjs:614"
     ],
     "context": "if (current?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackFrameUpdatesRequireACompleteDocumentSnapshot\", {});"
   },
   "errors.playbackWorker.playbackPatchChunksArrivedBeforeTheirHeader": {
     "locations": [
-      "src/playback-worker.mjs:590"
+      "src/playback-worker.mjs:592"
     ],
     "context": "if (incomingPatch?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackPatchChunksArrivedBeforeTheirHeader\", {});"
   },
   "errors.playbackWorker.playbackPatchesRequireACompleteDocumentSnapshot": {
     "locations": [
-      "src/playback-worker.mjs:587"
+      "src/playback-worker.mjs:589"
     ],
     "context": "if (current?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackPatchesRequireACompleteDocumentSnapshot\", {});"
   },
   "errors.playbackWorker.playbackPreparationWasSuperseded": {
     "locations": [
       "src/playback-software-painter.mjs:6",
-      "src/playback-worker.mjs:113",
-      "src/playback-worker.mjs:186",
-      "src/playback-worker.mjs:203",
-      "src/playback-worker.mjs:235",
-      "src/playback-worker.mjs:241",
-      "src/playback-worker.mjs:247",
-      "src/playback-worker.mjs:278",
-      "src/playback-worker.mjs:320",
-      "src/playback-worker.mjs:337",
-      "src/playback-worker.mjs:381",
-      "src/playback-worker.mjs:448",
-      "src/playback-worker.mjs:454",
-      "src/playback-worker.mjs:480",
-      "src/playback-worker.mjs:489",
-      "src/playback-worker.mjs:494",
-      "src/playback-worker.mjs:496"
+      "src/playback-worker.mjs:114",
+      "src/playback-worker.mjs:187",
+      "src/playback-worker.mjs:204",
+      "src/playback-worker.mjs:236",
+      "src/playback-worker.mjs:242",
+      "src/playback-worker.mjs:248",
+      "src/playback-worker.mjs:279",
+      "src/playback-worker.mjs:321",
+      "src/playback-worker.mjs:338",
+      "src/playback-worker.mjs:382",
+      "src/playback-worker.mjs:450",
+      "src/playback-worker.mjs:456",
+      "src/playback-worker.mjs:482",
+      "src/playback-worker.mjs:491",
+      "src/playback-worker.mjs:496",
+      "src/playback-worker.mjs:498"
     ],
     "context": "const abort=()=>{throw messageError(new DOMException('', 'AbortError'), 'errors.playbackWorker.playbackPreparationWasSuperseded', {});};"
   },
   "errors.playbackWorker.playbackSnapshotChunksArrivedBeforeTheirHeader": {
     "locations": [
-      "src/playback-worker.mjs:641"
+      "src/playback-worker.mjs:643"
     ],
     "context": "if (incoming?.revision !== message.revision) throw messageError(new Error(''), \"errors.playbackWorker.playbackSnapshotChunksArrivedBeforeTheirHeader\", {});"
   },
   "errors.playbackWorker.playbackStoredFrameModeMustBeABoolean": {
     "locations": [
-      "src/playback-worker.mjs:156",
-      "src/playback-worker.mjs:405"
+      "src/playback-worker.mjs:157",
+      "src/playback-worker.mjs:406"
     ],
     "context": "if (typeof storedFrames !== 'boolean') throw messageError(new TypeError(''), \"errors.playbackWorker.playbackStoredFrameModeMustBeABoolean\", {});"
   },
   "errors.playbackWorker.thePlaybackTickHasNoNativeFrame": {
     "locations": [
-      "src/playback-worker.mjs:160",
-      "src/playback-worker.mjs:409"
+      "src/playback-worker.mjs:161",
+      "src/playback-worker.mjs:410"
     ],
     "context": "if (!native) throw messageError(new Error(''), \"errors.playbackWorker.thePlaybackTickHasNoNativeFrame\", {});"
   },
@@ -20834,13 +20834,13 @@
   },
   "errors.previewImages.previewImagesWereInvalidated": {
     "locations": [
-      "src/preview-images.mjs:18"
+      "src/preview-images.mjs:19"
     ],
     "context": "const error = messageError(new DOMException('', 'AbortError'), \"errors.previewImages.previewImagesWereInvalidated\", {});"
   },
   "errors.previewImages.previewImageWorkerStopped": {
     "locations": [
-      "src/preview-images.mjs:114"
+      "src/preview-images.mjs:116"
     ],
     "context": "event.preventDefault(); const error = (event.message ? new Error(event.message) : messageError(new Error(''), \"errors.previewImages.previewImageWorkerStopped\"))"
   },
@@ -20999,62 +20999,62 @@
   },
   "errors.renderer.anAnimationBackgroundImageCouldNotBeDecoded": {
     "locations": [
-      "src/renderer.mjs:1155",
-      "src/renderer.mjs:1164"
+      "src/renderer.mjs:1156",
+      "src/renderer.mjs:1165"
     ],
     "context": "if (image?.complete && !image.naturalWidth) throw messageError(new Error(''), \"errors.renderer.anAnimationBackgroundImageCouldNotBeDecoded\", {});"
   },
   "errors.renderer.anAnimationBackgroundImageHasNoReadableAsset": {
     "locations": [
-      "src/renderer.mjs:1162"
+      "src/renderer.mjs:1163"
     ],
     "context": "if (!image) throw messageError(new Error(''), \"errors.renderer.anAnimationBackgroundImageHasNoReadableAsset\", {});"
   },
   "errors.renderer.anEditableSceneUpdateRequiresTheActiveDocument": {
     "locations": [
-      "src/renderer.mjs:2078"
+      "src/renderer.mjs:2079"
     ],
     "context": "if(renderer.activeReport!==report||!geometry)throw messageError(new Error(''), \"errors.renderer.anEditableSceneUpdateRequiresTheActiveDocument\", {});"
   },
   "errors.renderer.anInitialSceneRequiresItsReportAndEvaluated": {
     "locations": [
-      "src/renderer.mjs:2143"
+      "src/renderer.mjs:2144"
     ],
     "context": "if (!report || !frame) throw messageError(new Error(''), \"errors.renderer.anInitialSceneRequiresItsReportAndEvaluated\", {});"
   },
   "errors.renderer.aPreviewRasterCanvasIsUnavailableDrawingDirectly": {
     "locations": [
-      "src/renderer.mjs:427"
+      "src/renderer.mjs:428"
     ],
     "context": "const error=Object.assign(messageError(new Error(''), \"errors.renderer.aPreviewRasterCanvasIsUnavailableDrawingDirectly\", {}),{telemetryCode:'device_lost',telem"
   },
   "errors.renderer.editableScenePreparationWasSuperseded": {
     "locations": [
-      "src/renderer.mjs:2084"
+      "src/renderer.mjs:2085"
     ],
     "context": "throw messageError(new DOMException('', 'AbortError'), \"errors.renderer.editableScenePreparationWasSuperseded\", {});"
   },
   "errors.renderer.editorBackgroundMustBeAnArgbColor": {
     "locations": [
-      "src/renderer.mjs:78"
+      "src/renderer.mjs:79"
     ],
     "context": "if(!Number.isInteger(color)||color<0||color>0xffffffff)throw messageError(new Error(''), \"errors.renderer.editorBackgroundMustBeAnArgbColor\", {});"
   },
   "errors.renderer.initialScenePreparationRequiresASeparateIncomingDocument": {
     "locations": [
-      "src/renderer.mjs:2144"
+      "src/renderer.mjs:2145"
     ],
     "context": "if (renderer.activeReport === report || renderer.last?.report === report) throw messageError(new Error(''), \"errors.renderer.initialScenePreparationRequiresASep"
   },
   "errors.renderer.noCompatibleWebgpuAdapterWasFound": {
     "locations": [
-      "src/renderer.mjs:2255"
+      "src/renderer.mjs:2256"
     ],
     "context": "if (!adapter) throw messageError(new Error(''), \"errors.renderer.noCompatibleWebgpuAdapterWasFound\", {});"
   },
   "errors.renderer.scenePreparationCancelled": {
     "locations": [
-      "src/renderer.mjs:2147",
+      "src/renderer.mjs:2148",
       "src/scene-preparation.mjs:35",
       "src/scene-preparation.mjs:52",
       "src/scene-preparation.mjs:64",
@@ -21064,73 +21064,73 @@
   },
   "errors.renderer.theCameraEffectsPreviewFailed": {
     "locations": [
-      "src/renderer.mjs:68"
+      "src/renderer.mjs:69"
     ],
     "context": "const failure=error instanceof Error?error:messageError(new Error(''), \"errors.renderer.theCameraEffectsPreviewFailed\", {});"
   },
   "errors.renderer.theCanvasCouldNotCreateAWebgpuContext": {
     "locations": [
-      "src/renderer.mjs:1059"
+      "src/renderer.mjs:1060"
     ],
     "context": "if (!this.context) throw messageError(new Error(''), \"errors.renderer.theCanvasCouldNotCreateAWebgpuContext\", {});"
   },
   "errors.renderer.theCompatibilityCanvasIsUnavailable": {
     "locations": [
-      "src/renderer.mjs:265"
+      "src/renderer.mjs:266"
     ],
     "context": "if (!this.context) throw messageError(new Error(''), \"errors.renderer.theCompatibilityCanvasIsUnavailable\", {});"
   },
   "errors.renderer.theConstructionBackgroundChangedAfterScenePreparationPrepare": {
     "locations": [
-      "src/renderer.mjs:2218"
+      "src/renderer.mjs:2219"
     ],
     "context": "throw messageError(new Error(''), \"errors.renderer.theConstructionBackgroundChangedAfterScenePreparationPrepare\", {});"
   },
   "errors.renderer.theEditableSceneViewChangedBeforePublication": {
     "locations": [
-      "src/renderer.mjs:2125"
+      "src/renderer.mjs:2126"
     ],
     "context": "throw messageError(new DOMException('', 'AbortError'), \"errors.renderer.theEditableSceneViewChangedBeforePublication\", {});"
   },
   "errors.renderer.theEditableSceneWasAlreadyPublished": {
     "locations": [
-      "src/renderer.mjs:2122"
+      "src/renderer.mjs:2123"
     ],
     "context": "check();if(activated)throw messageError(new Error(''), \"errors.renderer.theEditableSceneWasAlreadyPublished\", {});"
   },
   "errors.renderer.theGraphicsDeviceIsUnavailable": {
     "locations": [
-      "src/renderer.mjs:2148"
+      "src/renderer.mjs:2149"
     ],
     "context": "if (renderer.device && renderer.stats.backend !== 'WebGPU') throw messageError(new Error(''), \"errors.renderer.theGraphicsDeviceIsUnavailable\", {});"
   },
   "errors.renderer.thePreparedInitialSceneNoLongerMatchesThis": {
     "locations": [
-      "src/renderer.mjs:2213"
+      "src/renderer.mjs:2214"
     ],
     "context": "throw messageError(new Error(''), \"errors.renderer.thePreparedInitialSceneNoLongerMatchesThis\", {});"
   },
   "errors.renderer.theViewportChangedAfterScenePreparationPrepareIts": {
     "locations": [
-      "src/renderer.mjs:2220"
+      "src/renderer.mjs:2221"
     ],
     "context": "throw messageError(new Error(''), \"errors.renderer.theViewportChangedAfterScenePreparationPrepareIts\", {});"
   },
   "errors.renderer.webgpuInitializationFailed": {
     "locations": [
-      "src/renderer.mjs:2270"
+      "src/renderer.mjs:2271"
     ],
     "context": "if (renderer?.context) { renderer.context.unconfigure(); throw messageError(new Error(''), \"errors.renderer.webgpuInitializationFailed\", {reason: reason}); }"
   },
   "errors.renderer.webgpuResolvedToASoftwareAdapterTheCompatibility": {
     "locations": [
-      "src/renderer.mjs:2257"
+      "src/renderer.mjs:2258"
     ],
     "context": "throw messageError(new Error(''), \"errors.renderer.webgpuResolvedToASoftwareAdapterTheCompatibility\", {});"
   },
   "errors.rendererMeshRaster.invalidMeshArtwork": {
     "locations": [
-      "src/renderer-mesh-raster.mjs:76"
+      "src/renderer-mesh-raster.mjs:77"
     ],
     "context": "width > device.limits.maxTextureDimension2D || height > device.limits.maxTextureDimension2D || !(pixelScale > 0)) throw messageError(new TypeError(''), \"errors."
   },
@@ -21695,169 +21695,175 @@
   },
   "errors.spatialMesh.a3dMeshBoneWasNotEvaluated": {
     "locations": [
-      "src/spatial-mesh.mjs:209"
+      "src/spatial-mesh.mjs:231"
     ],
     "context": "const f=frames[plan.bones[i]];if(!f)throw messageError(new Error(''), \"errors.spatialMesh.a3dMeshBoneWasNotEvaluated\", {});"
   },
   "errors.spatialMesh.a3dMeshCanHaveUpToTriangles": {
     "locations": [
-      "src/spatial-mesh.mjs:43"
+      "src/spatial-mesh.mjs:45"
     ],
     "context": "if(triangles>MESH_LIMITS.triangles)fail(\"errors.spatialMesh.a3dMeshCanHaveUpToTriangles\", {triangles: MESH_LIMITS.triangles});"
   },
   "errors.spatialMesh.a3dMeshCanHaveUpToVertices": {
     "locations": [
-      "src/spatial-mesh.mjs:24"
+      "src/spatial-mesh.mjs:26"
     ],
     "context": "if(count>MESH_LIMITS.vertices)fail(\"errors.spatialMesh.a3dMeshCanHaveUpToVertices\", {vertices: MESH_LIMITS.vertices});"
   },
   "errors.spatialMesh.a3dMeshNeeds1RgbColours": {
     "locations": [
-      "src/spatial-mesh.mjs:50"
+      "src/spatial-mesh.mjs:52"
     ],
     "context": "fail(\"errors.spatialMesh.a3dMeshNeeds1RgbColours\", {colors: MESH_LIMITS.colors});"
   },
   "errors.spatialMesh.a3dMeshNeedsItsOriginXAnd": {
     "locations": [
-      "src/spatial-mesh.mjs:53"
+      "src/spatial-mesh.mjs:55"
     ],
     "context": "fail(\"errors.spatialMesh.a3dMeshNeedsItsOriginXAnd\", {});"
   },
   "errors.spatialMesh.a3dMeshNeedsTriangleIndices": {
     "locations": [
-      "src/spatial-mesh.mjs:41"
+      "src/spatial-mesh.mjs:43"
     ],
     "context": "if(!Array.isArray(indices)||!indices.length||indices.length%3)fail(\"errors.spatialMesh.a3dMeshNeedsTriangleIndices\", {});"
   },
   "errors.spatialMesh.a3dMeshNeedsXyzPositionsForAt": {
     "locations": [
-      "src/spatial-mesh.mjs:22"
+      "src/spatial-mesh.mjs:24"
     ],
     "context": "if(!Array.isArray(positions)||positions.length<9||positions.length%3)fail(\"errors.spatialMesh.a3dMeshNeedsXyzPositionsForAt\", {});"
   },
   "errors.spatialMesh.a3dMeshReferencesAMissingBone": {
     "locations": [
-      "src/spatial-mesh.mjs:111"
+      "src/spatial-mesh.mjs:132"
     ],
     "context": "const index=ids.get(bone);if(index===undefined)throw messageError(new Error(''), \"errors.spatialMesh.a3dMeshReferencesAMissingBone\", {});"
   },
   "errors.spatialMesh.a3dMeshVertexCannotBindOneBone": {
     "locations": [
-      "src/spatial-mesh.mjs:35"
+      "src/spatial-mesh.mjs:37"
     ],
     "context": "for(let j=0;j<k;j++)if(bones[v*4+j]===bone)fail(\"errors.spatialMesh.a3dMeshVertexCannotBindOneBone\", {});"
   },
   "errors.spatialMesh.bindEvery3dMeshVertexToAtLeast": {
     "locations": [
-      "src/spatial-mesh.mjs:33"
+      "src/spatial-mesh.mjs:35"
     ],
     "context": "if((bone===0)!==(weight===0)||(k===0&&bone===0))fail(\"errors.spatialMesh.bindEvery3dMeshVertexToAtLeast\", {});"
   },
   "errors.spatialMesh.each3dMeshTriangleNeedsAColour": {
     "locations": [
-      "src/spatial-mesh.mjs:51"
+      "src/spatial-mesh.mjs:53"
     ],
     "context": "if(!Array.isArray(materials)||materials.length!==triangles||materials.some(i=>!Number.isInteger(i)||i<0||i>=colors.length))fail(\"errors.spatialMesh.each3dMeshTr"
   },
   "errors.spatialMesh.each3dMeshVertexNeedsFourBoneAnd": {
     "locations": [
-      "src/spatial-mesh.mjs:26"
+      "src/spatial-mesh.mjs:28"
     ],
     "context": "if(!Array.isArray(bones)||bones.length!==count*4||!Array.isArray(weights)||weights.length!==count*4)fail(\"errors.spatialMesh.each3dMeshVertexNeedsFourBoneAnd\", "
   },
   "errors.spatialMesh.failure3dMeshBindingsNeedBoneIdsAndWeights": {
     "locations": [
-      "src/spatial-mesh.mjs:32"
+      "src/spatial-mesh.mjs:34"
     ],
     "context": "if(!Number.isInteger(bone)||bone<0||bone>65535||typeof weight!=='number'||!Number.isFinite(weight)||weight<0||weight>1)fail(\"errors.spatialMesh.failure3dMeshBin"
   },
   "errors.spatialMesh.failure3dMeshDepthOrderMustBeFinite": {
     "locations": [
-      "src/spatial-mesh.mjs:54"
+      "src/spatial-mesh.mjs:56"
     ],
     "context": "if(m.z!==undefined&&(typeof m.z!=='number'||!Number.isFinite(m.z)||Math.abs(m.z)>1e6))fail(\"errors.spatialMesh.failure3dMeshDepthOrderMustBeFinite\", {});"
   },
   "errors.spatialMesh.failure3dMeshPartsNeedNamesAndOrderedTriangle": {
     "locations": [
-      "src/spatial-mesh.mjs:72"
+      "src/spatial-mesh.mjs:74"
     ],
     "context": "!Number.isInteger(g.start)||!Number.isInteger(g.count)||g.count<1||g.start<end||g.start+g.count>triangles)fail(\"errors.spatialMesh.failure3dMeshPartsNeedNamesAn"
   },
   "errors.spatialMesh.failure3dMeshPositionsMustBeFinite": {
     "locations": [
-      "src/spatial-mesh.mjs:25"
+      "src/spatial-mesh.mjs:27"
     ],
     "context": "for(const v of positions)if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1e6)fail(\"errors.spatialMesh.failure3dMeshPositionsMustBeFinite\", {});"
   },
   "errors.spatialMesh.failure3dMeshTrianglesMustReferenceExistingVertices": {
     "locations": [
-      "src/spatial-mesh.mjs:46"
+      "src/spatial-mesh.mjs:48"
     ],
     "context": "for(const n of [a,b,c])if(!Number.isInteger(n)||n<0||n>=count)fail(\"errors.spatialMesh.failure3dMeshTrianglesMustReferenceExistingVertices\", {});"
   },
   "errors.spatialMesh.failure3dMeshTrianglesNeedThreeDifferentVertices": {
     "locations": [
-      "src/spatial-mesh.mjs:47"
+      "src/spatial-mesh.mjs:49"
     ],
     "context": "if(a===b||b===c||a===c)fail(\"errors.spatialMesh.failure3dMeshTrianglesNeedThreeDifferentVertices\", {});"
   },
   "errors.spatialMesh.failure3dMeshVertexWeightsMustAddUpTo": {
     "locations": [
-      "src/spatial-mesh.mjs:39"
+      "src/spatial-mesh.mjs:41"
     ],
     "context": "if(Math.abs(sum-1)>1e-6)fail(\"errors.spatialMesh.failure3dMeshVertexWeightsMustAddUpTo\", {});"
   },
   "errors.spatialMesh.failure3dMeshVerticesMustBindArticulatedSpatialJoints": {
     "locations": [
-      "src/spatial-mesh.mjs:36"
+      "src/spatial-mesh.mjs:38"
     ],
     "context": "if(!checked.has(bone)){if(!spatialBone(figure.segments[ids.get(bone)]))fail(\"errors.spatialMesh.failure3dMeshVerticesMustBindArticulatedSpatialJoints\", {});chec"
   },
   "errors.spatialMesh.failure3dMeshViewPositionsMustBeFinite": {
     "locations": [
-      "src/spatial-mesh.mjs:65"
+      "src/spatial-mesh.mjs:67"
     ],
     "context": "for(const n of viewPoints)if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>1e6)fail(\"errors.spatialMesh.failure3dMeshViewPositionsMustBeFinite\", {});"
   },
   "errors.spatialMesh.invalid3dMesh": {
     "locations": [
-      "src/spatial-mesh.mjs:20"
+      "src/spatial-mesh.mjs:22"
     ],
     "context": "if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).some(k=>!KEYS.has(k)))fail(\"errors.spatialMesh.invalid3dMesh\", {});"
   },
   "errors.spatialMesh.invalid3dMeshNormals": {
     "locations": [
-      "src/spatial-mesh.mjs:79"
+      "src/spatial-mesh.mjs:81"
     ],
     "context": "fail(\"errors.spatialMesh.invalid3dMeshNormals\", {});"
   },
   "errors.spatialMesh.invalid3dMeshParts": {
     "locations": [
-      "src/spatial-mesh.mjs:68"
+      "src/spatial-mesh.mjs:70"
     ],
     "context": "if(!Array.isArray(m.groups)||m.groups.length>MESH_LIMITS.groups)fail(\"errors.spatialMesh.invalid3dMeshParts\", {});"
   },
+  "errors.spatialMesh.invalid3dMeshTextures": {
+    "locations": [
+      "src/spatial-mesh.mjs:100"
+    ],
+    "context": "if(!ok)fail(\"errors.spatialMesh.invalid3dMeshTextures\", {});"
+  },
   "errors.spatialMesh.invalid3dMeshToon": {
     "locations": [
-      "src/spatial-mesh.mjs:87"
+      "src/spatial-mesh.mjs:89"
     ],
     "context": "if(!ok)fail(\"errors.spatialMesh.invalid3dMeshToon\", {});"
   },
   "errors.spatialMesh.viewCorrectedMeshVerticesMustFollowOneBone": {
     "locations": [
-      "src/spatial-mesh.mjs:62"
+      "src/spatial-mesh.mjs:64"
     ],
     "context": "if(weights[v*4]!==1)fail(\"errors.spatialMesh.viewCorrectedMeshVerticesMustFollowOneBone\", {});"
   },
   "errors.spatialMesh.viewCorrectedMeshVerticesNeedFourOrEight": {
     "locations": [
-      "src/spatial-mesh.mjs:58"
+      "src/spatial-mesh.mjs:60"
     ],
     "context": "fail(\"errors.spatialMesh.viewCorrectedMeshVerticesNeedFourOrEight\", {});"
   },
   "errors.spatialMesh.viewCorrectedVerticesMustBeListedOnceIn": {
     "locations": [
-      "src/spatial-mesh.mjs:61"
+      "src/spatial-mesh.mjs:63"
     ],
     "context": "if(!Number.isInteger(v)||v<=previous||v>=count)fail(\"errors.spatialMesh.viewCorrectedVerticesMustBeListedOnceIn\", {});"
   },
@@ -35036,7 +35042,7 @@
   },
   "rendererStatus.deviceDisconnected": {
     "locations": [
-      "src/renderer.mjs:1061"
+      "src/renderer.mjs:1062"
     ],
     "context": "this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.reason; this.stats.message = `Graphics"
   },
@@ -35049,13 +35055,13 @@
   },
   "rendererStatus.effectsRestored": {
     "locations": [
-      "src/renderer.mjs:58"
+      "src/renderer.mjs:59"
     ],
     "context": "if(renderer.vfxRetryAt){renderer.options.onRecovery?.('vfx','recovered');renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects pre"
   },
   "rendererStatus.effectsUnavailable": {
     "locations": [
-      "src/renderer.mjs:70"
+      "src/renderer.mjs:71"
     ],
     "context": "renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview unavailable. Showing the scene without camera effects while retrying"
   },
@@ -35067,7 +35073,7 @@
   },
   "rendererStatus.unavailable": {
     "locations": [
-      "src/renderer.mjs:2249"
+      "src/renderer.mjs:2250"
     ],
     "context": "let reasonKey = options.fallbackReasonKey || (!options.fallbackReason ? 'rendererStatus.unavailable' : undefined), reasonParams = options.fallbackReasonParams;"
   },

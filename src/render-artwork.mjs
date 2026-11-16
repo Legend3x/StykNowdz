@@ -10,7 +10,7 @@ import {ContentHasher} from './content-hash.mjs';
 const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments',
   'angles','lengths','bends','len_flag','bend_flag']);
 const numericFields=['index','version','angle','bend','length','z','thickness','alpha','opacity'];
-const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count',...numericFields]);
+const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count','uvs','textures',...numericFields]);
 const types=['line','circle','image','text','poly','mesh'];
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
 // Drawable layouts already verified to contain only known fields. Records from

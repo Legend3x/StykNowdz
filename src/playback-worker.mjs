@@ -9,6 +9,7 @@ import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
 import {isolationStroke,isolationStrokeFits} from './renderer-vector-raster.mjs';
 import {meshOnlyItems,meshRasterSource,meshRasterBytes,meshRasterBuffers} from './renderer-mesh-raster.mjs';
+import {meshTextureUrls} from './spatial-mesh.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {rasterBounds} from './raster-view.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
@@ -217,7 +218,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     let descriptor=resources?.geometryDescriptors?.get(source);
     if(descriptor?.compatibility===undefined){
       const requiresTexture=requiresCompatibilityTexture(items);
-      descriptor={...descriptor,compatibility:artworkView.isolated||requiresTexture,requiresTexture,stroke:isolationStroke(items),hasImages:items.some(item=>item.type==='image')};
+      descriptor={...descriptor,compatibility:artworkView.isolated||requiresTexture,requiresTexture,stroke:isolationStroke(items),hasImages:items.some(item=>item.type==='image'||meshTextureUrls(item).length>0)};
       resources?.geometryDescriptors?.set(source,descriptor);
     }
     const vectorIsolates=scale=>!descriptor.requiresTexture&&isolationStrokeFits(descriptor.stroke,scale);
@@ -430,7 +431,8 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
     const error = messageError(new Error(''), "errors.playbackWorker.aPlaybackFrameExceedsItsPreparationMemoryBudget", {});
     error.code = 'playback_frame_budget'; error.fixedBytes = bitmapBytes + 128; throw error;
   }
-  const imageItems = drawables.filter(item => item.type === 'image' && item.asset);
+  // Textured 3D meshes need their images decoded like pictures do.
+  const imageItems = drawables.filter(item => (item.type === 'image' && item.asset) || meshTextureUrls(item).length);
   const backgroundItems = backgroundImageAssets(report, frame).map(asset => ({ type: 'image', asset }));
   let reducedImages = false;
   if (resources && (imageItems.length || backgroundItems.length)) {

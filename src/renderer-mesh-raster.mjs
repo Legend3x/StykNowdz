@@ -49,7 +49,8 @@ function meshPipeline(device, format, samples) {
 
 /** An object whose drawables are only opaque mesh faces can use the GPU raster.
  * Nested clips and per-item opacity keep the Canvas painter's isolation. */
-export const meshOnlyItems = items => items.length > 0 && items.every(s => s.type === 'mesh' && !s.outline && s.count > 0 && !s._movieclipOwner && !(s.opacity < .999999)) &&
+// Textured meshes take the Canvas painter (surface-raster.mjs), which samples their images.
+export const meshOnlyItems = items => items.length > 0 && items.every(s => s.type === 'mesh' && !s.outline && s.count > 0 && !s._movieclipOwner && !(s.opacity < .999999) && !s.uvs) &&
   items.every(s => s.spatialMesh === items[0].spatialMesh);
 
 /** Compact, transferable GPU input for mesh drawables of one evaluated mesh.

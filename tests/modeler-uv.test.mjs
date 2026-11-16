@@ -194,3 +194,63 @@ test('a texture painted in Blender comes back; so do UVs moved there and a new i
   const third = startBlenderLink(model), bad = echo(third.doc); bad.textures.push({key: 'blender-x', name: 'x', src: 'data:image/png;base64,AAAA'}); bad.parts[0].textures[4] = 'blender-x';
   applyBlenderLink(model, bad, third.session); assert.equal(model.parts[0].mesh.faces[4].t, undefined);
 });
+
+import {Editor} from '../src/editor.mjs';
+import {emptyDocument} from '../src/demo.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
+import {modelDocument, modelToFigure} from '../src/modeler/export-figure.mjs';
+import {validateSpatialMesh, spatialMeshDrawables, withMeshTextureImages, meshTextureUrls} from '../src/spatial-mesh.mjs';
+/** A textured cube on the stage, toon shadows cutting across its front face. */
+function stageCube({toon = true} = {}) {
+  const model = emptyModel(), tex = addTexture(model, textureFromBytes(png(4, 4), 'Skin'));
+  const mesh = texturedCube();
+  // The front face's UVs sit apart (u, v + 10) so its drawn triangles can be told apart.
+  for (const f of mesh.faces) { f.t = tex.id; if (normalOf(mesh, f)[2] > .9) f.uv = f.uv.map(([u, v]) => [u + 10, v + 10]); }
+  addPart(model, {name: 'Box', mesh});
+  if (toon) model.toon = {shadows: true, turn: -60, height: 30, size: .5, strength: .35};
+  const e = new Editor({demo: false}); e.load({...emptyDocument()});
+  e.importFigure(modelDocument(model).document, {position: {x: 400, y: 400}});
+  return {model, e, mesh: () => buildGeometry(e.report, e.frame).objects.get(e.selectedSlot).spatialMesh};
+}
+test('added to an animation, a textured model keeps its images and UVs in the figure', () => {
+  const {e, model} = stageCube(), figure = e.figure, sm = figure._styk.spatialMesh;
+  assert.doesNotThrow(() => validateSpatialMesh(figure));
+  assert.deepEqual(sm.textures, [{src: model.textures[0].src, width: 4, height: 4}]);
+  assert.equal(sm.uvs.length, sm.indices.length * 2); assert.ok(sm.textureIndex.every(i => i === 0));
+  const broken = structuredClone(figure); broken._styk.spatialMesh.textureIndex[0] = 3;
+  assert.throws(() => validateSpatialMesh(broken), /textures/i);
+  const bare = emptyModel(); addPart(bare, {name: 'Plain', mesh: M.cloneMesh(cube(1))}); assert.equal(modelToFigure(bare).figure._styk.spatialMesh.textures, undefined);
+});
+test('on the stage, every drawn corner of a textured face keeps the UV at its place, shadow cuts included', () => {
+  const {mesh} = stageCube(), m = mesh();
+  // Arrays are sized by capacity, like the triangle list.
+  assert.ok(m.uvs.length >= m.count * 6 && m.textures.length >= m.count && m.textures.length * 6 === m.uvs.length);
+  assert.ok(m.vertexCount > m.plan.vertices, 'the toon shadow line cut some triangles');
+  // Front-face triangles: screen to UV is one affine map; fit it on one and check all.
+  const front = [...Array(m.count).keys()].filter(t => m.uvs[t * 6] > 5);
+  assert.ok(front.length >= 3);
+  const P = m.positions, corner = (t, k) => [P[m.triangles[t * 3 + k] * 2], P[m.triangles[t * 3 + k] * 2 + 1], m.uvs[t * 6 + k * 2], m.uvs[t * 6 + k * 2 + 1]];
+  const [a, b, c] = [0, 1, 2].map(k => corner(front[0], k));
+  const det = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+  const map = (x, y, k) => { const s = ((x - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (y - a[1])) / det, t = ((b[0] - a[0]) * (y - a[1]) - (x - a[0]) * (b[1] - a[1])) / det; return a[k] + s * (b[k] - a[k]) + t * (c[k] - a[k]); };
+  let worst = 0;
+  for (const t of front) for (let k = 0; k < 3; k++) { const [x, y, u, v] = corner(t, k); worst = Math.max(worst, Math.abs(map(x, y, 2) - u), Math.abs(map(x, y, 3) - v)); }
+  assert.ok(worst < 1e-3, `UVs follow the face exactly (off by ${worst})`);
+  // Painter-order buckets keep each triangle's UVs.
+  const items = spatialMeshDrawables(m, {}, [m.zMin + (m.zMax - m.zMin) / 2]);
+  assert.equal(items.reduce((s, i) => s + i.count, 0), m.count); assert.ok(items.every(i => i.uvs.length >= i.count * 6 && i.textures.length >= i.count));
+  // Image loaders get the texture as a whole picture.
+  const loaded = withMeshTextureImages(items);
+  assert.deepEqual(loaded.slice(items.length).map(i => i.asset.url), [m.plan.mesh.textures[0].src]); assert.equal(meshTextureUrls(items[0]).length, 1);
+});
+
+import {buildContainerV2, decodeDocument} from '../src/native-container.mjs';
+test('a saved animation keeps the model’s textures and UVs, storing each image once', async () => {
+  const {e} = stageCube(), figure = e.figure, before = figure._styk.spatialMesh;
+  const doc = {figure_types: [figure], keyframes: e.report.keyframes};
+  const bytes = await buildContainerV2(doc, 'styk'), back = (await decodeDocument(bytes, 'styk')).document;
+  const sm = back.figure_types[0]._styk.spatialMesh;
+  assert.equal(sm.textures[0].src, before.textures[0].src); assert.deepEqual(sm.uvs, before.uvs); assert.deepEqual(sm.textureIndex, before.textureIndex);
+  assert.doesNotThrow(() => validateSpatialMesh(back.figure_types[0]));
+  assert.equal(back.figure_types[0]._styk.modelSource.textures[0].src, before.textures[0].src);
+});

@@ -30,6 +30,7 @@ import { HandleRenderer } from './renderer-handles.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
 import {rasterizeVectorGroup, supportsVectorIsolation,nativeOutlineVectorItems} from './renderer-vector-raster.mjs';
 import {meshOnlyItems, meshRasterSource, rasterizeMeshGroup} from './renderer-mesh-raster.mjs';
+import {meshTextureUrls} from './spatial-mesh.mjs';
 import { ArtworkRegistry } from './render-artwork.mjs';
 import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer-glyphs.mjs';
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
@@ -312,7 +313,7 @@ class CanvasFallback {
     // Keys are the geometry that painted each raster; anything else (the
     // camera scene) can contain images and is replaced conservatively.
     const affected = key => !Array.isArray(key?.drawables) ||
-      key.drawables.some(item => item.type === 'image' && item.asset && urls.has(this.resources.url(item.asset)));
+      key.drawables.some(item => (item.type === 'image' && item.asset && urls.has(this.resources.url(item.asset))) || meshTextureUrls(item).some(url => urls.has(url)));
     for (const [map, total] of [[this.artwork, 'artworkBytes'], [this.onionArtwork, 'onionArtworkBytes']])
       for (const [key, item] of map) if (affected(key)) {map.delete(key); this[total] -= item.bytes; this.refinement?.cancel(item); releaseCanvasArtwork(item);}
     // Composites, bounds and backgrounds can contain the changed pixels.
@@ -1304,7 +1305,7 @@ class WebGPURenderer {
     if (cached&&sameDrawingRaster(cached.drawingInputs,drawingInputs)) return cached;
     if (cached) cache.delete(cached);
     const previous = cache.previous(artwork);
-    const imageURLs = [...new Set(items.filter(item => item.type === 'image' && item.asset).map(item => this.resources.url(item.asset)))];
+    const imageURLs = [...new Set([...items.filter(item => item.type === 'image' && item.asset).map(item => this.resources.url(item.asset)), ...items.flatMap(meshTextureUrls)])];
     const reason=!previous?'uncached':previous.destroyed?'released':previous.generation!==this.generation?'generation':'resolution';
     const misses=this.stats.rasterCacheMisses??={};misses[reason]=(misses[reason]||0)+1;
     const samples=this.stats.rasterCacheMissSamples??=[];

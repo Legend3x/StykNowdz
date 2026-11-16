@@ -11,7 +11,9 @@ import {shadowColor} from './toon-shading.mjs';
 
 const EPS=1e-9,NEAR=.05;
 export const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
-const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals']);
+const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals','textures','uvs','textureIndex']);
+export const MESH_TEXTURES=16,MESH_TEXTURE_SIDE=4096;
+const TEXTURE_URL=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 export const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
 
 export function validateSpatialMesh(figure){
@@ -86,7 +88,26 @@ export function validateSpatialMesh(figure){
       (t.flat===undefined||(Array.isArray(t.flat)&&t.flat.length<=MESH_LIMITS.groups&&t.flat.every(i=>Number.isInteger(i)&&i>=0&&i<(m.groups?.length??0))));
     if(!ok)fail("errors.spatialMesh.invalid3dMeshToon", {});
   }
+  // Textures (3D Nowdz): images, each triangle corner's UV (v up) and each
+  // triangle's image (-1 keeps its colour). All three or none.
+  if(m.textures!==undefined||m.uvs!==undefined||m.textureIndex!==undefined){
+    const {textures,uvs,textureIndex}=m;
+    const ok=Array.isArray(textures)&&textures.length>=1&&textures.length<=MESH_TEXTURES&&
+      textures.every(t=>t&&typeof t==='object'&&!Array.isArray(t)&&Object.keys(t).every(k=>['src','width','height'].includes(k))&&typeof t.src==='string'&&TEXTURE_URL.test(t.src)&&
+        Number.isInteger(t.width)&&Number.isInteger(t.height)&&t.width>=1&&t.height>=1&&t.width<=MESH_TEXTURE_SIDE&&t.height<=MESH_TEXTURE_SIDE)&&
+      Array.isArray(uvs)&&uvs.length===triangles*6&&uvs.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1e4)&&
+      Array.isArray(textureIndex)&&textureIndex.length===triangles&&textureIndex.every(i=>Number.isInteger(i)&&i>=-1&&i<textures.length);
+    if(!ok)fail("errors.spatialMesh.invalid3dMeshTextures", {});
+  }
 }
+/** The texture images an evaluated mesh drawable shows (data URLs), or none. */
+export const meshTextureUrls=item=>item?.type==='mesh'&&item.uvs?(item.spatialMesh?.plan?.mesh?.textures??[]).map(t=>t.src):[];
+/** Image loaders decode pictures for image drawables. A textured mesh's images
+ * join as placement-free image items: decoded whole, at the drawing's scale. */
+export const withMeshTextureImages=items=>{
+  const urls=[...new Set(items.flatMap(meshTextureUrls))];
+  return urls.length?[...items,...urls.map(url=>({type:'image',asset:{url},meshTexture:true}))]:items;
+};
 
 /** Remap bone and reference joint IDs, e.g. when figures are combined. The
  * returned mesh shares every array that the remap leaves unchanged. */
@@ -117,6 +138,7 @@ export function spatialMeshPlan(figure,ids){
   const plan={mesh,vertices,triangles,positions:new Float64Array(mesh.positions),slots,weights,counts,bones:Int32Array.from(bones),
     indices:Uint32Array.from(mesh.indices),materials:Uint16Array.from(mesh.materials),palette:mesh.colors,basis:mesh.basis,base:Number(mesh.z??0),
     views:mesh.views??0,viewSlot,viewPoints:mesh.viewPoints?new Float64Array(mesh.viewPoints):null,toon:toonPlan(mesh,triangles),
+    uvs:mesh.textureIndex?.some(i=>i>=0)?Float32Array.from(mesh.uvs):null,textureIndex:mesh.textureIndex?.some(i=>i>=0)?Int16Array.from(mesh.textureIndex):null,
     normals:customNormals(mesh,vertices)};
   plans.set(mesh,{ids,plan});
   return plan;
@@ -224,6 +246,9 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
   const n=plan.vertices,cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,base=plan.base;
   const nearZ=camera?(1-NEAR)/camera.k:Infinity,P=plan.positions,counts=plan.counts,slots=plan.slots,viewSlot=plan.viewSlot,views=plan.viewPoints,stride=plan.views*3;
   let positions=new Float32Array(n*2),depth=new Float32Array(n),extra=0;
+  // Textured meshes: each point's perspective divisor (1 without a camera), so
+  // textures are sampled with perspective; cut and clipped points blend it.
+  const textured=plan.uvs!==null&&plan.uvs!==undefined;let wv=textured?new Float32Array(n).fill(1):null;
   const raw=camera?new Float64Array(n*3):null,point=new Float64Array(3),view=toon?new Float64Array(n*3):null;
   // Custom normals turn with each vertex's (blended) bone rotation, then the figure's.
   const custom=toon&&plan.normals?plan.normals:null,customView=custom?new Float64Array(n*3):null,rotation=new Float64Array(4);
@@ -254,7 +279,7 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
     let sx,sy,d;
     if(camera){
       const rz=point[2]*scale,q=Math.max(NEAR,1-camera.k*rz);
-      sx=camera.root.x+(X-camera.root.x)/q;sy=camera.root.y+(Y-camera.root.y)/q;d=base+rz/q/camera.scale;
+      sx=camera.root.x+(X-camera.root.x)/q;sy=camera.root.y+(Y-camera.root.y)/q;d=base+rz/q/camera.scale;if(wv)wv[v]=q;
       raw[v*3]=X;raw[v*3+1]=Y;raw[v*3+2]=rz;
     }else{sx=X;sy=Y;d=flat?base+((root.x+point[2]*scale*cs-o.x)*dx+(root.y+point[2]*scale*sn-o.y)*dy)/den:base;}
     positions[v*2]=sx;positions[v*2+1]=sy;depth[v]=d;
@@ -289,8 +314,18 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
     return len>0&&(nx*L[0]+ny*L[1]+nz*L[2])/len<toon.threshold?M[t]+shadowAt:M[t];
   };
   let triangles=new Uint32Array(plan.triangles*3),materials=new Uint16Array(plan.triangles),z=new Float32Array(plan.triangles),count=0;
-  const grow=()=>{const size=Math.max(16,count*2);let t=new Uint32Array(size*3);t.set(triangles);triangles=t;t=new Uint16Array(size);t.set(materials);materials=t;t=new Float32Array(size);t.set(z);z=t;};
-  const push=(a,b,c,m)=>{if(count===materials.length)grow();triangles[count*3]=a;triangles[count*3+1]=b;triangles[count*3+2]=c;materials[count]=m;z[count]=(depth[a]+depth[b]+depth[c])/3;count++;};
+  // Textures: each drawn triangle's corner UVs and image (-1: its colour).
+  let uvOut=textured?new Float32Array(plan.triangles*6):null,texOut=textured?new Int16Array(plan.triangles):null;
+  const grow=()=>{const size=Math.max(16,count*2);let t=new Uint32Array(size*3);t.set(triangles);triangles=t;t=new Uint16Array(size);t.set(materials);materials=t;t=new Float32Array(size);t.set(z);z=t;
+    if(textured){t=new Float32Array(size*6);t.set(uvOut);uvOut=t;t=new Int16Array(size);t.set(texOut);texOut=t;}};
+  // A point's UV within source triangle t: a corner's own, or blended along the
+  // edge for a point cut on it (cutFrom: point -> [lo, hi, s]).
+  const cutFrom=textured?new Map():null,UV=plan.uvs,TX=plan.textureIndex;
+  const cornerUV=(t,v,k)=>{const at=I[t*3]===v?0:I[t*3+1]===v?1:2;return UV[t*6+at*2+k];};
+  const uvOf=(t,v,k)=>{if(v<n)return cornerUV(t,v,k);const f=cutFrom.get(v);return f?cornerUV(t,f[0],k)+(cornerUV(t,f[1],k)-cornerUV(t,f[0],k))*f[2]:0;};
+  const growW=()=>{if(wv&&wv.length<depth.length){const W2=new Float32Array(depth.length).fill(1);W2.set(wv);wv=W2;}};
+  const push=(a,b,c,m,t)=>{if(count===materials.length)grow();triangles[count*3]=a;triangles[count*3+1]=b;triangles[count*3+2]=c;materials[count]=m;z[count]=(depth[a]+depth[b]+depth[c])/3;
+    if(textured){texOut[count]=TX[t];if(TX[t]>=0){let o=count*6;for(const v of [a,b,c]){uvOut[o++]=uvOf(t,v,0);uvOut[o++]=uvOf(t,v,1);}}}count++;};
   // A clean shadow edge: each vertex's distance past the lit/shadow cut-off, and
   // triangles that straddle it are cut along the exact line (cut points are
   // shared by neighbouring triangles, so nothing cracks).
@@ -304,17 +339,19 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
     const s=side[lo]/(side[lo]-side[hi]),at=n+extra;
     if(at>=depth.length){const size=Math.max(64,depth.length*2);const P2=new Float32Array(size*2);P2.set(positions);positions=P2;const D2=new Float32Array(size);D2.set(depth);depth=D2;}
     positions[at*2]=positions[lo*2]+(positions[hi*2]-positions[lo*2])*s;positions[at*2+1]=positions[lo*2+1]+(positions[hi*2+1]-positions[lo*2+1])*s;
-    depth[at]=depth[lo]+(depth[hi]-depth[lo])*s;extra++;cuts.set(key,at);return at;
+    depth[at]=depth[lo]+(depth[hi]-depth[lo])*s;extra++;cuts.set(key,at);
+    if(textured){growW();wv[at]=wv[lo]+(wv[hi]-wv[lo])*s;cutFrom.set(at,[lo,hi,s]);}
+    return at;
   };
   const shaded=(t,a,b,c)=>{
     const m=M[t];
-    if(!side||toon.flat[t]){push(a,b,c,m);return;}
+    if(!side||toon.flat[t]){push(a,b,c,m,t);return;}
     const la=side[a]>=0,lb=side[b]>=0,lc=side[c]>=0;
-    if(la===lb&&lb===lc){push(a,b,c,la?m:m+shadowAt);return;}
+    if(la===lb&&lb===lc){push(a,b,c,la?m:m+shadowAt,t);return;}
     // Rotate so p is the vertex alone on its side, keeping the winding.
     const [p,q,r,lit]=la!==lb&&la!==lc?[a,b,c,la]:lb!==la&&lb!==lc?[b,c,a,lb]:[c,a,b,lc];
     const pq=cut(p,q),rp=cut(r,p),own=lit?m:m+shadowAt,other=lit?m+shadowAt:m;
-    push(p,pq,rp,own);push(pq,q,r,other);push(pq,r,rp,other);
+    push(p,pq,rp,own,t);push(pq,q,r,other,t);push(pq,r,rp,other,t);
   };
   for(let t=0;parity&&t<plan.triangles;t++){
     const a=I[t*3],b=I[t*3+1],c=I[t*3+2];
@@ -325,27 +362,30 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
       used[a]=1;used[b]=1;used[c]=1;
     }else{
       // Clip against the near plane before projection, as native surfaces do.
-      const clipped=[];
+      const clipped=[],clippedUV=[];
       for(const [p,q] of [[a,b],[b,c],[c,a]]){
         const pz=raw[p*3+2],qz=raw[q*3+2],inside=pz<=nearZ,next=qz<=nearZ;
-        if(inside)clipped.push([raw[p*3],raw[p*3+1],pz]);
-        if(inside!==next){const s=(nearZ-pz)/(qz-pz);clipped.push([raw[p*3]+(raw[q*3]-raw[p*3])*s,raw[p*3+1]+(raw[q*3+1]-raw[p*3+1])*s,nearZ]);}
+        if(inside){clipped.push([raw[p*3],raw[p*3+1],pz]);if(textured)clippedUV.push([cornerUV(t,p,0),cornerUV(t,p,1)]);}
+        if(inside!==next){const s=(nearZ-pz)/(qz-pz);clipped.push([raw[p*3]+(raw[q*3]-raw[p*3])*s,raw[p*3+1]+(raw[q*3+1]-raw[p*3+1])*s,nearZ]);
+          if(textured)clippedUV.push([0,1].map(k=>cornerUV(t,p,k)+(cornerUV(t,q,k)-cornerUV(t,p,k))*s));}
       }
       if(clipped.length<3)continue;
       const projected=clipped.map(([X,Y,Z])=>{const d=Math.max(NEAR,1-camera.k*Z);return [camera.root.x+(X-camera.root.x)/d,camera.root.y+(Y-camera.root.y)/d,base+Z/d/camera.scale];});
       let area=0,extent=0;const [p0]=projected;
       for(let i=1;i<projected.length;i++){const ux=projected[i][0]-p0[0],uy=projected[i][1]-p0[1];extent=Math.max(extent,ux*ux+uy*uy);if(i+1<projected.length)area+=ux*(projected[i+1][1]-p0[1])-uy*(projected[i+1][0]-p0[0]);}
       if(area*parity<=extent*2e-7)continue;
-      const ids=projected.map(([x,y,d])=>{
+      const ids=projected.map(([x,y,d],i)=>{
         const at=n+extra;
         if(at>=depth.length){const size=Math.max(64,depth.length*2);const p=new Float32Array(size*2);p.set(positions);positions=p;const q=new Float32Array(size);q.set(depth);depth=q;}
         positions[at*2]=x;positions[at*2+1]=y;depth[at]=d;extra++;
+        if(textured){growW();wv[at]=Math.max(NEAR,1-camera.k*clipped[i][2]);}
         const fx=positions[at*2],fy=positions[at*2+1],fd=depth[at];
         if(fx<x0)x0=fx;if(fx>x1)x1=fx;if(fy<y0)y0=fy;if(fy>y1)y1=fy;if(fd<zMin)zMin=fd;if(fd>zMax)zMax=fd;
         return at;
       }),value=projected.reduce((s,p)=>s+p[2],0)/projected.length;
       const shade=material(t);
-      for(let i=1;i+1<ids.length;i++){if(count===materials.length)grow();triangles[count*3]=ids[0];triangles[count*3+1]=ids[i];triangles[count*3+2]=ids[i+1];materials[count]=shade;z[count]=value;count++;}
+      for(let i=1;i+1<ids.length;i++){if(count===materials.length)grow();triangles[count*3]=ids[0];triangles[count*3+1]=ids[i];triangles[count*3+2]=ids[i+1];materials[count]=shade;z[count]=value;
+        if(textured){texOut[count]=TX[t];if(TX[t]>=0){let o=count*6;for(const k of [0,i,i+1]){uvOut[o++]=clippedUV[k][0];uvOut[o++]=clippedUV[k][1];}}}count++;}
     }
     if((t&16383)===16383)yield {phase:'geometry',stage:'mesh faces',slot,completed:t+1,total:plan.triangles};
   }
@@ -355,6 +395,7 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
     if(fx<x0)x0=fx;if(fx>x1)x1=fx;if(fy<y0)y0=fy;if(fy>y1)y1=fy;if(fd<zMin)zMin=fd;if(fd>zMax)zMax=fd;
   }
   return {plan,key,vertexCount:n+extra,positions,depth,triangles,materials,z,count,colors,
+    ...(textured?{uvs:uvOut,textures:texOut,w:wv,shadowAt}:{}),
     bounds:count&&x0<=x1?{x0,y0,x1,y1}:null,zMin,zMax};
 }
 export function evaluateSpatialMesh(plan,frames,context,previous){
@@ -367,9 +408,9 @@ export function evaluateSpatialMesh(plan,frames,context,previous){
  * would place them; a face tied with a primitive draws before it. */
 export function spatialMeshDrawables(mesh,owner,others){
   if(!mesh?.count)return [];
-  const item=(index,triangles,materials,count,z)=>({type:'mesh',...owner,index,spatialMesh:mesh,triangles,materials,count,z,alpha:1});
+  const item=(index,triangles,materials,count,z,uvs,textures)=>({type:'mesh',...owner,index,spatialMesh:mesh,triangles,materials,count,z,alpha:1,...(uvs?{uvs,textures}:{})});
   const levels=[...new Set(others.filter(Number.isFinite))].sort((a,b)=>a-b);
-  if(!levels.length||mesh.zMax<levels[0])return [item(0,mesh.triangles,mesh.materials,mesh.count,levels.length?levels[0]:mesh.zMin)];
+  if(!levels.length||mesh.zMax<levels[0])return [item(0,mesh.triangles,mesh.materials,mesh.count,levels.length?levels[0]:mesh.zMin,mesh.uvs,mesh.textures)];
   const bucket=new Uint32Array(mesh.count),sizes=new Uint32Array(levels.length+1);
   for(let t=0;t<mesh.count;t++){
     const value=mesh.z[t];let lo=0,hi=levels.length;
@@ -379,9 +420,10 @@ export function spatialMeshDrawables(mesh,owner,others){
   const result=[];
   for(let k=0;k<=levels.length;k++){
     if(!sizes[k])continue;
-    const triangles=new Uint32Array(sizes[k]*3),materials=new Uint16Array(sizes[k]);let at=0;
-    for(let t=0;t<mesh.count;t++)if(bucket[t]===k){triangles.set(mesh.triangles.subarray(t*3,t*3+3),at*3);materials[at]=mesh.materials[t];at++;}
-    result.push(item(k,triangles,materials,sizes[k],k<levels.length?levels[k]:mesh.zMax));
+    const triangles=new Uint32Array(sizes[k]*3),materials=new Uint16Array(sizes[k]),uvs=mesh.uvs?new Float32Array(sizes[k]*6):null,textures=mesh.uvs?new Int16Array(sizes[k]):null;let at=0;
+    for(let t=0;t<mesh.count;t++)if(bucket[t]===k){triangles.set(mesh.triangles.subarray(t*3,t*3+3),at*3);materials[at]=mesh.materials[t];
+      if(uvs){uvs.set(mesh.uvs.subarray(t*6,t*6+6),at*6);textures[at]=mesh.textures[t];}at++;}
+    result.push(item(k,triangles,materials,sizes[k],k<levels.length?levels[k]:mesh.zMax,uvs,textures));
   }
   return result;
 }
