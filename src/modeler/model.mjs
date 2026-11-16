@@ -5,6 +5,7 @@ import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors
 import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
 import {faceCopy, reversedFace, flipFace, textured, readTextures} from './uv.mjs';
+import {readFace} from '../face-rig.mjs';
 
 export const MODEL_VERSION = 1;
 export const SMOOTH_MAX = 3;
@@ -107,8 +108,10 @@ export function readModel(value) {
   if (model.origin !== undefined) { if (finite(model.origin, 3) && model.origin.some(v => v !== 0)) model.origin = model.origin.slice(); else delete model.origin; }
   model.palette = Array.isArray(model.palette) && model.palette.length ? model.palette : DEFAULT_PALETTE.map(c => c.slice());
   model.references = Array.isArray(model.references) ? model.references : [];
-  // Textures and each face's UVs (uv.mjs).
+  // Textures and each face's UVs (uv.mjs), then the 2D face drawn on one of them (face-rig.mjs).
   readTextures(model);
+  const face = readFace(model.face, new Set((model.textures ?? []).map(t => t.id)));
+  if (face) model.face = face; else delete model.face;
   for (const ref of model.references) if (ref && typeof ref === 'object' && ref.flip !== true) delete ref.flip;
   model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1), ...(model.folders ?? []).map(f => f.id + 1));
   return model;

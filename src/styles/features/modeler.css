@@ -228,6 +228,19 @@
   .modeler-uv-select { max-inline-size: 11em; font: inherit; }
   .modeler-uv-canvas { display: block; flex: 1; min-block-size: 0; inline-size: 100%; touch-action: none; cursor: crosshair; }
   .modeler-second-canvas { display: block; inline-size: 100%; block-size: 100%; }
+  /* 2D face (docs/FACE-RIG.md): its parts as a list, a part's states as chips. */
+  .modeler-face-list { display: flex; flex-direction: column; gap: 2px; margin-top: var(--space-2); }
+  .modeler-face-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-md);
+    background: transparent; color: var(--text-1); font: var(--type-small); text-align: start; cursor: pointer; }
+  .modeler-face-row small { color: var(--text-3); }
+  .modeler-face-row:hover { background: var(--surface-hover); }
+  .modeler-face-row[aria-pressed="true"] { background: var(--surface-selected); color: var(--accent-text-strong); }
+  .modeler-face-row:focus-visible, .modeler-chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset, 2px); }
+  .modeler-subhead { margin: var(--space-3) 0 var(--space-1); color: var(--text-2); font: var(--type-small-strong); }
+  .modeler-face-states { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .modeler-chip { padding: 2px var(--space-2); border: 1px solid var(--line-control); border-radius: var(--radius-pill); background: transparent; color: var(--text-1); font: var(--type-small); cursor: pointer; }
+  .modeler-chip:hover { background: var(--surface-hover); }
+  .modeler-chip[aria-pressed="true"] { background: var(--surface-selected); border-color: var(--accent); color: var(--accent-text-strong); }
   .modeler-rename { flex: 1; min-width: 0; font: inherit; }
   .modeler-row, .modeler-actions { display: flex; flex-wrap: wrap; gap: var(--space-1-5); margin-top: var(--space-2); }
   .modeler-hint { margin: var(--space-2) 0; color: var(--text-3); font: var(--type-small); font-weight: 400; line-height: 1.45; }

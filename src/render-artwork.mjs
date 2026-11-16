@@ -10,7 +10,7 @@ import {ContentHasher} from './content-hash.mjs';
 const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments',
   'angles','lengths','bends','len_flag','bend_flag']);
 const numericFields=['index','version','angle','bend','length','z','thickness','alpha','opacity'];
-const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count','uvs','textures',...numericFields]);
+const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count','uvs','textures','textureUrls',...numericFields]);
 const types=['line','circle','image','text','poly','mesh'];
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
 // Drawable layouts already verified to contain only known fields. Records from
@@ -153,6 +153,8 @@ export class ArtworkRegistry {
       // Most records reference the definition directly. Styled/generated
       // records and future drawing attributes remain part of exact identity.
       if(type<0)extra.push([i,'type',item.type]);
+      // A 2D face (docs/FACE-RIG.md) changes the picture, not the pose: its picture's name joins the identity.
+      if(item.textureUrls)extra.push([i,'textureUrls',item.textureUrls.join('\n')]);
       if(seg&&seg!==g.fig.segments?.[item.index])extra.push([i,'seg',seg]);
       if(poly&&poly!==g.fig.polyfills?.[item.index])extra.push([i,'poly',poly]);
       if(asset)extra.push([i,'asset',scrubbedAsset(asset,payloads)]);

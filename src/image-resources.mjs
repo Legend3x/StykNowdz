@@ -1,5 +1,6 @@
 import {messageError} from './localized-error.mjs';
 import {decodePreview, fitImage, imageInfo, imageBlob} from './preview-image.mjs';
+import {isFaceUrl, composeFaceBitmap, faceRecipeOf, registerFace} from './face-compose.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {meshTextureUrls, withMeshTextureImages} from './spatial-mesh.mjs';
 
@@ -221,6 +222,10 @@ export class ImageResources {
   async preloadImages(items, {scale = 1, maxDimension = 4096, visible, plan,viewFor} = {}) {
     if (this.disposed)
       throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {});
+    // 2D face pictures (face-compose.mjs) are painted from their recipe, never fetched or encoded.
+    if (items.some(item => item.type === 'image' && isFaceUrl(this.url(item.asset)))) {
+      items = await this.composeFaces(items);
+    }
     const view = plan ? {matrix: plan.matrix, width: plan.width, height: plan.height}
       : visible ? {visible, scale} : null;
     // v2 drawing cels decode their tile blob through the provider; the 1×1
@@ -389,6 +394,30 @@ export class ImageResources {
       this.images.set(url, bitmap);
       this.bytes += decodedBytes;
     }
+  }
+  /** Paint the face pictures `items` need that aren't held yet; returns the other items. */
+  async composeFaces(items) {
+    const faces = new Set(), rest = [];
+    for (const item of items) {
+      const url = item.type === 'image' ? this.url(item.asset) : null;
+      if (!isFaceUrl(url)) { rest.push(item); continue; }
+      // Drawables made on another thread bring their recipe along.
+      if (item.faceRecipe && !faceRecipeOf(url)) registerFace(url, item.faceRecipe);
+      faces.add(url);
+    }
+    const needed = new Set([...faces, ...rest.filter(item => item.type === 'image').map(item => this.url(item.asset)).filter(Boolean)]);
+    for (const url of faces) {
+      if (this.images.has(url)) { this.image(url); continue; }
+      const bitmap = await composeFaceBitmap(url);
+      if (!bitmap) continue;
+      if (this.disposed) { bitmap.close(); throw messageError(new DOMException('', "AbortError"), "errors.imageResources.playbackAssetsWereInvalidated", {}); }
+      const bytes = bitmap.width * bitmap.height * 4;
+      this.trimImages(needed, bytes);
+      try { this.checkImageBudget(bytes); } catch (error) { bitmap.close(); throw error; }
+      Object.assign(bitmap, {complete: true, naturalWidth: bitmap.width, naturalHeight: bitmap.height});
+      this.images.set(url, bitmap); this.bytes += bytes;
+    }
+    return rest;
   }
   dispose() {
     this.disposed = true;

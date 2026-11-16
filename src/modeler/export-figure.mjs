@@ -14,6 +14,7 @@ import {evaluateModel, readModel} from './model.mjs';
 import {boneOrder, partWeights, addBone, headBone} from './armature.mjs';
 import {originOf, swapSets, swapChoiceOf} from './layers.mjs';
 import {MESH_LIMITS} from '../spatial-mesh.mjs';
+import {readFace} from '../face-rig.mjs';
 import {createObject, createFrame} from '../demo.mjs';
 
 export const PIXELS_PER_UNIT = 100;
@@ -163,7 +164,9 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
     _styk: {colorMode: 'segments', spatialMesh: {positions, bones: meshBones, weights, indices, colors, materials, basis: [0, surfaceX.segment_id, surfaceY.segment_id], groups,
       ...(toon.shadows ? {toon: {light: [...toonLight(toon.turn, toon.height)], threshold: toonThreshold(toon.size), strength: toon.strength, flat}} : {}),
       ...(toon.shadows && customNormals ? {normals} : {}),
-      ...(meshTextures.length ? {textures: meshTextures, uvs, textureIndex} : {})}, modelSource: source}};
+      ...(meshTextures.length ? {textures: meshTextures, uvs, textureIndex} : {}),
+      // The 2D face (docs/FACE-RIG.md) draws on its texture's slot, when that texture is shown.
+      ...faceOf(model, textureSlot, meshTextures)}, modelSource: source}};
   return {figure, hiddenChoices, stats: {vertices: positions.length / 3, triangles: indices.length / 3, bones: bones.length, parts: parts.length}};
 }
 
@@ -200,4 +203,12 @@ export function originShift(figure, object, from, to, {spatialQuaternion, quatRo
   const q = spatialQuaternion((angleOf(index) - figureAngle) * sign - restOf(index), channel(spatial.turn), channel(spatial.pitch));
   const r = quatRotate(q, d), scale = Number(object.scale ?? 1), cs = Math.cos(figureAngle), sn = Math.sin(figureAngle);
   return {x: (r[0] * cs - r[1] * sign * sn) * scale, y: (r[0] * sn + r[1] * sign * cs) * scale};
+}
+
+/** The model's 2D face for the stage mesh: drawing on its texture's slot (only when that texture is shown). */
+function faceOf(model, slots, textures) {
+  const slot = model.face ? slots.get(model.face.texture) : undefined;
+  if (!textures.length || !(slot >= 0)) return {};
+  const face = readFace({...model.face, texture: slot}, new Set(textures.map((_, i) => i)));
+  return face ? {face} : {};
 }

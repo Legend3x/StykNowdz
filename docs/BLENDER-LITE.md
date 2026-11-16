@@ -901,6 +901,13 @@ frame's pose in one undo step, and keys like any pose. Between eased keys a
 choice switches at the next key instead of growing or shrinking
 (geometry.mjs `evaluatedNativeFrame`; the tweener's Push likewise).
 
+### 2D face
+
+**+ › 2D face** paints a face onto the head's texture: eyes with pupils that
+look around, brows, lip-sync mouths and extras such as blush, each with drawn
+states to preview, place and repaint in Draw. The stage poses it from the face
+badge. See docs/FACE-RIG.md.
+
 ### Face rig
 
 Face bones still work alongside or instead of face sets.

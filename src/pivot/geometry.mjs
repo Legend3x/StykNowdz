@@ -1,5 +1,6 @@
 import {messageError} from '../localized-error.mjs';
 import {projection,projectSpatialFace,interpolateSpatialPose} from '../spatial-projection.mjs';
+import {interpolateFace} from '../face-rig.mjs';
 import {createSurfaceEvaluation} from './surfaces.mjs';
 import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
 import {spatialMeshPlan,evaluateSpatialMeshSteps,spatialMeshDrawables} from '../spatial-mesh.mjs';
@@ -366,6 +367,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
       const out = { ...o, runtime_segments: undefined };
       if(o._stykSpatial||next._stykSpatial)out._stykSpatial=interpolateSpatialPose(o,next,t);
       if(o._stykVfx)out._stykVfx=interpolateVfx(o._stykVfx,byId.get(o.unique_id)?._stykVfx,t);
+      if(o._stykFace||next._stykFace)out._stykFace=interpolateFace(o._stykFace,next._stykFace,t);
       const matching = (f) => {
         let objects = identities.get(f);
         if (!objects) { objects = new Map(f.objects.map(item => [item.unique_id, item])); identities.set(f, objects); }

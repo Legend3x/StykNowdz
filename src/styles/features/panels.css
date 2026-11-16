@@ -78,4 +78,20 @@
   .motion-target:where(.is-missing) .motion-target-name { color: var(--text-3); font-style: italic; }
   .motion-follow-add, .motion-keep-framing { justify-self: start; }
   .motion-offset { margin-block: var(--space-1); }
+
+  /* The face panel (face-panel.mjs, docs/FACE-RIG.md): a 2D face posed from its badge. */
+  .face-panel { inline-size: 268px; }
+  .face-panel-body { display: flex; flex-direction: column; gap: var(--space-2); }
+  .face-panel-group { display: flex; flex-direction: column; gap: var(--space-1); }
+  .face-panel-label { font: var(--type-small-strong); color: var(--text-2); }
+  .face-panel-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .face-panel-chips .ui-chip { block-size: var(--control-sm); padding: 0 var(--space-2); }
+  .face-panel-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+  .face-panel-linked { flex: 1; }
+  .face-panel-hint { margin: 0; color: var(--text-3); font: var(--type-small); }
+  .face-panel-pad { position: relative; block-size: 84px; border-radius: var(--radius-md); background: var(--surface-well); cursor: crosshair; touch-action: none;
+    background-image: linear-gradient(var(--line-control), var(--line-control)), linear-gradient(var(--line-control), var(--line-control));
+    background-size: 1px 100%, 100% 1px; background-position: center; background-repeat: no-repeat; }
+  .face-panel-pad:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+  .face-panel-dot { position: absolute; inline-size: 14px; block-size: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface-raised); pointer-events: none; }
 }

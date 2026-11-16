@@ -1,11 +1,25 @@
 import {messageError} from './localized-error.mjs';
 import {sceneBackgroundColor} from './pivot/background.mjs';
 import {PreviewImages} from './preview-images.mjs';
+import {meshTextureUrls} from './spatial-mesh.mjs';
 
 const imageItems = new WeakMap();
 /** Drawing lists are immutable geometry resources, including nested clip
  * primitives. Reuse their image subset without flattening the whole scene on
  * every pointer frame just to discard its lines and polygons. */
+const meshItems = new WeakMap();
+/** The textured 3D meshes in a frame: the view keeps their pictures decoded
+ * (a 2D face's picture changes with every pose, docs/FACE-RIG.md). */
+export function frameMeshTextureDrawables(geometry) {
+  const out = [];
+  for (const group of geometry?.orderedObjects || []) {
+    const items = group.drawables;
+    let cached = meshItems.get(items);
+    if (!cached) {cached = items.filter(item => meshTextureUrls(item).length); meshItems.set(items, cached);}
+    for (const item of cached) out.push(item);
+  }
+  return out;
+}
 export function frameImageDrawables(geometry) {
   const images = [];
   for (const group of geometry?.orderedObjects || []) {

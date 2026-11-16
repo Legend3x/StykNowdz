@@ -3,6 +3,9 @@ import {restoreMessageError, messageError} from './localized-error.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 import {assetURL} from './image-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
+import {isFaceUrl, faceRecipeOf} from './face-compose.mjs';
+/** An image wanted by URL alone; a 2D face picture brings its recipe for the decoder to paint. */
+const lazyItem = url => { const recipe = isFaceUrl(url) ? faceRecipeOf(url) : null; return {type: 'image', asset: {url}, ...(recipe ? {faceRecipe: recipe} : {})}; };
 import {withMeshTextureImages} from './spatial-mesh.mjs';
 /** One serial worker per image owner. Originals stay in the document; Map values
  * are disposable CanvasImageSources with original logical dimensions. */
@@ -40,7 +43,7 @@ export class PreviewImages extends Map {
     // in the coalesced batch until their pixels arrive, even when the viewport
     // replaces an unrelated queued preparation.
     const urls = new Set(images.map(item => assetURL(item.asset)));
-    for (const url of this.pendingImages.keys()) if (!urls.has(url)) images.push({type:'image',asset:{url}});
+    for (const url of this.pendingImages.keys()) if (!urls.has(url)) images.push(lazyItem(url));
     if (!images.length && !this.size && !this.busy) return Promise.resolve();
     const signature = JSON.stringify([images.map(item => {
       const url = assetURL(item.asset);
@@ -143,7 +146,7 @@ export class PreviewImages extends Map {
     const decoded = new Promise((resolve,reject) => this.pendingImages.set(url,{resolve,reject}));
     decoded.catch(() => {}); pending.decode = () => decoded;
     super.set(url, pending);
-    const items = [...this.pendingImages.keys()].map(url => ({type: 'image', asset: {url}}));
+    const items = [...this.pendingImages.keys()].map(lazyItem);
     void this.prepare(items, {maxDimension: 2048}, {retain:true});
     return pending;
   }

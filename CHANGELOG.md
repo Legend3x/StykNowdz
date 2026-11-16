@@ -12,6 +12,8 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - Textured models come in from .glb files and Open in Blender with their images and UVs, and textures painted in Blender come back too.
 - Unwrap 3D Nowdz models with U (Smart UV Project, Cube, Project from View) and arrange the UVs over the texture in the new UV editor. Unwrapping several parts gives them one shared texture with their colours already in it.
 - Paint a 3D Nowdz model's texture with every Draw tool: Paint texture opens it in Draw with the UV layout on top, and Done puts it back on the model.
+- 3D Nowdz models can have a 2D face: + › 2D face paints eyes, brows, lip-sync mouths, blush and sweat onto the head, and you can repaint any of them in Draw.
+- Pose a 2D face on the stage from its face badge: drag where the eyes look, pick eye and mouth shapes, raise and tilt the brows, and add a blink. It keys like any pose.
 
 - Stick Nodes filters such as tint, hue shift, glow, blur, outline and drop shadow now import as effects you can edit. Projects imported earlier get them when opened.
 - Stick Nodes camera wobble now comes in as a Handheld camera move.

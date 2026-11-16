@@ -11,8 +11,10 @@ import {shadowColor} from './toon-shading.mjs';
 
 const EPS=1e-9,NEAR=.05;
 export const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
-const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals','textures','uvs','textureIndex']);
+const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals','textures','uvs','textureIndex','face']);
 export const MESH_TEXTURES=16,MESH_TEXTURE_SIDE=4096;
+import {readFace,faceRecipe,faceUrl,readFaceValues} from './face-rig.mjs';
+import {registerFace, isFaceUrl, faceRecipeOf} from './face-compose.mjs';
 const TEXTURE_URL=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 export const spatialMeshOf=figure=>figure?._styk?.spatialMesh;
 
@@ -99,14 +101,20 @@ export function validateSpatialMesh(figure){
       Array.isArray(textureIndex)&&textureIndex.length===triangles&&textureIndex.every(i=>Number.isInteger(i)&&i>=-1&&i<textures.length);
     if(!ok)fail("errors.spatialMesh.invalid3dMeshTextures", {});
   }
+  // A 2D face (docs/FACE-RIG.md) draws on one of the textures: `texture` is its slot.
+  if(m.face!==undefined){
+    const slots=new Set((m.textures??[]).map((_,i)=>i)),face=readFace(m.face,slots);
+    if(!face||JSON.stringify(face)!==JSON.stringify(m.face))fail("errors.spatialMesh.invalid3dMeshTextures", {});
+  }
 }
 /** The texture images an evaluated mesh drawable shows (data URLs), or none. */
-export const meshTextureUrls=item=>item?.type==='mesh'&&item.uvs?(item.spatialMesh?.plan?.mesh?.textures??[]).map(t=>t.src):[];
+export const meshTextureUrls=item=>item?.type==='mesh'&&item.uvs?item.textureUrls??(item.spatialMesh?.plan?.mesh?.textures??[]).map(t=>t.src):[];
 /** Image loaders decode pictures for image drawables. A textured mesh's images
  * join as placement-free image items: decoded whole, at the drawing's scale. */
 export const withMeshTextureImages=items=>{
   const urls=[...new Set(items.flatMap(meshTextureUrls))];
-  return urls.length?[...items,...urls.map(url=>({type:'image',asset:{url},meshTexture:true}))]:items;
+  // A face picture carries its recipe, so a loader on another thread can paint it.
+  return urls.length?[...items,...urls.map(url=>{const recipe=isFaceUrl(url)?faceRecipeOf(url):null;return {type:'image',asset:{url},meshTexture:true,...(recipe?{faceRecipe:recipe}:{})};})]:items;
 };
 
 /** Remap bone and reference joint IDs, e.g. when figures are combined. The
@@ -403,12 +411,22 @@ export function evaluateSpatialMesh(plan,frames,context,previous){
   for(;;){const step=steps.next();if(step.done)return step.value;}
 }
 
+/** The texture URLs an object's mesh shows: the definition's, with the face's
+ * texture replaced by this object's face picture. Null without a face. */
+export function faceTextures(definition,obj){
+  const face=definition?.face,textures=definition?.textures;if(!face||!textures?.[face.texture])return null;
+  const recipe=faceRecipe(face,textures[face.texture],readFaceValues(face,obj?._stykFace)),url=faceUrl(recipe);
+  registerFace(url,recipe);
+  return textures.map((t,i)=>i===face.texture?url:t.src);
+}
 /** Painter-order drawables for an evaluated mesh. Other visible primitives of
  * the same figure split its triangles exactly where native per-face ordering
  * would place them; a face tied with a primitive draws before it. */
 export function spatialMeshDrawables(mesh,owner,others){
   if(!mesh?.count)return [];
-  const item=(index,triangles,materials,count,z,uvs,textures)=>({type:'mesh',...owner,index,spatialMesh:mesh,triangles,materials,count,z,alpha:1,...(uvs?{uvs,textures}:{})});
+  // A 2D face swaps its texture for this object's face picture (registered for the image loaders).
+  const textureUrls=mesh.uvs?faceTextures(mesh.plan?.mesh,owner.obj):null;
+  const item=(index,triangles,materials,count,z,uvs,textures)=>({type:'mesh',...owner,index,spatialMesh:mesh,triangles,materials,count,z,alpha:1,...(uvs?{uvs,textures,...(textureUrls?{textureUrls}:{})}:{})});
   const levels=[...new Set(others.filter(Number.isFinite))].sort((a,b)=>a-b);
   if(!levels.length||mesh.zMax<levels[0])return [item(0,mesh.triangles,mesh.materials,mesh.count,levels.length?levels[0]:mesh.zMin,mesh.uvs,mesh.textures)];
   const bucket=new Uint32Array(mesh.count),sizes=new Uint32Array(levels.length+1);

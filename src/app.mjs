@@ -49,7 +49,7 @@ import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
 import {AudioEngine} from './audio-engine.mjs';
 import {audioState, audioFps, audibleClips} from './audio-model.mjs';
 import {PreviewImages} from './preview-images.mjs';
-import {backgroundImageAssets,frameImageDrawables} from './scene-preparation.mjs';
+import {backgroundImageAssets,frameImageDrawables,frameMeshTextureDrawables} from './scene-preparation.mjs';
 import { PlaybackMetrics } from "./playback-metrics.mjs";
 import {PlaybackCadence} from './playback-cadence.mjs';
 import {previewQualityLevels, previewMsaaLevels, updatePreviewQuality, playbackQualityIndex} from './preview-quality.mjs';
@@ -1941,6 +1941,7 @@ function loop(now) {
         editing = state.editingPacket;
       if (geometry) void images.prepare([
         ...frameImageDrawables(geometry),
+        ...frameMeshTextureDrawables(geometry),
         ...onionFrames.flatMap(entry => frameImageDrawables(entry.geometry)),
         ...backgroundImageAssets(editor.report, frame).map(asset => ({type: 'image', asset})),
       ], {scale: Math.max(1 / 64, 2 ** Math.ceil(Math.log2(playbackScale() || 1))), maxDimension: 4096}).catch(() => {});
@@ -2225,6 +2226,7 @@ function syncSelectionControls() {
 /** Every chrome surface now (startup, a restored document); queueUI() marks them for the next frame instead. */
 function updateUI() {
   ui.flushAll();
+  if (facePanel) { facePanel.editor = editor; facePanel.sync(); }
 }
 /** The scene's size and the figure count. (#selection-summary is the shell's: studio-shell writes the scope there.) */
 function updateStatus() {
@@ -2577,6 +2579,9 @@ overlay.addEventListener(
       const badge=pickFaceBadge(editor,screenPoint(p),screenPoint,{hidden:effectiveHidden()});
       if(badge){releaseCanvasPointer();
         // With swap choices (mouths, eyes) the badge opens their menu; with face joints only it shows or hides them.
+        // A 2D face (a 3D Nowdz model's painted face) opens the face panel.
+        if(badge.painted){const box=viewport.getBoundingClientRect(),sx=box.width/(viewport.clientWidth||box.width),sy=box.height/(viewport.clientHeight||box.height);
+          editor.select(badge.uid,-1);handleCache=null;requestRender();void showFacePanel(badge.uid,{x:box.left+(badge.x+12)*sx,y:box.top+(badge.y-10)*sy});return;}
         if(badge.choices){const box=viewport.getBoundingClientRect(),sx=box.width/(viewport.clientWidth||box.width),sy=box.height/(viewport.clientHeight||box.height);
           const items=faceMenuItems(editor,badge.uid,{text:interfaceText,changed:()=>{handleCache=null;requestRender();}});
           handleCache=null;requestRender();showCommandMenu(items,{left:box.left+badge.x*sx,bottom:box.top+(badge.y+10)*sy,invoker:viewport},{label:interfaceText("spatialControls.faceMenu"),labelKey:"spatialControls.faceMenu"});return;}
@@ -4680,59 +4685,93 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
 // drawing layer holding the texture, under a locked drawing layer with the UV
 // layout. The band's Done writes the painted pixels into the model and goes back
 // to 3D Nowdz; Cancel goes back unchanged. The animation itself is never touched.
+// ---------- Face panel (docs/FACE-RIG.md): a 2D face posed from its badge ----------
+let facePanel = null;
+async function showFacePanel(uid, at) {
+  if (!facePanel) { const {FacePanel} = await import("./face-panel.mjs"); facePanel ??= new FacePanel({editor, changed: () => { handleCache = null; requestRender(); queueUI(); }}); }
+  facePanel.editor = editor; facePanel.show(uid, at);
+}
 let paintRequest = null, paintSession = null;
-async function startTexturePainting({texture, guide, draftKey, editing, typeId}) {
-  const origin = projects.tabs.activeId;
+/** What a paint request opens: the layers to paint (bottom first), a locked
+ * picture under and over them, and where Done writes the result. A texture
+ * paints over its UV layout; a 2D face drawing paints over the face around it. */
+function paintJob(request) {
+  if (request.texture) {
+    const {texture, guide} = request;
+    return {name: interfaceText("modeler.paint.projectName", {name: texture.name}), width: texture.width, height: texture.height,
+      layers: [{key: "src", name: interfaceText("modeler.paint.textureLayer"), src: texture.src}], above: guide ? {name: interfaceText("modeler.paint.guideLayer"), src: guide} : null,
+      target: {kind: "texture", id: texture.id}, started: "modeler.paint.started"};
+  }
+  const {paint, target} = request;
+  return {name: interfaceText("modeler.paint.projectName", {name: paint.name}), width: paint.width, height: paint.height, layers: paint.layers,
+    below: paint.reference ? {name: interfaceText("modeler.face2d.aroundLayer"), src: paint.reference} : null, target, started: "modeler.face2d.paintStarted"};
+}
+/** A see-through PNG the size of the canvas, for a layer with nothing drawn yet. */
+function clearPNG(width, height) { const c = document.createElement("canvas"); c.width = width; c.height = height; return c.toDataURL("image/png"); }
+async function startTexturePainting({draftKey, editing, typeId, ...request}) {
+  const origin = projects.tabs.activeId, job = paintJob(request);
   pause();
   const [{createImageFigure}, {createFrame, createObject}, {drawingSheetPlan, drawingSheetPublish}, {drawingId}, {createBlankDocument}] = await Promise.all([
     import("./media-authoring.mjs"), import("./demo.mjs"), import("./editor-layer-sheet.mjs"), import("./drawing-model.mjs"), import("./startup-document.mjs")]);
   try {
-    const name = interfaceText("modeler.paint.projectName", {name: texture.name});
-    if (!await openProject((session) => editor.load(createBlankDocument({canvas: {width: texture.width, height: texture.height}}), name, session))) { await reopenModel({draftKey, editing, typeId, origin}); return; }
+    const {name, width, height} = job;
+    if (!await openProject((session) => editor.load(createBlankDocument({canvas: {width, height}}), name, session))) { await reopenModel({draftKey, editing, typeId, origin}); return; }
     // Each image becomes a drawing cel whose pixel (0, 0) sits on the canvas's top left.
     const place = (layerId, dataUrl, label) => {
       const typeIdNext = editor.report.figure_types.reduce((n, f) => Math.max(n, f.figure_type_id + 1), 1);
-      const figure = createImageFigure({width: texture.width, height: texture.height, dataUrl, figureTypeId: typeIdNext, name: label});
-      Object.assign(figure.image_assets[0], {display_width: texture.width, display_height: texture.height});
-      figure._styk.drawing = {version: 1, celId: drawingId(), width: texture.width, height: texture.height, pixelsPerUnit: 1, origin: {x: 0, y: 0},
-        crop: {x: 0, y: 0, width: texture.width, height: texture.height}, revision: 0, empty: false};
+      const figure = createImageFigure({width, height, dataUrl, figureTypeId: typeIdNext, name: label});
+      Object.assign(figure.image_assets[0], {display_width: width, display_height: height});
+      figure._styk.drawing = {version: 1, celId: drawingId(), width, height, pixelsPerUnit: 1, origin: {x: 0, y: 0},
+        crop: {x: 0, y: 0, width, height}, revision: 0, empty: false};
       const anchor = figure.image_assets[0].anchor_start ?? {x: 0, y: 0}, object = createObject(figure, editor._identity(), anchor.x, anchor.y, {scale: 1});
       const plan = drawingSheetPlan(editor, [layerId]); plan.definitions = [...editor.report.figure_types, figure];
       plan.write(layerId, 0, createFrame([object]), {easing: {interpolation: "constant"}});
       drawingSheetPublish(editor, plan, "Place texture", {assets: {figure_types: {added: [figure]}}});
     };
-    const blankLayers = [...(editor.report._styk.layers?.order ?? [])];
-    const paintLayer = editor.createDrawingLayer(interfaceText("modeler.paint.textureLayer"));
-    place(paintLayer.id, texture.src, texture.name);
-    const guideLayer = editor.createDrawingLayer(interfaceText("modeler.paint.guideLayer"));
-    place(guideLayer.id, guide, interfaceText("modeler.paint.guideLayer"));
-    editor.setLayerLocked(guideLayer.id, true);
+    const blankLayers = [...(editor.report._styk.layers?.order ?? [])], made = new Set();
+    const locked = (picture) => { const layer = editor.createDrawingLayer(picture.name); made.add(layer.id); place(layer.id, picture.src, picture.name); editor.setLayerLocked(layer.id, true); };
+    if (job.below) locked(job.below);
+    const layers = job.layers.map((entry) => { const layer = editor.createDrawingLayer(entry.name); made.add(layer.id); place(layer.id, entry.src ?? clearPNG(width, height), entry.name); return {key: entry.key, id: layer.id}; });
+    if (job.above) locked(job.above);
     // The empty layer every new project starts with has no place here.
-    for (const id of blankLayers) if (id !== paintLayer.id && id !== guideLayer.id) try { editor.deleteLayer(id); } catch { /* keep it */ }
-    editor.setActiveLayer(paintLayer.id);
-    paintSession = {tab: projects.tabs.activeId, origin, textureId: texture.id, name, layer: paintLayer.id, width: texture.width, height: texture.height, draftKey, editing, typeId};
+    for (const id of blankLayers) if (!made.has(id)) try { editor.deleteLayer(id); } catch { /* keep it */ }
+    editor.setActiveLayer(layers.at(-1).id);
+    paintSession = {tab: projects.tabs.activeId, origin, name, layers, target: job.target, width, height, draftKey, editing, typeId};
     editor.markSaved();
     fit();
     document.querySelector('.workspace-switch [data-workspace-mode="draw"]')?.click();
-    notify(interfaceText("modeler.paint.started"), "modeler.paint.started", {});
+    notify(interfaceText(job.started), job.started, {});
   } catch (error) { fail(error); }
   syncShell(); queueUI();
 }
-/** Done (keep) or Cancel on the paint session: back to 3D Nowdz with the texture painted or as it was. */
+/** Write painted images into the kept 3D Nowdz draft: a texture, or a 2D face drawing (an empty layer removes it). */
+function applyPainted(model, target, images) {
+  if (target.kind === "texture") { const texture = model?.textures?.find((t) => t.id === target.id); if (texture && images.src) texture.src = images.src; return Boolean(texture); }
+  const feature = model?.face?.features?.find((f) => f.id === target.feature);
+  if (!feature) return false;
+  if (target.kind === "pupil") { if (feature.pupil) { if (images.src) feature.pupil.src = images.src; else delete feature.pupil.src; } return true; }
+  const state = feature.states?.[target.state]; if (!state) return false;
+  for (const [key, src] of Object.entries(images)) { if (src) state[key] = src; else delete state[key]; }
+  return true;
+}
+/** Done (keep) or Cancel on the paint session: back to 3D Nowdz with the painting kept or as it was. */
 async function finishTexturePainting(keep) {
   const session = paintSession; if (!session) return;
   if (projects.tabs.activeId !== session.tab && !await projects.activate(session.tab)) return;
   try {
     if (keep) {
       finishCurrentEdit(); await drawingController?.barrier();
-      const target = editor.drawingTarget(session.layer, 0);
-      if (target.figure) {
-        const [{encodeDrawingPNG}] = await Promise.all([import("./drawing-png.mjs")]);
+      const [{encodeDrawingPNG}] = await Promise.all([import("./drawing-png.mjs")]), images = {};
+      for (const layer of session.layers) {
+        const target = editor.drawingTarget(layer.id, 0);
+        if (!target.figure) { images[layer.key] = null; continue; }
         const surface = await editor.drawingResources.surface(target.figure), pixels = surface.store.readRect(0, 0, session.width, session.height);
-        const src = await encodeDrawingPNG(pixels, session.width, session.height), draft = modelDrafts.get(session.draftKey);
-        const texture = draft?.model?.textures?.find((t) => t.id === session.textureId);
-        if (texture) { texture.src = src; keepModelDraft(session.draftKey, draft); }
+        // A layer left empty holds nothing (a closed eye has no white).
+        let any = false; for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) { any = true; break; }
+        images[layer.key] = any ? await encodeDrawingPNG(pixels, session.width, session.height) : null;
       }
+      const draft = modelDrafts.get(session.draftKey);
+      if (applyPainted(draft?.model, session.target, images)) keepModelDraft(session.draftKey, draft);
     }
   } catch (error) { fail(error); return; }
   paintSession = null;
@@ -4740,7 +4779,7 @@ async function finishTexturePainting(keep) {
   if (drawingController?.active) document.querySelector('.workspace-switch [data-workspace-mode="animate"]')?.click();
   await projects.close(session.tab);
   await reopenModel(session);
-  if (keep) notify(interfaceText("modeler.paint.saved"), "modeler.paint.saved", {});
+  if (keep) notify(interfaceText(session.target.kind === "texture" ? "modeler.paint.saved" : "modeler.face2d.paintSaved"), session.target.kind === "texture" ? "modeler.paint.saved" : "modeler.face2d.paintSaved", {});
 }
 /** Back to the project the model belongs to, and 3D Nowdz on its kept draft. */
 async function reopenModel({origin, editing, typeId}) {

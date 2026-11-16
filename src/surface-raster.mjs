@@ -113,7 +113,7 @@ function softwareTextured(pixels,zbuffer,batches,box,w,h,sx,sy){
  * to that image's batch (9 floats a corner), the rest stay plain. Returns the
  * plain triangle count. */
 function textureBatches(s,image,batches){
-  const mesh=s.spatialMesh,urls=mesh.plan?.mesh?.textures??[];
+  const mesh=s.spatialMesh,urls=s.textureUrls?.map(src=>({src}))??mesh.plan?.mesh?.textures??[];
   if(!s.uvs||s.onionTint||!urls.length)return null;
   // Only a decoded whole picture can be sampled (loaders hand out placeholders and crops too).
   const usable=img=>img?.complete&&img.naturalWidth>0&&(img.srcW===undefined||(img.srcX===0&&img.srcY===0&&img.srcW>=img.naturalWidth&&img.srcH>=img.naturalHeight));

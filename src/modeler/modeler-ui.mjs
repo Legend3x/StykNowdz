@@ -12,7 +12,10 @@ import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX}
 import {addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged} from './armature.mjs';
 import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
   originOf, setOrigin, connections, tracedLines, lineOf, otherEnd, swapChoiceOf, hiddenBySwap, showChoice, swapSetProblem, makeSwapSet, plainFolder, choiceKey, choicesOf} from './layers.mjs';
-import {starterFace, stickToFace, faceFrame} from './face-sets.mjs';
+import {starterFace, stickToFace, faceFrame, facePart} from './face-sets.mjs';
+import {faceUnwrap, uvAtFront, starterLayout} from './face-2d.mjs';
+import {starterArt, artSize} from '../face-starter-art.mjs';
+import {readFace, faceRecipe, composeFace, recipeImages, featureValue, FACE_FEATURES, FACE_STATES} from '../face-rig.mjs';
 import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
@@ -78,7 +81,7 @@ function listenToBlender() {
 export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose, onPaintTexture = null} = {}) {
   if (draft?.model) initial = draft.model;
   let model = initial ? readModel(initial) : emptyModel();
-  const S = {mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, second: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
+  const S = {facePreview: {}, faceImages: new Map(), faceCanvas: null, faceFeature: undefined, mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, second: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
     depth: createDepthPass(), camera: defaultCamera(), showTextures: true, texImages: new Map(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
 
@@ -86,14 +89,17 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // Texture images are large: undo steps hold a short key for each, and each image is kept once here.
   const imagePool = new Map(), imageKeys = new Map();
   const imageKey = src => { let key = imageKeys.get(src); if (!key) { key = `pool:${imageKeys.size + 1}`; imageKeys.set(src, key); imagePool.set(key, src); } return key; };
+  /** Every image a model holds, as [object, key] pairs: textures and the 2D face's drawings. */
+  const imageSlots = m => [...(m.textures ?? []).map(tex => [tex, 'src']),
+    ...(m.face?.features ?? []).flatMap(f => [...(f.states ?? []).flatMap(st => ['under', 'over'].filter(k => st[k]).map(k => [st, k])), ...(f.pupil?.src ? [[f.pupil, 'src']] : [])])];
   const snapshot = () => {
-    const sources = (model.textures ?? []).map(tex => tex.src);
-    for (const tex of model.textures ?? []) tex.src = imageKey(tex.src);
+    const slots = imageSlots(model), sources = slots.map(([o, k]) => o[k]);
+    for (const [o, k] of slots) o[k] = imageKey(o[k]);
     try { return JSON.stringify({model, parts: [...S.parts], active: S.active, verts: [...S.verts], bones: [...S.bones], mode: S.mode}); }
-    finally { (model.textures ?? []).forEach((tex, i) => { tex.src = sources[i]; }); }
+    finally { slots.forEach(([o, k], i) => { o[k] = sources[i]; }); }
   };
   const restore = text => {
-    const v = JSON.parse(text); for (const tex of v.model.textures ?? []) tex.src = imagePool.get(tex.src) ?? tex.src;
+    const v = JSON.parse(text); for (const [o, k] of imageSlots(v.model)) o[k] = imagePool.get(o[k]) ?? o[k];
     model = v.model; S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode; S.cache.clear(); syncRefs(); refresh();
   };
   /** Run a change as one undo step. A change that would break a mesh is
@@ -343,7 +349,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       ['cone', t("modeler.cone")], ['torus', t("modeler.torus")], ['plane', t("modeler.plane")], ['circle', t("modeler.circle")], ['point', t("modeler.singlePoint")]];
     menu(anchor, [...shapes.map(([id, label]) => menuItem(label, () => { if (id === 'baseCharacter') addBaseCharacter(); else addPrimitive(id); })), menuLine(),
       menuItem(S.parts.size ? t("modeler.groupIntoFolder") : t("modeler.newFolder"), () => groupIntoFolder(), {title: 'Ctrl+G'}),
-      menuItem(t("modeler.starterFace"), addStarterFace, {title: t("modeler.starterFaceHint")}), menuLine(),
+      menuItem(t("modeler.starterFace"), addStarterFace, {title: t("modeler.starterFaceHint")}),
+      menuItem(model.face ? t("modeler.face2d.edit") : t("modeler.face2d.add"), add2DFace, {title: t("modeler.face2d.addHint")}), menuLine(),
       menuItem(t("modeler.humanoidSkeleton"), addHumanoid, {title: t("modeler.humanoidSkeletonHint")}), menuItem(t("modeler.faceBones"), addFaceBones, {title: t("modeler.faceBonesHint")}),
       menuItem(t("modeler.addBone"), () => { if (S.mode !== 'bones') setMode('bones'); addSingleBone(); })]);
   }
@@ -379,6 +386,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       choice ? menuLine() : null,
       onPaintTexture && q.mesh.faces.some(f => f.t !== undefined && f.uv) ? menuItem(t("modeler.paint.button"), () => { S.active = q.id; paintTexture(q.mesh.faces.find(f => f.t !== undefined && f.uv).t); }, {title: t("modeler.paint.hint")}) : null,
       menuItem(t("modeler.uv.unwrap"), () => { S.parts = new Set(ids); S.active = q.id; unwrapMenu(pointAnchor(e)); }, {title: t("modeler.uv.unwrapHint")}),
+      !choice && (!model.face || facePartOf() === q) ? menuItem(model.face ? t("modeler.face2d.edit") : t("modeler.face2d.add"), () => { S.parts = new Set([q.id]); S.active = q.id; if (model.face) { setMode('object'); add2DFace(); } else add2DFaceOn(q); }, {title: t("modeler.face2d.addHint")}) : null,
       menuItem(t("modeler.renameLayer"), () => rename(q)), menuItem(t("modeler.duplicate"), () => { S.parts = new Set(ids); S.active = q.id; if (S.mode === 'edit') setMode('object'); duplicateParts(); }),
       menuItem(ids.length > 1 ? t("modeler.groupIntoFolder") : t("modeler.putInNewFolder"), () => { S.parts = new Set(ids); if (S.mode !== 'object') setMode('object'); groupIntoFolder(); }),
       ...folders.filter(f => f.id !== q.folder).slice(0, 8).map(f => menuItem(t("modeler.moveToFolder", {name: f.name}), () => commit(() => { moveToFolder(model, ids, f.id); }))),
@@ -864,6 +872,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           el('p', {class: 'modeler-hint', text: t("modeler.followsBoneHint")}),
         ]));
         blocks.push(section(t("modeler.partLook"), partLook(p)));
+        if (model.face && facePartOf() === p) blocks.push(section(t("modeler.face2d.title"), faceTools()));
       } else if (S.parts.size > 1) blocks.push(section(t("modeler.parts"), [el('p', {class: 'modeler-hint', text: t("modeler.partsSelected", {count: S.parts.size})}),
         actions([[t("modeler.joinParts"), joinParts, t("modeler.joinPartsHint")]])]));
       else blocks.push(section(t("modeler.start"), [el('p', {class: 'modeler-hint', text: model.parts.length ? t("modeler.clickAPart") : t("modeler.startHint")}),
@@ -1209,6 +1218,180 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal) cancelModal();
     S.keepDraft = true;
     onPaintTexture({texture: {id: tex.id, name: tex.name, src: tex.src, width: tex.width, height: tex.height}, guide: uvGuide(tex)});
+  }
+
+  // ---------- 2D face (docs/FACE-RIG.md) ----------
+  // A painted face on the head's texture: eyes with pupils, brows, mouths and
+  // extras, each a box on the texture holding drawn states. 3D Nowdz places and
+  // previews them; the stage picks states and looks per pose.
+  const FACE_NAMES = () => ({eyeL: t("modeler.face2d.eyeL"), eyeR: t("modeler.face2d.eyeR"), browL: t("modeler.face2d.browL"), browR: t("modeler.face2d.browR"),
+    mouth: t("modeler.face2d.mouth"), blush: t("modeler.face2d.blush"), sweat: t("modeler.face2d.sweat")});
+  const artCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  /** The UV tools' view of a part: every face, points in world space. */
+  const wholeTarget = p => { const m = M.objectMatrix(p); return {p, mesh: p.mesh, faces: new Set(p.mesh.faces.map((_, i) => i)), points: p.mesh.verts.map(v => [...X.transformPoint(m, v)])}; };
+  /** The part the face is painted on: the one whose faces use the face's texture (the face part first). */
+  function facePartOf(face = model.face) {
+    if (!face) return null;
+    const uses = q => q.visible !== false && q.mesh.faces.some(f => f.t === face.texture);
+    const named = facePart(model); return named && uses(named) ? named : model.parts.find(uses) ?? null;
+  }
+  /** + › 2D face: unwrap the head for a face if needed, then place starter eyes, brows, mouths and extras on it. */
+  function add2DFace() { return add2DFaceOn(null); }
+  function add2DFaceOn(chosen) {
+    if (model.face) { const q = facePartOf(); if (q) { S.parts = new Set([q.id]); S.active = q.id; } S.faceFeature ??= model.face.features[0]?.id; S.showTextures = true; lookAtFace(); refresh(); return; }
+    const p = chosen ?? facePart(model) ?? activePart();
+    if (!p || !p.mesh.faces.length) { toast(t("modeler.face2d.noHead")); return; }
+    if (S.mode !== 'object') setMode('object');
+    const made = commit(() => {
+      // A mirrored head becomes whole first: each side of the face is drawn on its own.
+      if (p.mirror) { const m = M.objectMatrix(p); p.mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m)), X.invert(m)); p.mirror = false; }
+      const target = wholeTarget(p), frame = faceFrame(model, [evaluatePart(p)]);
+      if (!frame) throw Object.assign(new RangeError(t("modeler.face2d.noHead")), {modelerMessage: true});
+      // Keep a texture whose front already shows the face; otherwise lay the head out for one.
+      const hit = (() => { for (const fi of target.faces) { const f = p.mesh.faces[fi]; if (f.t !== undefined && f.uv && uvAtFront({...target, faces: new Set([fi])}, frame.xc, frame.y0 + frame.H * .5)) return f.t; } return undefined; })();
+      let id = hit;
+      if (id === undefined || !model.textures?.some(tex => tex.id === id)) {
+        if ((model.textures?.length ?? 0) >= TEXTURE_LIMIT) throw Object.assign(new RangeError(t("modeler.uv.tooMany", {limit: TEXTURE_LIMIT})), {modelerMessage: true});
+        if (!faceUnwrap(target)) throw Object.assign(new RangeError(t("modeler.face2d.noFront")), {modelerMessage: true});
+        id = addTexture(model, {name: t("modeler.face2d.textureName", {name: p.name}), ...bakeColours([target])}).id;
+        for (const f of p.mesh.faces) f.t = id;
+      }
+      const face = starterLayout(target, frame, id, FACE_NAMES());
+      if (!face.features.length) throw Object.assign(new RangeError(t("modeler.face2d.noFront")), {modelerMessage: true});
+      const tex = model.textures.find(x => x.id === id);
+      for (const f of face.features) if (!f.mirrorOf) Object.assign(f, starterArt(f.kind, f.id, ...artSize(f, tex), artCanvas));
+      model.face = face; S.cache.delete(p.id);
+      return true;
+    });
+    if (!made) return;
+    S.faceFeature = 'mouth'; S.facePreview = {}; S.showTextures = true; S.parts = new Set([p.id]); S.active = p.id;
+    lookAtFace(); toast(t("modeler.face2d.added"));
+  }
+  const faceFeatureOf = id => model.face?.features.find(f => f.id === id) ?? null;
+  /** The face drawn with the preview values, on a canvas standing in for its texture in the viewport. */
+  function composedFace(base) {
+    const face = readFace(model.face, new Set((model.textures ?? []).map(x => x.id)));
+    if (!face || !base) return null;
+    const tex = model.textures.find(x => x.id === face.texture), recipe = faceRecipe(face, {src: tex.src, width: tex.width, height: tex.height}, S.facePreview);
+    if (S.faceCanvas?.key === recipe.key) return S.faceCanvas.canvas;
+    const images = new Map(); let waiting = false;
+    for (const src of recipeImages(recipe)) {
+      if (src === tex.src) { images.set(src, base); continue; }
+      let img = S.faceImages.get(src);
+      if (!img) { img = new Image(); img.onload = () => draw(); img.src = src; S.faceImages.set(src, img); }
+      if (img.complete && img.naturalWidth) images.set(src, img); else waiting = true;
+    }
+    const canvas = artCanvas(tex.width, tex.height);
+    composeFace(canvas.getContext('2d'), recipe, images, (w, h) => { const c = S.faceScratch ??= artCanvas(1, 1); if (c.width < w) c.width = w; if (c.height < h) c.height = h; return c.getContext('2d'); });
+    // A drawing still loading: show this one now, compose again when it arrives.
+    if (!waiting) S.faceCanvas = {key: recipe.key, canvas};
+    if (S.faceImages.size > 200) S.faceImages.clear();
+    return canvas;
+  }
+  /** Change the face as one undo step (`fn` gets the face). */
+  const editFace = fn => commit(() => { fn(model.face); S.faceCanvas = null; });
+  /** Values previewed in 3D Nowdz only (never saved): a state per feature, the look, brows, extras. */
+  function previewFace(id, values) { S.facePreview = {...S.facePreview, [id]: {...S.facePreview?.[id], ...values}}; draw(); }
+  /** Paint a face drawing in the Draw tab: an eye's white and lids as two layers over the face around it. */
+  function paintFaceState(feature, index) {
+    const f = faceFeatureOf(feature.mirrorOf ?? feature.id), state = f?.states[index], tex = model.textures?.find(x => x.id === model.face.texture);
+    if (!state || !tex) return;
+    const [w, h] = artSize(f, tex, 512), layers = f.kind === 'eye'
+      ? [{key: 'under', name: t("modeler.face2d.eyeWhite"), src: state.under}, {key: 'over', name: t("modeler.face2d.lids"), src: state.over}]
+      : [{key: 'over', name: state.name, src: state.over}];
+    if (S.modal) cancelModal();
+    S.keepDraft = true;
+    onPaintTexture({paint: {name: `${f.name} · ${state.name}`, width: w, height: h, layers, reference: faceReference(f, w, h)}, target: {kind: 'face', feature: f.id, state: index}});
+  }
+  function paintPupil(feature) {
+    const f = faceFeatureOf(feature.mirrorOf ?? feature.id); if (!f?.pupil) return;
+    if (S.modal) cancelModal();
+    S.keepDraft = true;
+    onPaintTexture({paint: {name: `${f.name} · ${t("modeler.face2d.pupil")}`, width: 256, height: 256, layers: [{key: 'src', name: t("modeler.face2d.pupil"), src: f.pupil.src}]}, target: {kind: 'pupil', feature: f.id}});
+  }
+  /** The texture under a feature's box, as a picture to paint over. */
+  function faceReference(f, w, h) {
+    const img = S.texImages.get(model.face.texture)?.img, tex = model.textures.find(x => x.id === model.face.texture);
+    if (!img?.naturalWidth) return undefined;
+    const c = artCanvas(w, h), g = c.getContext('2d');
+    g.translate(w / 2, h / 2); g.rotate(f.angle * Math.PI / 180); g.scale(w / (f.w * tex.width), h / (f.h * tex.height));
+    g.drawImage(img, -f.x * tex.width, -(1 - f.y) * tex.height);
+    return c.toDataURL('image/png');
+  }
+  /** Add a feature with starter drawings, beside the face's middle. */
+  function addFaceFeature(kind) {
+    const tex = model.textures?.find(x => x.id === model.face?.texture); if (!tex) return;
+    const count = model.face.features.length;
+    if (count >= FACE_FEATURES) { toast(t("modeler.face2d.tooMany", {limit: FACE_FEATURES})); return; }
+    let n = 1; while (faceFeatureOf(`${kind}${n}`)) n++;
+    const size = {eye: [.12, .09], brow: [.13, .04], mouth: [.18, .11], extra: [.12, .12]}[kind];
+    const f = {id: `${kind}${n}`, kind, name: t(`modeler.face2d.kind.${kind}`) + (n > 1 ? ` ${n}` : ''), x: .375, y: .5, w: size[0], h: size[1], angle: 0, states: []};
+    Object.assign(f, starterArt(kind, kind === 'extra' ? 'blush' : f.id, ...artSize(f, tex), artCanvas));
+    editFace(face => { face.features.push(f); });
+    S.faceFeature = f.id;
+  }
+  function removeFaceFeature(f) {
+    editFace(face => {
+      // Mirrors of it take its drawings and stand on their own.
+      for (const g of face.features) if (g.mirrorOf === f.id) { g.states = structuredClone(f.states); if (f.pupil) g.pupil = structuredClone(f.pupil); delete g.mirrorOf; mirrorArt(g); }
+      face.features = face.features.filter(g => g !== f);
+      if (!face.features.length) delete model.face;
+    });
+    S.faceFeature = model.face?.features[0]?.id;
+  }
+  /** Flip a feature's own drawings left to right (a mirror that now stands on its own keeps its look). */
+  function mirrorArt(f) {
+    const flip = src => { const img = S.faceImages.get(src); if (!img?.naturalWidth) return src; const c = artCanvas(img.naturalWidth, img.naturalHeight), g = c.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(img, 0, 0); return c.toDataURL('image/png'); };
+    for (const st of f.states) for (const k of ['under', 'over']) if (st[k]) st[k] = flip(st[k]);
+  }
+  /** The 2D face section of Object mode: features, their states and places, previews. */
+  function faceTools() {
+    const face = model.face, f = faceFeatureOf(S.faceFeature) ?? face.features[0], src = f && (faceFeatureOf(f.mirrorOf) ?? f);
+    S.faceFeature = f?.id;
+    const v = f ? featureValue(face, f, S.facePreview?.[f.id]) : null;
+    const rows = face.features.map(g => el('button', {type: 'button', class: 'modeler-face-row', 'aria-pressed': String(g === f), onclick: () => { S.faceFeature = g.id; renderProps(); }},
+      [el('span', {text: g.name}), el('small', {text: g.mirrorOf ? t("modeler.face2d.mirrors", {name: faceFeatureOf(g.mirrorOf)?.name ?? ''}) : t(`modeler.face2d.kind.${g.kind}`)})]));
+    const out = [el('p', {class: 'modeler-hint', text: t("modeler.face2d.hint")}), el('div', {class: 'modeler-face-list'}, rows),
+      el('div', {class: 'modeler-actions'}, ['eye', 'brow', 'mouth', 'extra'].map(kind => button(`+ ${t(`modeler.face2d.kind.${kind}`)}`, () => addFaceFeature(kind))))];
+    if (!f) return out;
+    const states = src.states;
+    out.push(el('h4', {class: 'modeler-subhead', text: t("modeler.face2d.states")}),
+      el('div', {class: 'modeler-face-states'}, states.map((st, i) => el('button', {type: 'button', class: 'modeler-chip', 'aria-pressed': String(i === v.s), title: t("modeler.face2d.stateHint"),
+        onclick: () => { previewFace(f.id, {s: i}); renderProps(); }, ondblclick: e => renameState(e.currentTarget, src, i)}, st.name))),
+      el('div', {class: 'modeler-actions'}, [
+        onPaintTexture ? button(t("modeler.face2d.paintState"), () => paintFaceState(f, v.s), {title: t("modeler.face2d.paintStateHint")}) : null,
+        button(t("modeler.face2d.addState"), () => { if (states.length >= FACE_STATES) return; editFace(() => { src.states.splice(v.s + 1, 0, {...structuredClone(states[v.s] ?? {}), name: t("modeler.face2d.newState", {n: states.length + 1})}); }); previewFace(f.id, {s: v.s + 1}); }, {title: t("modeler.face2d.addStateHint")}),
+        states.length > 1 ? button(t("modeler.face2d.removeState"), () => { editFace(() => { src.states.splice(v.s, 1); }); previewFace(f.id, {s: Math.max(0, v.s - 1)}); }) : null].filter(Boolean)));
+    // Preview: how the stage moves it.
+    if (f.kind === 'eye') out.push(liveSlider(t("modeler.face2d.lookX"), v.x, -1, 1, .05, {preview: x => previewFace(f.id, {x})}), liveSlider(t("modeler.face2d.lookY"), v.y, -1, 1, .05, {preview: y => previewFace(f.id, {y})}));
+    if (f.kind === 'brow') out.push(liveSlider(t("modeler.face2d.raise"), v.r, -1, 1, .05, {preview: r => previewFace(f.id, {r})}), liveSlider(t("modeler.face2d.tilt"), v.a, -1, 1, .05, {preview: a => previewFace(f.id, {a})}));
+    if (f.kind === 'extra') out.push(liveSlider(t("modeler.face2d.show"), v.o, 0, 1, .05, {format: x => `${Math.round(x * 100)}%`, preview: o => previewFace(f.id, {o})}));
+    // Placement on the texture: saved as one undo step when let go.
+    out.push(el('h4', {class: 'modeler-subhead', text: t("modeler.face2d.place")}),
+      liveSlider(t("modeler.face2d.across"), f.x, 0, 1, .002, {preview: x => { f.x = x; S.faceCanvas = null; }}),
+      liveSlider(t("modeler.face2d.upDown"), f.y, 0, 1, .002, {preview: y => { f.y = y; S.faceCanvas = null; }}),
+      liveSlider(t("modeler.face2d.size"), 1, .25, 2.5, .01, {format: x => `${Math.round(x * 100)}%`, preview: (() => { const w0 = f.w, h0 = f.h; return k => { f.w = w0 * k; f.h = h0 * k; S.faceCanvas = null; }; })()}),
+      liveSlider(t("modeler.face2d.angle"), f.angle, -45, 45, 1, {format: x => `${Math.round(x)}°`, preview: a => { f.angle = a; S.faceCanvas = null; }}));
+    if (f.kind === 'eye' && src.pupil) out.push(
+      liveSlider(t("modeler.face2d.pupilSize"), src.pupil.size, .1, 1, .01, {preview: x => { src.pupil.size = x; S.faceCanvas = null; }}),
+      onPaintTexture ? actions([[t("modeler.face2d.paintPupil"), () => paintPupil(f)]]) : null);
+    const pair = face.features.filter(g => g !== f && g.kind === f.kind && !g.mirrorOf && !f.mirrorOf && !face.features.some(h => h.mirrorOf === f.id));
+    out.push(el('div', {class: 'modeler-actions'}, [
+      f.mirrorOf ? button(t("modeler.face2d.ownDrawings"), () => editFace(() => { f.states = structuredClone(src.states); if (src.pupil) f.pupil = structuredClone(src.pupil); delete f.mirrorOf; mirrorArt(f); }), {title: t("modeler.face2d.ownDrawingsHint")}) : null,
+      ...pair.slice(0, 2).map(g => button(t("modeler.face2d.mirrorOf", {name: g.name}), () => editFace(() => { f.mirrorOf = g.id; }), {title: t("modeler.face2d.mirrorOfHint")})),
+      button(t("modeler.face2d.removeFeature"), () => removeFaceFeature(f))].filter(Boolean)));
+    out.push(el('div', {class: 'modeler-actions'}, [button(t("modeler.face2d.resetPreview"), () => { S.facePreview = {}; renderProps(); draw(); }),
+      button(t("modeler.face2d.removeFace"), () => { editFace(() => { delete model.face; }); S.faceFeature = undefined; })]));
+    return out.filter(Boolean);
+  }
+  /** Double-click a state to rename it in place. */
+  function renameState(chip, f, i) {
+    const input = el('input', {type: 'text', class: 'modeler-rename', value: f.states[i].name, maxlength: '40', 'aria-label': t("modeler.face2d.renameState")});
+    let done = false;
+    const finish = ok => { if (done) return; done = true; const name = input.value.trim(); if (ok && name && name !== f.states[i].name) editFace(() => { f.states[i].name = name; }); else renderProps(); };
+    input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+    input.addEventListener('blur', () => finish(true));
+    chip.replaceWith(input); input.select();
   }
 
   /** Front view, close on the face: for placing a face set's mouths and eyes. */
@@ -2405,6 +2588,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (entry.img.complete && entry.img.naturalWidth) ready.set(tex.id, entry.img);
     }
     for (const id of S.texImages.keys()) if (!(model.textures ?? []).some(tex => tex.id === id)) S.texImages.delete(id);
+    // The 2D face's texture shows the face drawn on it.
+    const id = model.face?.texture; if (id !== undefined && ready.has(id)) { const face = composedFace(ready.get(id)); if (face) ready.set(id, face); }
     return ready;
   }
   function syncRefs() {
@@ -2759,7 +2944,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, get uvEditor() { return uvEditor; },
+    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.

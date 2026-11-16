@@ -18,7 +18,17 @@ export function faceBadges(editor, project, {hidden} = {}) {
     const uid = g?.obj?.unique_id;
     if (!g?.segments?.length || hidden?.has?.(uid)) continue;
     const face = g.segments.find(s => onFace(s.seg));
-    if (!face) continue;
+    if (!face) {
+      // A 3D Nowdz figure with a 2D face: the badge sits by its head bone (else its root).
+      const painted = editor.report?.figure_types?.find(f => f.figure_type_id === g.obj.figure_type_id)?._styk?.spatialMesh?.face;
+      if (!painted) continue;
+      // Beside the head (the middle of its bone, out to the side), so it stays in view when zoomed in on the face.
+      const head = g.segments.find(s => /^head$/i.test(s.seg?.name ?? '')) ?? g.segments.find(s => /head/i.test(s.seg?.name ?? ''));
+      const a = head?.start && project(head.start), b = head?.end && project(head.end), root = g.segments[0].start ?? g.segments[0].handle;
+      const at = a && b ? {x: (a.x + b.x) / 2 + Math.max(OFFSET.x, Math.hypot(b.x - a.x, b.y - a.y) * .7), y: (a.y + b.y) / 2} : root && project(root);
+      if (Number.isFinite(at?.x) && Number.isFinite(at?.y)) out.push({uid, x: at.x + (a && b ? 0 : OFFSET.x), y: at.y + (a && b ? 0 : OFFSET.y), shown: false, joints: false, choices: false, painted: true});
+      continue;
+    }
     const byId = new Map(g.segments.map(s => [segmentId(s), s]));
     // The first non-face joint above the face controls (the head).
     let anchor = byId.get(Number(face.seg.parent_id)), guard = 0;
