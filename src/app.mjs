@@ -4605,6 +4605,11 @@ function disconnectSegment() {
 /** 3D Nowdz (docs/BLENDER-LITE.md): the 3D modeler. New models are imported as a
  * figure; a figure made in it reopens with its model and updates in place. */
 function modelSourceOf(figure) { return figure?._styk?.modelSource ?? null; }
+/** A placed model as 3D Nowdz opens it: with the reference images the project kept for it (older figures carry their own). */
+function withKeptReferences(source, typeId) {
+  const kept = editor.report?._styk?.modelReferences?.[String(typeId)];
+  return source && kept?.length && !source.references?.length ? {...source, references: kept} : source;
+}
 function canEditModel() { return !builderMode?.active && Boolean(modelSourceOf(editor.figure)) && !isLocked(editor.selectedUid); }
 let modelerOpen = false, modelerApi = null;
 /** Unfinished 3D Nowdz models are kept with their project (`_styk.modelDrafts`), so
@@ -4667,7 +4672,7 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
   // Docked under the band, so the workspace tabs stay in reach.
   const band = document.querySelector(".shell-top"), top = band && !band.hidden ? Math.round(band.getBoundingClientRect().bottom) : 0;
   modelerApi = openModeler({
-    model: editing ? modelSourceOf(editor.figure) : null, editing, top, draft,
+    model: editing ? withKeptReferences(modelSourceOf(editor.figure), typeId) : null, editing, top, draft,
     onClose: (unfinished) => {
       modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling;
       keepModelDraft(draftKey, unfinished, {doc: ownerDoc, owner});
@@ -4686,7 +4691,17 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
     },
     // Paint texture: 3D Nowdz closes keeping its model, and the texture opens in the Draw tab.
     onPaintTexture: (request) => { paintRequest = request; modelerApi?.requestClose(); },
-    onDone: (model) => {
+    onDone: (finished) => {
+      // Reference images are background for modeling: they never go into the scene. The
+      // project keeps them beside the model (`_styk.modelReferences`) for editing it again.
+      const references = finished.references ?? [], model = {...finished, references: []};
+      const keepReferences = (id) => {
+        const styk = editor.report._styk ??= {}, kept = {...styk.modelReferences};
+        if (references.length) kept[id] = references; else delete kept[id];
+        for (const key of Object.keys(kept)) if (!editor.report.figure_types.some((f) => String(f.figure_type_id) === key)) delete kept[key];
+        if (Object.keys(kept).length) styk.modelReferences = kept; else delete styk.modelReferences;
+        editor.dirty = true;
+      };
       if (editing) {
         const previous = editor.report.figure_types.find((f) => f.figure_type_id === typeId);
         const {figure, hiddenChoices} = modelToFigure(model, {figureTypeId: typeId, previous});
@@ -4695,10 +4710,14 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
         const moveRoot = from.some((v, i) => Math.abs(v - to[i]) > 1e-9) ? (obj, oldFigure) => originShift(oldFigure, obj, from, to, {spatialQuaternion, quatRotate, animationRotation}) : null;
         // Swap choices new to a placed figure start hidden, as in a newly added one.
         editor.replaceFigureDefinition(typeId, figure, {label: "Edit 3D model", moveRoot, newLengths: new Map([...hiddenChoices].map(id => [id, 0]))});
+        keepReferences(String(typeId));
         notify(interfaceText("modeler.modelUpdated", {name: figure.name}), "modeler.modelUpdated", {name: figure.name});
       } else {
         const {document: incoming, stats} = modelDocument(model);
+        const before = new Set(editor.report.figure_types.map((f) => f.figure_type_id));
         editor.importFigure(incoming);
+        const added = editor.report.figure_types.find((f) => !before.has(f.figure_type_id));
+        if (added) keepReferences(String(added.figure_type_id));
         const params = {name: incoming.figure_types[0].name, bones: stats.bones, triangles: stats.triangles};
         notify(interfaceText("modeler.modelAdded", params), "modeler.modelAdded", params);
       }

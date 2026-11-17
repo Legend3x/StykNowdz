@@ -112,7 +112,7 @@ export function readModel(value) {
   readTextures(model);
   const face = readFace(model.face, new Set((model.textures ?? []).map(t => t.id)));
   if (face) model.face = face; else delete model.face;
-  for (const ref of model.references) if (ref && typeof ref === 'object' && ref.flip !== true) delete ref.flip;
+  for (const ref of model.references) if (ref && typeof ref === 'object') for (const k of ['flip', 'hidden', 'locked']) if (ref[k] !== true) delete ref[k];
   model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1), ...(model.folders ?? []).map(f => f.id + 1));
   return model;
 }

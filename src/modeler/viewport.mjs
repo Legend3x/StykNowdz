@@ -149,7 +149,7 @@ export function splitByShadow(pts, side) {
 /** Draw the model. With `toon` (the toon preview) faces are flat colours as on
  * the stage: lit or, when `toon.shadows`, in shadow (toon-shading.mjs), and
  * items marked `hull` are outline shells drawn with their far side only. */
-export function paint(ctx, frame, items, {xray = false, wire = false, references = [], showGrid = true, refImages = new Map(), toon = null, depth = null, textures = null} = {}) {
+export function paint(ctx, frame, items, {xray = false, wire = false, references = [], selectedReference = null, showGrid = true, refImages = new Map(), toon = null, depth = null, textures = null} = {}) {
   const {w, h} = frame;
   ctx.fillStyle = VIEW_COLORS.background; ctx.fillRect(0, 0, w, h);
   // Reference images stand in the scene behind everything, as in Blender: both are
@@ -159,6 +159,11 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     if (!img || !img.complete || !img.naturalWidth) continue;
     const corners = referenceCorners(ref, img.naturalWidth / img.naturalHeight);
     drawImagePlane(ctx, frame, img, corners, ref.opacity ?? .5);
+    // The selected one (in Layers) is outlined, so you can see what the arrow keys move.
+    if (ref.id === selectedReference) {
+      const {tl, tr, bl} = corners, br = [tr[0] + bl[0] - tl[0], tr[1] + bl[1] - tl[1], tr[2] + bl[2] - tl[2]], pts = [tl, tr, br, bl].map(frame.project);
+      if (pts.every(q => q.ok)) { ctx.save(); ctx.strokeStyle = VIEW_COLORS.selected ?? '#ff9f1a'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.stroke(); ctx.restore(); }
+    }
   }
   if (showGrid) drawGrid(ctx, frame);
   const light = normalize(add(add(scale(frame.back, .85), scale(frame.up, .45)), scale(frame.right, .25)));
@@ -229,7 +234,7 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
   if (zbuffer) {
     const image = depth.draw(ctx.canvas.width, ctx.canvas.height, tris.done(), lines?.done(), [...imageBatches].map(([image, batch]) => ({image, batch: batch.done()})));
     if (image) ctx.drawImage(image, 0, 0, w, h);
-    else return paint(ctx, frame, items, {xray, wire, references, showGrid, refImages, toon, depth: null, textures});
+    else return paint(ctx, frame, items, {xray, wire, references, selectedReference, showGrid, refImages, toon, depth: null, textures});
   }
   return polys;
 }

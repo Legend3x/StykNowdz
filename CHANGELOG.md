@@ -15,6 +15,9 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - Save your progress in 3D Nowdz with Ctrl+S: an unfinished model is kept with your project and saved with it, so you can carry on another time. It's also kept automatically while you work.
 - Save a 3D Nowdz model as its own .nowdz file from the File menu, and open it again later or in another project.
 - Press Alt+Z in 3D Nowdz to turn X-ray on or off, as in Blender.
+- Squash and stretch 3D figures on the stage: the whole figure in any direction, from its feet or its middle, or a single part with or without the parts below it. Shapes keep their volume, and every change keys like a pose.
+- 3D Nowdz reference images are now layers: select one to nudge it with the arrow keys, move it with G (then X, Y or Z) or scale it with S, and right-click it to flip it, change its opacity, hide it or lock it in place.
+- Reference images stay in 3D Nowdz and are no longer added to the animation with the model, but they come back when you edit the model again.
 - 3D Nowdz Mirror mode can join the two halves into one piece with Join to middle, and Apply mirror keeps the mirrored half for good. Turning Mirror off now asks whether to keep that half.
 - 3D Nowdz models can have a 2D face: + › 2D face paints eyes, brows, lip-sync mouths, blush and sweat onto the head, and you can repaint any of them in Draw.
 - Pose a 2D face on the stage from its face badge: drag where the eyes look, pick eye and mouth shapes, raise and tilt the brows, and add a blink. It keys like any pose.

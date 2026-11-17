@@ -22,7 +22,7 @@ import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
 import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES} from './weight-paint.mjs';
 import {poseFrames, posedBy, posedMesh, turnBone, axisAngle, isPosed} from './pose.mjs';
-import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf} from './viewport.mjs';
+import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf, referenceCorners} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
 import * as X from './matrix.mjs';
 import {TopologyError, assertValidMesh} from './topology.mjs';
@@ -298,6 +298,24 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       }
     };
     walk(0, 0);
+    // Reference images: background layers behind the model (never part of it, never added to the animation).
+    if (model.references.length) {
+      const anyShown = model.references.some(r => !r.hidden);
+      rows.push(layerRow({kind: 'refs', id: 0, depth: 0, draggable: false, name: t("modeler.referencesLayer"), open: S.refsOpen !== false, toggle: () => { S.refsOpen = S.refsOpen === false; renderOutliner(); },
+        eye: eyeOf(anyShown, () => commit(() => { for (const r of model.references) { if (anyShown) r.hidden = true; else delete r.hidden; } })),
+        tags: [el('span', {class: 'modeler-tag', text: String(model.references.length)})], onclick: () => {}, onmenu: e => referencesMenu(e)}));
+      if (S.refsOpen !== false) for (const ref of model.references) {
+        rows.push(layerRow({kind: 'ref', id: ref.id, depth: 1, draggable: false, name: refName(ref), selected: S.ref === ref.id,
+          eye: eyeOf(!ref.hidden, () => commit(() => { if (ref.hidden) delete ref.hidden; else ref.hidden = true; })),
+          lock: el('button', {type: 'button', class: `modeler-lock${ref.locked ? ' modeler-lock-on' : ''}`, title: ref.locked ? t("modeler.ref.unlock") : t("modeler.ref.lock"), 'aria-pressed': String(Boolean(ref.locked)),
+            onclick: e => { e.stopPropagation(); commit(() => { if (ref.locked) delete ref.locked; else ref.locked = true; }); }}, glyph(ref.locked ? 'lock' : 'unlock')),
+          onclick: () => selectRef(ref.id), ondblclick: () => { selectRef(ref.id); setView(ref.view === 'side' ? 'right' : 'front'); }, onmenu: e => { selectRef(ref.id); refMenu(ref, e); }}));
+        if (S.ref === ref.id) rows.push(el('label', {class: 'modeler-ref-opacity', title: t("modeler.opacity")}, [el('span', {text: t("modeler.opacity")}),
+          el('input', {type: 'range', min: '0', max: '1', step: '0.05', value: String(ref.opacity ?? .5), 'aria-label': t("modeler.opacity"),
+            oninput: e => { ref.opacity = Number(e.target.value); draw(); }, onchange: e => { const v = Number(e.target.value); ref.opacity = refStart?.opacity ?? v; commit(() => { ref.opacity = v; }); },
+            onpointerdown: () => { refStart = {opacity: ref.opacity ?? .5}; }})]));
+      }
+    }
     // The skeleton: the origin, then each bone under the bone it is attached to.
     const byId = new Map(model.bones.map(b => [b.id, b])), shownBones = S.mode === 'bones' || S.showBones;
     rows.push(layerRow({kind: 'skeleton', id: 0, depth: 0, draggable: false, name: t("modeler.skeletonLayer"), open: S.skeletonOpen, toggle: () => { S.skeletonOpen = !S.skeletonOpen; renderOutliner(); },
@@ -967,17 +985,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.showBones, onchange: e => { S.showBones = e.target.checked; refresh(); }}), t("modeler.showBones")]),
       el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.grid, onchange: e => { S.grid = e.target.checked; refresh(); }}), t("modeler.grid")])]));
     blocks.push(section(t("modeler.references"), [el('p', {class: 'modeler-hint', text: t("modeler.referencesHint")}),
-      ...['front', 'side'].map(view => {
-        const ref = model.references.find(r => r.view === view);
-        return el('div', {class: 'modeler-ref'}, [el('span', {class: 'modeler-label', text: view === 'front' ? t("modeler.frontImage") : t("modeler.sideImage")}),
-          button(ref ? t("modeler.replace") : t("modeler.load"), () => loadReference(view)),
-          ref ? button(t("modeler.remove"), () => commit(() => { model.references = model.references.filter(r => r !== ref); syncRefs(); })) : null,
-          ref ? field(t("modeler.opacity"), ref.opacity ?? .5, v => commit(() => { ref.opacity = Math.max(0, Math.min(1, v)); }), {step: .05, min: 0, max: 1}) : null,
-          ref ? field(t("modeler.height"), ref.height ?? 2, v => commit(() => { ref.height = Math.max(.01, v); }), {step: .05}) : null,
-          ref ? field(t("modeler.offsetX"), ref.offsetX ?? 0, v => commit(() => { ref.offsetX = v; }), {step: .01}) : null,
-          ref ? field(t("modeler.offsetY"), ref.offsetY ?? 0, v => commit(() => { ref.offsetY = v; }), {step: .01}) : null,
-          ref ? el('label', {class: 'modeler-check', title: t("modeler.flipImageHint")}, [el('input', {type: 'checkbox', checked: Boolean(ref.flip), onchange: e => commit(() => { if (e.target.checked) ref.flip = true; else delete ref.flip; })}), t("modeler.flipImage")]) : null]);
-      })]));
+      el('div', {class: 'modeler-actions'}, ['front', 'side'].map(view => button(model.references.some(r => r.view === view) ? t("modeler.ref.replaceView", {view: view === 'side' ? t("modeler.ref.side") : t("modeler.ref.front")}) : t("modeler.ref.loadView", {view: view === 'side' ? t("modeler.ref.side") : t("modeler.ref.front")}), () => loadReference(view))))]));
     props.replaceChildren(...blocks);
   }
 
@@ -991,6 +999,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function setStatus() {
     status.classList.toggle('modeler-status-flash', Boolean(flash));
     if (flash) { status.textContent = flash; return; }
+    if (S.refModal) { const m = S.refModal; status.textContent = m.edgeOn ? t("modeler.ref.edgeOn") : t(m.kind === 'move' ? "modeler.ref.moveStatus" : "modeler.ref.scaleStatus") + (m.axis ? ` · ${t("modeler.lockedTo", {axis: m.axis})}` : ''); return; }
     const m = S.modal;
     const text = m?.tweak ? t(S.mode !== 'bones' ? "modeler.dragStatus" : m.stretch ? "modeler.stretchStatus" : m.kind === 'rotate' ? "modeler.bendStatus" : "modeler.dragStatus")
       : TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? "modeler.shearStatus" : "modeler.transformStatus") + (m.axisName ? ` · ${t("modeler.lockedTo", {axis: m.axisName})}` : '') + (m.typed ? ` · ${t("modeler.typedValue", {value: m.typed})}` : '')
@@ -1066,7 +1075,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     const look = toonSettings(model);
     const toon = S.toonPreview && !showWeights ? {shadows: look.shadows, turn: look.turn, height: look.height, size: look.size, strength: look.strength} : null;
-    S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth, textures: S.showTextures ? textureImages() : null}).filter(poly => !poly.item.hull);
+    S.polys = paint(ctx, frame, items, {xray: S.xray, wire: S.wire, references: model.references.filter(r => !r.hidden), selectedReference: S.ref, refImages: S.refImages, showGrid: S.grid, toon, depth: S.depth, textures: S.showTextures ? textureImages() : null}).filter(poly => !poly.item.hull);
     drawAllWires(ctx);
     if (S.mode === 'object') drawObjectOutline(ctx);
     if (S.mode === 'edit') { drawCage(ctx); drawLineEnds(ctx); }
@@ -2632,6 +2641,90 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     });
     input.click();
   }
+  // ---------- reference images as layers ----------
+  // Select one in Layers; then arrow keys nudge it (Shift: ten times as far), G moves it
+  // (X, Y or Z keeps it to one axis), S scales it, as in its own view. Right-click for the rest.
+  let refStart = null;
+  const refName = ref => ref.view === 'side' ? t("modeler.ref.side") : t("modeler.ref.front");
+  const selectedRef = () => model.references.find(r => r.id === S.ref) ?? null;
+  function selectRef(id) { S.ref = id; if (S.mode === 'object') { S.parts = new Set(); } refresh(); toast(t("modeler.ref.selected")); }
+  /** The image's middle in the scene and its own right and up (one unit of left/right and up/down). */
+  function refPlane(ref) {
+    const img = S.refImages.get(ref.id), aspect = img?.naturalWidth ? img.naturalWidth / img.naturalHeight : 1, c = referenceCorners(ref, aspect);
+    const centre = [(c.tr[0] + c.bl[0]) / 2, (c.tr[1] + c.bl[1]) / 2, (c.tr[2] + c.bl[2]) / 2];
+    return {centre, right: ref.view === 'side' ? [0, 0, -1] : [1, 0, 0], up: [0, 1, 0]};
+  }
+  const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const refPlace = ref => ({offsetX: ref.offsetX ?? 0, offsetY: ref.offsetY ?? 0, height: ref.height ?? 2});
+  function canMoveRef(ref) {
+    if (!ref) { toast(t("modeler.ref.selectFirst")); return false; }
+    if (ref.locked) { toast(t("modeler.ref.lockedHint")); return false; }
+    return true;
+  }
+  function nudgeRef(dx, dy) {
+    const ref = selectedRef(); if (!canMoveRef(ref)) return;
+    commit(() => { ref.offsetX = +(((ref.offsetX ?? 0) + dx).toFixed(4)); ref.offsetY = +(((ref.offsetY ?? 0) + dy).toFixed(4)); });
+  }
+  function startRefModal(kind) {
+    const ref = selectedRef(); if (!canMoveRef(ref)) return;
+    closePopover(); flash = null; clearTimeout(flashTimer);
+    S.refModal = {kind, ref, start: refPlace(ref), mouse: {...S.pointer}, from: {...S.pointer}, axis: null};
+    setStatus(); draw();
+  }
+  function applyRefModal(precise = false) {
+    const m = S.refModal; if (!m) return;
+    const {ref, start} = m, k = precise ? .1 : 1, dx = (m.mouse.x - m.from.x) * k, dy = (m.mouse.y - m.from.y) * k;
+    Object.assign(ref, start);
+    if (m.kind === 'move') {
+      const {centre, right, up} = refPlane(ref), o = frame.project(centre), a = frame.project(add3(centre, right)), b = frame.project(add3(centre, up));
+      const j = [a.x - o.x, a.y - o.y, b.x - o.x, b.y - o.y], det = j[0] * j[3] - j[1] * j[2];
+      if (!o.ok || Math.abs(det) < 1e-6) { m.edgeOn = true; setStatus(); return; }
+      let du = (dx * j[3] - dy * j[1]) / det, dv = (dy * j[0] - dx * j[2]) / det;
+      if (m.axis === 'Y') du = 0; else if (m.axis) dv = 0;
+      ref.offsetX = +(start.offsetX + du).toFixed(4); ref.offsetY = +(start.offsetY + dv).toFixed(4);
+    } else {
+      const c = frame.project(refPlane({...ref, ...start}).centre), d0 = Math.hypot(m.from.x - c.x, m.from.y - c.y), d1 = Math.hypot(m.from.x + dx - c.x, m.from.y + dy - c.y);
+      const f = d0 > 2 ? Math.max(.02, d1 / d0) : 1, height = Math.max(.01, start.height * f);
+      ref.height = +height.toFixed(4); ref.offsetY = +(start.offsetY + (start.height - height) / 2).toFixed(4);
+    }
+    m.edgeOn = false; draw(); setStatus();
+  }
+  function setRefAxis(axis) {
+    const m = S.refModal; if (!m || m.kind !== 'move') return;
+    // Its own view's axes: the front image moves along X and Y, the side image along Z and Y.
+    const across = m.ref.view === 'side' ? 'Z' : 'X';
+    if (axis !== 'Y' && axis !== across) { toast(t("modeler.ref.axisNot", {axis, axes: `${across}, Y`})); return; }
+    m.axis = m.axis === axis ? null : axis; applyRefModal();
+  }
+  function finishRefModal(keep) {
+    const m = S.refModal; if (!m) return; S.refModal = null;
+    const end = refPlace(m.ref); Object.assign(m.ref, m.start);
+    if (keep && JSON.stringify(end) !== JSON.stringify(m.start)) commit(() => { Object.assign(m.ref, end); });
+    else { draw(); setStatus(); }
+  }
+  function flipRef(ref) { commit(() => { if (ref.flip) delete ref.flip; else ref.flip = true; }); }
+  function resetRef(ref) { commit(() => { Object.assign(ref, {offsetX: 0, offsetY: 0, height: 2}); }); }
+  function removeRef(ref) { commit(() => { model.references = model.references.filter(r => r !== ref); syncRefs(); }); if (S.ref === ref.id) S.ref = null; refresh(); }
+  function refMenu(ref, e) {
+    const opacity = el('label', {class: 'modeler-menu-slider'}, [el('span', {text: t("modeler.opacity")}),
+      el('input', {type: 'range', min: '0', max: '1', step: '0.05', value: String(ref.opacity ?? .5), 'aria-label': t("modeler.opacity"),
+        onpointerdown: () => { refStart = {opacity: ref.opacity ?? .5}; }, oninput: ev => { ref.opacity = Number(ev.target.value); draw(); },
+        onchange: ev => { const v = Number(ev.target.value); ref.opacity = refStart?.opacity ?? v; commit(() => { ref.opacity = v; }); }})]);
+    menu(pointAnchor(e), [
+      menuItem(t("modeler.ref.move"), () => startRefModal('move'), {title: t("modeler.ref.moveHint")}),
+      menuItem(t("modeler.ref.scale"), () => startRefModal('scale'), {title: t("modeler.ref.scaleHint")}),
+      menuItem(ref.flip ? t("modeler.ref.unflip") : t("modeler.ref.flip"), () => flipRef(ref), {title: t("modeler.flipImageHint")}),
+      opacity, menuLine(),
+      menuItem(ref.locked ? t("modeler.ref.unlock") : t("modeler.ref.lock"), () => commit(() => { if (ref.locked) delete ref.locked; else ref.locked = true; })),
+      menuItem(ref.hidden ? t("modeler.show") : t("modeler.hide"), () => commit(() => { if (ref.hidden) delete ref.hidden; else ref.hidden = true; })),
+      menuItem(t("modeler.ref.lookAt"), () => setView(ref.view === 'side' ? 'right' : 'front')),
+      menuItem(t("modeler.ref.reset"), () => resetRef(ref), {title: t("modeler.ref.resetHint")}),
+      menuItem(t("modeler.replace"), () => loadReference(ref.view)), menuLine(),
+      menuItem(t("modeler.remove"), () => removeRef(ref), {danger: true})]);
+  }
+  function referencesMenu(e) {
+    menu(pointAnchor(e), ['front', 'side'].map(view => menuItem(model.references.some(r => r.view === view) ? t("modeler.ref.replaceView", {view: view === 'side' ? t("modeler.ref.side") : t("modeler.ref.front")}) : t("modeler.ref.loadView", {view: view === 'side' ? t("modeler.ref.side") : t("modeler.ref.front")}), () => loadReference(view))));
+  }
   function loadReference(view) {
     const input = el('input', {type: 'file', accept: 'image/*'});
     input.addEventListener('change', () => {
@@ -2643,8 +2736,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
         const src = c.toDataURL('image/jpeg', .85);
-        commit(() => { model.references = model.references.filter(r => r.view !== view); model.references.push({id: `${view}-${Date.now()}`, view, src, opacity: .5, height: 2, offsetX: 0, offsetY: 0}); syncRefs(); });
-        setView(view === 'front' ? 'front' : 'right');
+        const id = `${view}-${Date.now()}`;
+        commit(() => { model.references = model.references.filter(r => r.view !== view); model.references.push({id, view, src, opacity: .5, height: 2, offsetX: 0, offsetY: 0}); syncRefs(); });
+        S.ref = id; S.refsOpen = true; S.parts = new Set();
+        setView(view === 'front' ? 'front' : 'right'); refresh(); toast(t("modeler.ref.loaded"));
       };
       img.src = url;
     });
@@ -2783,6 +2878,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   canvas.addEventListener('pointerdown', e => {
     closePopover(); canvas.focus();
     const p = local(e); S.pointer = p;
+    if (S.refModal) { e.preventDefault(); finishRefModal(e.button !== 2); return; }
+    // Clicking in the view leaves the reference image (it stays where it is).
+    if (S.ref && e.button === 0) { S.ref = null; renderOutliner(); draw(); }
     if (S.modal && [...TRANSFORMS, 'inset', 'bevel', 'slide', 'loopslide'].includes(S.modal.kind)) { e.preventDefault(); if (e.button === 2) cancelModal(); else confirmModal(); return; }
     if (S.modal?.kind === 'knife') {
       e.preventDefault();
@@ -2831,6 +2929,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }, {signal});
   canvas.addEventListener('pointermove', e => {
     const p = local(e); S.pointer = p;
+    if (S.refModal) { S.refModal.mouse = p; applyRefModal(e.shiftKey); return; }
     if (S.modal && TRANSFORMS.includes(S.modal.kind)) { S.modal.mouse = p; S.modal.snap = S.modal.tweak ? e.shiftKey : e.ctrlKey; applyTransform(); return; }
     if (S.modal?.kind === 'inset') { S.modal.mouse = p; applyInset(); return; }
     if (S.modal?.kind === 'bevel') { S.modal.mouse = p; applyBevel(); return; }
@@ -2901,7 +3000,21 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (uvEditor.key(e)) { e.preventDefault(); e.stopPropagation(); return; }
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key, ctrl = e.ctrlKey || e.metaKey;
     let handled = true;
-    if (S.modal && TRANSFORMS.includes(S.modal.kind) && ['x', 'y', 'z'].includes(key) && !ctrl) setAxis(key.toUpperCase());
+    // A selected reference image takes the arrow keys, G and S (as its own view shows it).
+    const ref = !S.modal && S.ref ? selectedRef() : null;
+    if (S.refModal) {
+      if (['x', 'y', 'z'].includes(key) && !ctrl) setRefAxis(key.toUpperCase());
+      else if (key === 'Enter' || key === ' ') finishRefModal(true);
+      else if (key === 'Escape') finishRefModal(false);
+      else if (!ctrl && (key === 'g' || key === 's')) { const m = S.refModal; finishRefModal(false); startRefModal(key === 'g' ? 'move' : 'scale'); if (S.refModal) S.refModal.mouse = m.mouse; }
+    }
+    else if (ref && !ctrl && !e.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)) {
+      const step = e.shiftKey ? .1 : .01;
+      nudgeRef(key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? step : key === 'ArrowDown' ? -step : 0);
+    }
+    else if (ref && !ctrl && !e.altKey && (key === 'g' || key === 's')) startRefModal(key === 'g' ? 'move' : 'scale');
+    else if (ref && key === 'Escape') { S.ref = null; refresh(); }
+    else if (S.modal && TRANSFORMS.includes(S.modal.kind) && ['x', 'y', 'z'].includes(key) && !ctrl) setAxis(key.toUpperCase());
     else if (S.modal && (key === 'Enter' || key === ' ')) confirmModal();
     else if (S.modal && key === 'Escape') cancelModal();
     else if (S.modal?.kind === 'knife' && key !== 'Backspace') { /* other keys wait until the cut is done */ }

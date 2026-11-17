@@ -547,11 +547,35 @@ from any angle (`referenceCorners`, viewport.mjs): the front image is a wall 2
 units behind the middle (-Z), facing the Front view; the side image a wall 2
 units to the left (-X), facing the Right (Side) view, where the model's front is
 on the left. Each is square-on in its own view and edge-on, out of the way, in
-the other. Opacity, height, left/right and up/down (as seen from its own view;
-the bottom edge sits at up/down) are adjustable, and **Flip** mirrors an image
-that faces the other way. In a perspective view the image is drawn in pieces
-on a scratch canvas, then laid on at its opacity, so no seams show. Images are
-stored downscaled (1024 px JPEG) with the model.
+the other. Images are stored downscaled (1024 px JPEG) with the model. In a
+perspective view an image is drawn in pieces on a scratch canvas, then laid on
+at its opacity, so no seams show.
+
+They are **layers**: a References group in Layers (above the skeleton) lists
+them, each with an eye (`hidden`) and a lock (`locked`). Click one to select it
+(it is outlined in the view; clicking in the view leaves it), double-click it
+to look at it from its own view, and:
+
+- **Arrow keys** nudge it as seen from its own view (0.01; Shift 0.1), one
+  undo step each.
+- **G** moves it with the mouse; **X** or **Z** (whichever is across its own
+  view) or **Y** keeps it to one direction; Shift for fine steps; click or
+  Enter to place it, Esc or right-click to cancel. The pointer's movement is
+  turned into the image's own left/right and up/down through its plane as the
+  current view shows it, so it works from any angle but edge-on.
+- **S** scales it around its middle with the mouse.
+- **Right-click** for Move, Scale, Flip left to right, an opacity slider,
+  Lock, Hide, Look at it, Reset place and size, Replace and Remove. The
+  selected image also shows its opacity slider under its row.
+
+A locked image can't be selected for moving. Values stay `offsetX`
+(left/right as its own view shows it), `offsetY` (its bottom edge) and
+`height`.
+
+References never go into the animation: **Add to animation** and **Update
+figure** export the model without them, and the project keeps them beside it
+(`_styk.modelReferences`, by figure type id) so editing the model again brings
+them back. Figures made by older versions keep theirs in `modelSource`.
 
 ### Textures and UVs
 
