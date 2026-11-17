@@ -232,9 +232,9 @@ const sameKey=(a,b)=>{if(!a||a.length!==b.length)return false;for(let i=0;i<a.le
  * supplies the figure transform, basis joints and colour function. An
  * unchanged pose returns its predecessor's arrays; nothing else is retained. */
 export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
-  const {root,scale,figureAngle,mirror,camera,joints,colorOf,slot}=context;
+  const {root,scale,figureAngle,mirror,camera,joints,colorOf,slot,squash=null}=context;
   const o=joints.get(plan.basis[0]),bx=joints.get(plan.basis[1]),by=joints.get(plan.basis[2]),B=plan.bones.length;
-  const key=new Float64Array(B*FRAME_VALUES+18),F=new Float64Array(B*STRIDE),W=plan.views?new Float64Array(B*6):null;
+  const key=new Float64Array(B*FRAME_VALUES+21),F=new Float64Array(B*STRIDE),W=plan.views?new Float64Array(B*6):null;
   for(let i=0;i<B;i++){
     const f=frames[plan.bones[i]];if(!f)throw messageError(new Error(''), "errors.spatialMesh.a3dMeshBoneWasNotEvaluated", {});
     frameValues(f,key,i*FRAME_VALUES);boneValues(f,F,i*STRIDE);
@@ -244,7 +244,7 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
   key[g]=root.x;key[g+1]=root.y;key[g+2]=scale;key[g+3]=figureAngle;key[g+4]=mirror?1:0;
   key[g+5]=camera?camera.k:NaN;key[g+6]=camera?camera.root.x:NaN;key[g+7]=camera?camera.root.y:NaN;key[g+8]=camera?camera.scale:NaN;
   for(const [j,p] of [o,bx,by].entries()){key[g+9+j*2]=p?p.x:NaN;key[g+10+j*2]=p?p.y:NaN;}
-  key[g+15]=o?1:0;key[g+16]=bx?1:0;key[g+17]=by?1:0;
+  key[g+15]=o?1:0;key[g+16]=bx?1:0;key[g+17]=by?1:0;key[g+18]=squash?squash.amount:1;key[g+19]=squash?squash.angle:0;key[g+20]=squash?squash.from:0;
   const colors=plan.palette.map(colorOf),toon=plan.toon,shadowAt=colors.length;
   if(toon)for(let i=0;i<shadowAt;i++)colors.push(shadowColor(colors[i],toon.strength));
   if(previous?.plan===plan&&sameKey(previous.key,key)){
@@ -282,7 +282,8 @@ export function* evaluateSpatialMeshSteps(plan,frames,context,previous){
       const tx=2*(qy*e-qz*c),ty=2*(qz*a-qx*e),tz=2*(qx*c-qy*a),nx=a+qw*tx+qy*tz-qz*ty,ny=c+qw*ty+qz*tx-qx*tz,nz=e+qw*tz+qx*ty-qy*tx;
       customView[v*3]=nx*cs-ny*sign*sn;customView[v*3+1]=nx*sn+ny*sign*cs;customView[v*3+2]=nz;
     }
-    const X=root.x+(point[0]*cs-point[1]*sign*sn)*scale,Y=root.y+(point[0]*sn+point[1]*sign*cs)*scale;
+    let X=root.x+(point[0]*cs-point[1]*sign*sn)*scale,Y=root.y+(point[0]*sn+point[1]*sign*cs)*scale;
+    if(squash)[X,Y]=squash(X,Y);
     if(view){view[v*3]=point[0]*cs-point[1]*sign*sn;view[v*3+1]=point[0]*sn+point[1]*sign*cs;view[v*3+2]=point[2];}
     let sx,sy,d;
     if(camera){

@@ -241,7 +241,7 @@ export const editorIKMethods = {
     const {handle, controller} = controllerAt(this);
     if (!controller?.enabled) return false;
     const geometry = this.geometry.objects.get(this.selectedSlot), graph = context(this);
-    const raw=unprojectSpatial({x,y},controller.pinned?controller.spatialTarget?.depth??0:geometry.joints.get(handle)?.rawPoint?.[2]??controller.spatialTarget?.depth??0,this.object,geometry.root);
+    const raw=unprojectSpatial({x,y},controller.pinned?controller.spatialTarget?.depth??0:geometry.joints.get(handle)?.rawPoint?.[2]??controller.spatialTarget?.depth??0,this.object,geometry.root,geometry.squash);
     x=raw.x;y=raw.y;
     return this._objectEdit('Move IK target', object => {
       const current = object._stykIK[handle], target = {...current.target, x, y};

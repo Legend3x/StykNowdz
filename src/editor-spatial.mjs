@@ -44,7 +44,7 @@ export const editorSpatialMethods={
  setSpatialIKPole(x,y,depth){
   const pole=this.getSpatialIKPole();if(!pole)return false;
   if(![x,y,depth??pole.point[2]].every(Number.isFinite))throw messageError(new Error(''), "errors.editorSpatial.chooseAFiniteIkPolePosition", {});
-  const g=this.geometry.objects.get(this.selectedSlot),p=unprojectSpatial({x,y},depth??pole.point[2],this.object,g.root);
+  const g=this.geometry.objects.get(this.selectedSlot),p=unprojectSpatial({x,y},depth??pole.point[2],this.object,g.root,g.squash);
   const v=[p.x-pole.center[0],p.y-pole.center[1],(depth??pole.point[2])-pole.center[2]],n=Math.hypot(...v);if(n<1e-6)return false;
   return this.setSpatialIKTarget({pole:v.map(x=>x/n),swivel:0});
  },
@@ -66,7 +66,7 @@ export const editorSpatialMethods={
    const next={...c,...capture,target:{...c.target,...(!c.pinned?unprojectJoint(g.joints.get(id)):{})},spatialTarget:{...(capture?.spatialTarget??c.spatialTarget),...patch}};
    if(patch.depth!==undefined){
     const screen=c.pinned?projectSpatial([c.target.x,c.target.y,c.spatialTarget.depth],projection(o,g.root)):g.joints.get(id);
-    Object.assign(next.target,unprojectSpatial(screen,patch.depth,o,g.root));
+    Object.assign(next.target,unprojectSpatial(screen,patch.depth,o,g.root,g.squash));
    }
    if(!c.pinned){
     const solved=solveObjectIK(f,o,g.root,layout(this),{[id]:{...next,pinned:true}},{includePoints:false,rigPlan:rigPlan(this),followTargetOrientation:false});o.angles=solved.angles;
@@ -263,8 +263,8 @@ export const editorSpatialMethods={
  _flatSpatialJoint(x,y,stretch,anchor){
   const f=this.figure,o=this.object,i=this.selectedJoint,g=this.geometry.objects.get(this.selectedSlot),gesture=this._spatialGesture('flat');
   // The tip keeps its depth while turning, so the pointer is unprojected there.
-  const depth=gesture.tip[2],p=unprojectSpatial({x,y},depth,o,g.root);
-  gesture.grab??=anchor?unprojectSpatial(anchor,depth,o,g.root):{x:gesture.tip[0],y:gesture.tip[1]};
+  const depth=gesture.tip[2],p=unprojectSpatial({x,y},depth,o,g.root,g.squash);
+  gesture.grab??=anchor?unprojectSpatial(anchor,depth,o,g.root,g.squash):{x:gesture.tip[0],y:gesture.tip[1]};
   gesture.nativeLength??=o.len_flag?o.lengths[i]:f.segments[i].length;
   const c=gesture.origin,gx=gesture.grab.x-c[0],gy=gesture.grab.y-c[1],px=p.x-c[0],py=p.y-c[1],from=Math.hypot(gx,gy),to=Math.hypot(px,py);
   if(from<1e-6||to<1e-6)return false;
@@ -280,11 +280,11 @@ export const editorSpatialMethods={
  _arcSpatialJoint(x,y,flip,pixel=0,anchor=null){
   const o=this.object,g=this.geometry.objects.get(this.selectedSlot),gesture=this._spatialGesture('arc');
   if(gesture.length<1e-6)return false;
-  const depth=gesture.origin[2]+gesture.direction[2]*gesture.length,p=unprojectSpatial({x,y},depth,o,g.root);
+  const depth=gesture.origin[2]+gesture.direction[2]*gesture.length,p=unprojectSpatial({x,y},depth,o,g.root,g.squash);
   // Motion is relative to the grab point, so grabbing beside a marker never
   // jumps. Short bones (chest, neck) use a longer virtual lever for control.
   // Without an anchor the bone end tracks the pointer directly.
-  gesture.pointer??=anchor?unprojectSpatial(anchor,depth,o,g.root):{x:gesture.tip[0],y:gesture.tip[1]};
+  gesture.pointer??=anchor?unprojectSpatial(anchor,depth,o,g.root,g.squash):{x:gesture.tip[0],y:gesture.tip[1]};
   const l=Math.max(gesture.length,pixel>0?70*pixel:0),d=gesture.direction;
   const dx=d[0]*l+p.x-gesture.pointer.x,dy=d[1]*l+p.y-gesture.pointer.y,reach=Math.hypot(dx,dy);
   let direction;
@@ -330,10 +330,10 @@ export const editorSpatialMethods={
    const along=p=>{const d=p-m.value;if(m.type==='slide')return world(tip.map((n,k)=>n+axis[k]*d));
     const turned=quatRotate(spatialAxisQuaternion(axis,d),tip.map((n,k)=>n-pivot[k]));return world(turned.map((n,k)=>n+pivot[k]));};
    const start=along(m.value);
-   gesture={along,start,grab:anchor?unprojectSpatial(anchor,start[2],o,g.root):{x:start[0],y:start[1]}};
+   gesture={along,start,grab:anchor?unprojectSpatial(anchor,start[2],o,g.root,g.squash):{x:start[0],y:start[1]}};
    if(this._drag){this._drag.spatialGesture??=new Map();this._drag.spatialGesture.set(key,gesture);}
   }
-  const pointer=unprojectSpatial({x,y},gesture.start[2],o,g.root),target=[gesture.start[0]+pointer.x-gesture.grab.x,gesture.start[1]+pointer.y-gesture.grab.y];
+  const pointer=unprojectSpatial({x,y},gesture.start[2],o,g.root,g.squash),target=[gesture.start[0]+pointer.x-gesture.grab.x,gesture.start[1]+pointer.y-gesture.grab.y];
   const distance=p=>{const q=gesture.along(p);return(q[0]-target[0])**2+(q[1]-target[1])**2;};
   // Sample the track, then refine between the neighbours of the nearest sample.
   const steps=96,at=k=>m.min+(m.max-m.min)*k/steps;

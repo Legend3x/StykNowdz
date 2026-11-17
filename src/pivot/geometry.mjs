@@ -45,6 +45,7 @@ export function invalidateEvaluationCaches(report) {
 import {interpolateVfx, vfxStack, activeVfx} from '../vfx.mjs';
 
 import {withVfx,segmentVfx,releaseVfxSurface,hasDrawableVfx,configureVfxSoftwareResources} from '../vfx-canvas.mjs';
+import {squashTransform, interpolateSquash} from '../squash.mjs';
 import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => Number(a) + (Number(b) - Number(a)) * t;
@@ -368,6 +369,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
       if(o._stykSpatial||next._stykSpatial)out._stykSpatial=interpolateSpatialPose(o,next,t);
       if(o._stykVfx)out._stykVfx=interpolateVfx(o._stykVfx,byId.get(o.unique_id)?._stykVfx,t);
       if(o._stykFace||next._stykFace)out._stykFace=interpolateFace(o._stykFace,next._stykFace,t);
+      if(o._stykSquash||next._stykSquash){const q=interpolateSquash(o._stykSquash,next._stykSquash,t);if(q)out._stykSquash=q;else delete out._stykSquash;}
       const matching = (f) => {
         let objects = identities.get(f);
         if (!objects) { objects = new Map(f.objects.map(item => [item.unique_id, item])); identities.set(f, objects); }
@@ -870,13 +872,15 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     }
     // Mesh vertices are definition data evaluated in one typed pass after
     // their bones; they never enter joints, segments or polygons.
+    // Squash and stretch (squash.mjs): the same mapping the rig used, kept for editing (its inverse).
+    const objectSquash = rig ? squashTransform(obj, root, {figure: fig, figureAngle: animationRotation(fig, obj), scale, mirror: Boolean(obj.image_text_flags)}) : null;
     const meshPlan = rig ? spatialMeshPlan(fig, rig.plan.ids) : null;
     let spatialMesh = null, meshDrawables = null;
     if (meshPlan) {
       const frames = new Array(segments.length);
       for (const i of meshPlan.bones) frames[i] = renders[i]?.spatialFrame;
       spatialMesh = yield* evaluateSpatialMeshSteps(meshPlan, frames, {root, scale, figureAngle: animationRotation(fig, obj),
-        mirror: Boolean(obj.image_text_flags), camera, joints, colorOf: (c,index) => objectColor(meshPaletteColor(fig,obj,index)??c, obj), slot}, previous?.spatialMesh);
+        mirror: Boolean(obj.image_text_flags), camera, squash: objectSquash, joints, colorOf: (c,index) => objectColor(meshPaletteColor(fig,obj,index)??c, obj), slot}, previous?.spatialMesh);
       const levels = [];
       for (const p of polys) if (!p.culled) levels.push(p.z);
       // Zero-width lines paint nothing and must not split the depth-tested faces.
@@ -893,6 +897,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       segments: renders.filter(Boolean),
       polys,
       ...(spatialMesh ? {spatialMesh, meshDrawables} : {}),
+      ...(objectSquash ? {squash: objectSquash} : {}),
     };
     const renderSource=incremental?.renderSources?.get(slot);
     if (pose && poseAllowed) geometry.drawables = orderPoseDrawables(geometry, previous);

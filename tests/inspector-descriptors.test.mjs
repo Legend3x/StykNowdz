@@ -675,7 +675,7 @@ test('a movieclip: Edit clip and Make unique under its name; Playback and Transf
   assertBudget(descriptor, 'movieclip');
 });
 
-test('the 3D rig: Pose and Body open, Exact angles, Perspective, Shape and Choices titled', () => {
+test('the 3D rig: Pose and Body open, Exact angles, Squash and stretch, Perspective, Shape and Choices titled', () => {
   const q = construction();
   q.add(0, 0, 0, 'Figure rotation');
   const bone = (parent, origin, tip, name) => {
@@ -691,7 +691,7 @@ test('the 3D rig: Pose and Body open, Exact angles, Perspective, Shape and Choic
   assert.equal(descriptor.kind, 'spatial-rig');
   assert.deepEqual(descriptor.quick, {context: 'figure'});
   assert.deepEqual(sections(descriptor, 'core'), ['rig-pose', 'rig-body']);
-  assert.deepEqual(sections(descriptor, 'titled'), ['spatial-perspective', 'placement']);
+  assert.deepEqual(sections(descriptor, 'titled'), ['spatial-squash', 'spatial-perspective', 'placement']);
   // Pose │ Rotate stays the pressed pair tests name; Reset pose is the Pose section's action.
   for (const [mode, pressed] of [['pose', 'true'], ['rotate', 'false']]) assert.equal(tag(now, {'data-spatial-mode': mode}).attrs['aria-pressed'], pressed);
   assert.equal(tag(now, {'data-spatial-reset': 'all'}).attrs['aria-label'], 'Reset pose');

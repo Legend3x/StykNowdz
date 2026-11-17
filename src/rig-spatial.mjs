@@ -129,13 +129,18 @@ function viewCorrectedPoint(s,f){
  * only the bend's change from rest moves the bone. */
 export const chordScale=b=>Math.abs(b)<1e-7?1:Math.sin(b/2)/(b/2);
 export function spatialChordOffset(s,bend,restBend){return s?.curve?(Number(bend||0)-Number(restBend||0))/2:0;}
-export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,restAngle,referenceRest,mirror=false,camera,shape}){
+export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,restAngle,referenceRest,mirror=false,camera,shape,squash=null}){
   const native=input;
   // The definition length of a curved bone is its arc length, so the chord is length × sinc(b/2).
   // The chord's screen angle is angle + b/2; the rest tip already holds the
   // definition's rb/2 in figure space, which a reflection reverses.
   if(s.curve&&!s.bindings){const b=Number(input.bend||0),rb=Number(segment.bend_rad||0);input={...input,angle:input.angle+b/2-(mirror?-1:1)*rb/2,length:input.length*chordScale(b)};}
-  const cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,project=p=>camera?projectSpatial([root.x+(p[0]*cs-p[1]*sign*sn)*scale,root.y+(p[0]*sn+p[1]*sign*cs)*scale,p[2]*scale],camera):({x:root.x+(p[0]*cs-p[1]*sign*sn)*scale,y:root.y+(p[0]*sn+p[1]*sign*cs)*scale});
+  const cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,project=p=>{
+    // Squash and stretch (squash.mjs) shapes the figure on screen, before perspective.
+    const x0=root.x+(p[0]*cs-p[1]*sign*sn)*scale,y0=root.y+(p[0]*sn+p[1]*sign*cs)*scale;if(!squash)return camera?projectSpatial([x0,y0,p[2]*scale],camera):{x:x0,y:y0};
+    // Without perspective the joint keeps its unsquashed place (rawPoint), so editing works on the pose itself.
+    const [x,y]=squash(x0,y0);return camera?projectSpatial([x,y,p[2]*scale],camera):{x,y,rawPoint:[x0,y0,p[2]*scale]};
+  };
   let point,start=input.start,spatial;
   if(s.bindings)point=skinPoint(s,get);
   else{

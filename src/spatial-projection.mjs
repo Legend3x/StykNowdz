@@ -26,11 +26,13 @@ export function projectSpatial(p, camera) {
   return {x:camera.root.x + (p[0]-camera.root.x)/d,
     y:camera.root.y + (p[1]-camera.root.y)/d, rawPoint:p};
 }
-export function unprojectSpatial(p, depth, object, root) {
+export function unprojectSpatial(p, depth, object, root, squash = null) {
   const camera = projection(object, root);
-  if (!camera) return {x:p.x, y:p.y};
-  const d = Math.max(NEAR, 1 - camera.k * depth);
-  return {x:camera.root.x+(p.x-camera.root.x)*d, y:camera.root.y+(p.y-camera.root.y)*d};
+  let x = p.x, y = p.y;
+  if (camera) { const d = Math.max(NEAR, 1 - camera.k * depth); x = camera.root.x+(x-camera.root.x)*d; y = camera.root.y+(y-camera.root.y)*d; }
+  // Squash and stretch (squash.mjs, the geometry's `squash`) is undone too, so a drag lands under the pointer.
+  if (squash?.invert) [x, y] = squash.invert(x, y);
+  return {x, y};
 }
 export const unprojectJoint = p => p.rawPoint ? {x:p.rawPoint[0], y:p.rawPoint[1]} : {x:p.x,y:p.y};
 

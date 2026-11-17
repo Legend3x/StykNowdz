@@ -9,6 +9,7 @@ import {animationRotation} from './animation-origin.mjs';
 import {projection} from './spatial-projection.mjs';
 import {sameAnglePath,validateAnglePath,sampleAnglePath} from './rig-angle-path.mjs';
 import {sameWeightedJoint,validateWeightedJoint,remapWeightedJoint,weightedJoint} from './rig-weighted.mjs';
+import {squashTransform} from './squash.mjs';
 import {sameSpatial,validateSpatial,remapSpatial,evaluateSpatial,spatialSkin} from './rig-spatial.mjs';
 const plans = new WeakMap();
 const EPS = 1e-8;
@@ -168,12 +169,12 @@ export function rigIKAllowed(figure,index) {
  * Positions belong to the caller's normal geometry, never a second scene graph. */
 export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan(figure), stateStorage, {project=true}={}) {
   const states=stateStorage??new Array(figure.segments.length), scale=Number(object.scale??1);
-  const figureAngle=animationRotation(figure,object),camera=project?projection(object,root):null;
+  const figureAngle=animationRotation(figure,object),camera=project?projection(object,root):null,squash=project?squashTransform(object,root,{figure,figureAngle,scale,mirror:Boolean(object.image_text_flags)}):null;
   return {plan, states, evaluate(i, input, joints) {
     const seg=figure.segments[i], r=seg._stykRig, c=r?.connector, d=r?.stretch, f=r?.follow, response=r?.response, lock=r?.angleLock;
     const parent=states[plan.ids.get(seg.parent_id)], rotation=r?.orientation==='world'?0:parent?.rotation??0;
     let {start,angle,length,bend}=input, width=1, inheritedRotation=rotation, ratio=1, handle, followAxis, followScale, position,span;
-    if(r?.spatial)return states[i]=evaluateSpatial(r.spatial,{segment:seg,input,get:id=>states[plan.ids.get(id)],referenceRest:id=>figure.segments[plan.ids.get(id)].angle_rad??0,root,scale,figureAngle,mirror:Boolean(object.image_text_flags),restAngle:seg.angle_rad??0,camera,shape:object._stykSpatial?.shape?.[seg.segment_id]});
+    if(r?.spatial)return states[i]=evaluateSpatial(r.spatial,{segment:seg,input,get:id=>states[plan.ids.get(id)],referenceRest:id=>figure.segments[plan.ids.get(id)].angle_rad??0,root,scale,figureAngle,mirror:Boolean(object.image_text_flags),restAngle:seg.angle_rad??0,camera,squash,shape:object._stykSpatial?.shape?.[seg.segment_id]});
     if(r?.weighted)return states[i]=weightedJoint(r.weighted,joints,root,angle);
     if(r?.anglePath){
       const path=r.anglePath;let x,y,z,delta,origin;

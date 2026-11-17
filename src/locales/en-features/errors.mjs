@@ -788,6 +788,7 @@ export default Object.freeze({
   "errors.editorSelection.alignmentAxisMustBeXOrY": "Alignment axis must be x or y.",
   "errors.editorSelection.alignmentEdgeMustBeStartCenterOrEnd": "Alignment edge must be start, center or end.",
   "errors.editorSpatialShape.perspectiveRequiresASingleSpatialFigureSeparateJoined": "Perspective requires a single spatial figure. Separate joined figures before enabling it.",
+  "errors.editorSquash.outOfRange": "Choose an amount from {min} to {max}.",
   "errors.editorSpatialShape.useFigureScaleToResizeAZeroLength": "Use figure Scale to resize a zero-length root control.",
   "errors.editorSpatialShape.chooseProportionsWithinTheControlRange": "Choose proportions within the control range.",
   "errors.editorSpatial.chooseAnAvailableRigPose": "Choose an available rig pose.",
