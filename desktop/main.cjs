@@ -43,8 +43,9 @@ if (relaunchOnX11(app)) return;
 const APP_ROOT = path.resolve(__dirname, '..');
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
 const fileFilters = () => [
-  { name: t('desktop.main.animationAndStickFigures'), extensions: ['styk', 'stykmov', 'stkz', 'piv', 'stk', 'json', 'nodes', 'nodemc', 'stknds', 'zip'] },
+  { name: t('desktop.main.animationAndStickFigures'), extensions: ['styk', 'stykmov', 'stkz', 'piv', 'stk', 'json', 'nodes', 'nodemc', 'stknds', 'zip', 'nowdz'] },
   { name: t('desktop.main.stykanimateMovieclip'), extensions: ['stykmov'] },
+  { name: t('desktop.main.nowdzModel'), extensions: ['nowdz'] },
   { name: t('desktop.main.stykanimateFigure'), extensions: ['stkz'] },
   { name: t('desktop.main.pivotAnimation'), extensions: ['piv'] },
   { name: t('desktop.main.pivotStickFigure'), extensions: ['stk'] },
@@ -196,8 +197,8 @@ function nativeMenu() {
 async function readImportFile(file) {
   const started = performance.now();
   const extension = path.extname(file).toLowerCase();
-  if (!['.piv', '.stk', '.styk', '.stkz', '.stykmov', '.json', '.nodes', '.nodemc', '.stknds', '.zip'].includes(extension)) throw messageError(new Error(''), 'desktop.main.errors.chooseAStykAnimatePivotOrStickNodesFile', {});
-  const limit = ['.styk', '.stkz', '.stykmov', '.json'].includes(extension) ? MAX_FILE_BYTES : 128 * 1024 * 1024;
+  if (!['.piv', '.stk', '.styk', '.stkz', '.stykmov', '.json', '.nodes', '.nodemc', '.stknds', '.zip', '.nowdz'].includes(extension)) throw messageError(new Error(''), 'desktop.main.errors.chooseAStykAnimatePivotOrStickNodesFile', {});
+  const limit = ['.styk', '.stkz', '.stykmov', '.json', '.nowdz'].includes(extension) ? MAX_FILE_BYTES : 128 * 1024 * 1024;
   const stat = await fs.stat(file);
   if (!stat.isFile()) throw messageError(new Error(''), 'desktop.main.errors.chooseAnAnimationOrStickFigureFile', {});
   if (stat.size > limit) throw messageError(new Error(''), 'desktop.main.errors.thisFileExceedsTheValueMBImportLimit', {value: limit / 1024 / 1024});

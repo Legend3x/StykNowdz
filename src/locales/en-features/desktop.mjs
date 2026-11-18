@@ -74,6 +74,7 @@ export default Object.freeze({
   "desktop.main.animationAndStickFigures": "Animation and stick figures",
   "desktop.main.stykanimateMovieclip": "StykNowdz movieclip",
   "desktop.main.stykanimateFigure": "StykNowdz figure",
+  "desktop.main.nowdzModel": "3D Nowdz model",
   "desktop.main.pivotAnimation": "Pivot animation",
   "desktop.main.pivotStickFigure": "Pivot stick figure",
   "desktop.main.stykanimateProject": "StykNowdz project",

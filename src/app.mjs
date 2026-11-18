@@ -3895,6 +3895,8 @@ async function importFilesTracked(files) {
       const started = performance.now(), context = telemetry.consent.diagnostics ? workload({ format: file.name, bytes: file.size }) : {};
       let outcome = 'succeeded';
       try {
+      // A 3D Nowdz model file (File › Save model file) opens in 3D Nowdz, not as a project.
+      if (/\.nowdz$/i.test(file.name)) { await openModelFileInModeler(file); continue; }
       if (/\.(png|jpe?g|gif|bmp|webp)$/i.test(file.name)) {
         if (
           !(await importMediaFile(file, {
@@ -3936,6 +3938,8 @@ async function openFile() {
   }
 }
 async function acceptNativeFile(result) {
+  // A 3D Nowdz model file opens in 3D Nowdz.
+  if (/\.nowdz$/i.test(result?.filename ?? "")) { status({messageKey: "app.ready", messageParams: {}}); return openModelFileInModeler(new File([result.bytes], result.filename)); }
   const started = performance.now(); telemetry.count('import_started'); recordImportKind(result.filename);
   const context = telemetry.consent.diagnostics ? workload({ format: result.filename, bytes: result.bytes?.byteLength }) : {};
   try {
@@ -4604,6 +4608,14 @@ function disconnectSegment() {
 }
 /** 3D Nowdz (docs/BLENDER-LITE.md): the 3D modeler. New models are imported as a
  * figure; a figure made in it reopens with its model and updates in place. */
+/** Open a .nowdz model file in 3D Nowdz (opening it first; it asks before replacing a model in progress). */
+async function openModelFileInModeler(file) {
+  const data = await file.text();
+  if (modelerOpen) { modelerApi?.openModelData(data, file.name); return; }
+  if (builderMode?.active) { toast(interfaceText("modeler.finishBuildFirst"), "modeler.finishBuildFirst", {}); return; }
+  if (bandSession() === "paint") { toast(interfaceText("modeler.paint.finishFirst"), "modeler.paint.finishFirst", {}); return; }
+  await openBlenderLite(false, {openFile: {data, name: file.name}});
+}
 function modelSourceOf(figure) { return figure?._styk?.modelSource ?? null; }
 /** A placed model as 3D Nowdz opens it: with the reference images the project kept for it (older figures carry their own). */
 function withKeptReferences(source, typeId) {
@@ -4657,7 +4669,7 @@ document.addEventListener("click", (e) => {
   e.preventDefault(); e.stopImmediatePropagation();
   modelerApi.requestClose(() => button.click());
 }, true);
-async function openBlenderLite(editing = false, {quiet = false} = {}) {
+async function openBlenderLite(editing = false, {quiet = false, skipDraft = false, openFile = null} = {}) {
   if (modelerOpen || builderMode?.active) return;
   if (editing && !canEditModel()) { toast(interfaceText("modeler.notAModel"), "modeler.notAModel", {}); return; }
   pause(); finishCurrentEdit();
@@ -4666,11 +4678,15 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
   try { modules = await Promise.all([import("./modeler/modeler-ui.mjs"), import("./modeler/export-figure.mjs"), import("./rig-spatial.mjs"), import("./animation-origin.mjs")]); }
   catch (error) { modelerOpen = false; fail(error); return; }
   const [{openModeler}, {modelToFigure, modelDocument, originShift}, {spatialQuaternion, quatRotate}, {animationRotation}] = modules;
-  const typeId = editing ? editor.figure.figure_type_id : null, draftKey = editing ? String(typeId) : "new", draft = modelDraftOf(draftKey);
+  const typeId = editing ? editor.figure.figure_type_id : null, draftKey = editing ? String(typeId) : "new", draft = skipDraft ? null : modelDraftOf(draftKey);
   const owner = editor, ownerDoc = editor.report;
   state.modeling = true; document.body.dataset.modeling = "";
   // Docked under the band, so the workspace tabs stay in reach.
   const band = document.querySelector(".shell-top"), top = band && !band.hidden ? Math.round(band.getBoundingClientRect().bottom) : 0;
+  // Opening must never leave the Model tab stuck: if 3D Nowdz can't start (a damaged
+  // unfinished model, say), everything is put back and it opens without that model,
+  // which stays in the project untouched.
+  try {
   modelerApi = openModeler({
     model: editing ? withKeptReferences(modelSourceOf(editor.figure), typeId) : null, editing, top, draft,
     onClose: (unfinished) => {
@@ -4724,7 +4740,18 @@ async function openBlenderLite(editing = false, {quiet = false} = {}) {
       requestRender();
     },
   });
+  } catch (error) {
+    console.error("3D Nowdz could not open", error);
+    document.querySelector(".modeler")?.remove();
+    modelerOpen = false; modelerApi = null; state.modeling = false; delete document.body.dataset.modeling;
+    if (draft) {
+      notify(interfaceText("modeler.draftCouldNotOpen"), "modeler.draftCouldNotOpen", {});
+      return openBlenderLite(editing, {quiet: true, skipDraft: true, openFile});
+    }
+    fail(error); syncShell(); return;
+  }
   if (draft && !quiet) notify(interfaceText("modeler.draftResumed"), "modeler.draftResumed", {});
+  if (openFile) modelerApi?.openModelData(openFile.data, openFile.name);
   syncShell(); requestRender();
 }
 // ---------- Paint texture (docs/BLENDER-LITE.md, "Paint texture") ----------

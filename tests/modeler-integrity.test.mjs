@@ -64,7 +64,6 @@ test('validateMesh reports each broken rule with details, and prints them', () =
     H3: {verts: c.verts, faces: [...c.faces, {v: [0, 0, 1], c: 0}]},
     H4: {verts: c.verts, faces: c.faces.map((f, i) => i ? f : {v: f.v.slice().reverse(), c: 0})},
     H5: {verts: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1]], faces: [{v: [0, 1, 2], c: 0}, {v: [1, 0, 3], c: 0}, {v: [1, 0, 4], c: 0}]},
-    H6: (() => { const g = grid(); g.faces = [g.faces[0], g.faces[2]]; return g; })(),
     H7: {verts: [...c.verts, [5, 5, 5]], faces: c.faces},
     H8: {verts: c.verts, faces: [...c.faces, {v: c.faces[0].v.slice().reverse(), c: 0}]},
     H9: {verts: c.verts, faces: c.faces.map((f, i) => ({...f, c: i ? 0 : 3.5}))},
@@ -76,6 +75,9 @@ test('validateMesh reports each broken rule with details, and prints them', () =
     assert.equal(printed.length, 1, `${rule} prints its report`);
     assert.match(printed[0], new RegExp(`${rule} `)); assert.match(printed[0], /Topology check of/);
   }
+  // A bow-tie (pieces touching at one point, as merging points of two pieces makes) is allowed, as in Blender, and noted.
+  const bowTie = {verts: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 1, 0], [2, 2, 0], [1, 2, 0]], faces: [{v: [0, 1, 2, 3], c: 0}, {v: [2, 4, 5, 6], c: 0}]}, noted = validateMesh(bowTie, quiet);
+  assert.ok(noted.ok, 'a bow-tie is allowed'); assert.ok(noted.warnings.some(w => w.rule === 'H6'), 'and noted');
   const report = formatTopologyReport(validateMesh(cases.H2, quiet), 'demo');
   assert.match(report, /Face 6 points at vertex 42, but the mesh has vertices 0–7/);
   assert.ok(!validateMesh(null, quiet).ok);
@@ -89,7 +91,7 @@ test('an edit that would break the mesh is undone and reported', () => {
     const c = cube(), before = JSON.stringify(c), [a, b] = c.faces[0].v;
     assert.throws(() => M.extrudeEdges(c, [[a, b]]), error => error instanceof TopologyError && error.result.errors.some(e => e.rule === 'H5'));
     assert.equal(JSON.stringify(c), before, 'mesh restored exactly');
-    // A bow-tie in the data itself is still refused (H6)…
+    // Filling the middle of a 2×2 grid would double its faces…
     const g = grid(), gridBefore = JSON.stringify(g);
     assert.throws(() => M.fillVerts(g, new Set([0, 1, 4, 3])), TopologyError);
     assert.equal(JSON.stringify(g), gridBefore);

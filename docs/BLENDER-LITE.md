@@ -27,7 +27,9 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
 
 - **Object**: arrange whole parts. Start from the **Base character** (eleven
   parts with a matching 19-bone skeleton) or a cube, sphere, capsule, cylinder,
-  cone, ring or plane. Join parts into one, or hide them while working.
+  cone, ring or plane. Join parts into one (into the last one clicked, as
+  Ctrl+J in Blender; a part in Mirror mode keeps it, asking first when the
+  joined parts would be mirrored too), or hide them while working.
 - **Edit** (Tab): shape the selected part. Extrude (E), Inset (I), Loop cut
   (Ctrl+R), Subdivide, Merge (M), Fill (F), Delete (X), Duplicate (Shift+D),
   Separate (P), Select all (A), Select connected (L, Ctrl+L), Grow (Ctrl++),
@@ -400,7 +402,7 @@ and validated like the rest.
 | Grid fill | Edit panel | A selected closed ring of open edges (a hole or a traced outline), even point count: quads, Span × (ring/2 − Span). Start at the sharpest corner; Span from the next sharpest corner, else ring/4 (`gridFillLayout`). Inner points: a Coons patch of the four sides (Blender blends rails slightly differently). Span and Offset can be changed afterwards in the Edit panel (redoes the fill, like Blender's Adjust Last Operation) |
 | Rip | V | Selected edges with faces on both sides: the side nearer the mouse gets its own points, then follows the mouse. Ends inside the surface stay joined (a slit); a line reaching the border cuts through |
 | Bevel | Ctrl+B, Ctrl+Shift+B | Edges: a strip at right angles `width` from the edge (Offset mode, slide clamped at 95% of the edge), rounded by Segments (scroll; quadratic profile toward the old corner). Faces between two bevelled edges get the meeting point of the offset lines; corners left open are closed with one face; a corner left joining two edges is dissolved (the cube-corner pentagons). Points: each selected point is cut off by a face |
-| Knife | K | Click points on edges or corners (Ctrl: edge middle); between points the cut follows the straight screen line across faces. Backspace removes the last point, Enter/Space cuts, Esc or right-click cancels. A face seen edge-on (the wall of a recess or a step straight down the view) has no area on screen; the cut goes down it to its far edge under the same spot, once per wall, so a line across an inset and pushed-in panel cuts its walls and floor too. Clicks inside a face (away from edges) aren't supported yet |
+| Knife | K | Click points on edges, corners or anywhere on a face (Ctrl: edge middle); the cut starts and ends on an edge or corner, points inside a face become corners of the cut through it (in from an edge, through a point and back to the same edge cuts a notch), and between points the cut follows the straight screen line across faces. Backspace removes the last point, Enter/Space cuts, Esc or right-click cancels. A face seen edge-on (the wall of a recess or a step straight down the view) has no area on screen; the cut goes down it to its far edge under the same spot, once per wall, so a line across an inset and pushed-in panel cuts its walls and floor too. Clicks inside a face (away from edges) aren't supported yet |
 
 | Smooth | Edit panel | Each selected point moves Factor of the way to the mean of its neighbours, Repeat times (Vertex > Smooth Vertices). Border points use border neighbours only; a traced line's ends stay put |
 | Triangulate | Ctrl+T | Quads split along the shorter diagonal; larger faces by ear clipping in their own plane (concave faces come out right) |
@@ -442,7 +444,7 @@ limits come back inside them. The new part is still one undo step.
 
 Vertex slide is GG on points (the existing edge slide). Not ported yet: Bevel
 profile shapes and vertex-only corner patches with several segments (an
-n-gon closes them), Knife cuts starting inside a face, Rip of a single point,
+n-gon closes them), Knife cuts starting or ending inside a face, Rip of a single point,
 Grid fill between two separate lines, Limited dissolve.
 
 ### Examples
@@ -717,7 +719,7 @@ Three rules keep every model valid, whatever the tool or file it came from.
    | H3 degenerate face | At least 3 corners, none repeated |
    | H4 half-edge used twice | Each directed edge belongs to one face: neighbours agree on winding |
    | H5 non-manifold edge | An edge joins at most two faces |
-   | H6 non-manifold vertex | The faces around a vertex form one fan (no bow-ties) |
+   | H6 bow-tie vertex (a note) | Faces around a vertex that only touch there (two fans) are allowed, as in Blender: merging a point of one piece onto a point of another makes one. Merging the next pair along joins them by an edge. |
    | H7 orphan vertex | Every vertex is used by a face |
    | H8 duplicate face | No two faces use the same vertices |
    | H9 invalid color index | A face's color is a palette index |
@@ -730,8 +732,10 @@ Three rules keep every model valid, whatever the tool or file it came from.
 
 Rules that follow from this: Flip faces flips whole connected pieces (flipping
 part of a closed surface would break H4), and edge extrusion works on open
-border edges only (H5). Where Blender would leave a bow-tie, the tools keep
-the mesh valid instead of refusing: Delete and Duplicate give each fan of
+border edges only (H5), and merging points along the edge of a closed piece
+onto another is refused with a hint (open the faces where they meet first).
+Bow-ties are allowed (merging pieces point by point makes them), but where
+an edit would only leave one by accident the tools still split it: Delete and Duplicate give each fan of
 faces its own copy of a shared corner (`splitBowTies`; nothing moves), and
 region Extrude moves corners inside the region with it and copies border
 corners once per fan, as Blender does, so no corner is left unused. Loop cut

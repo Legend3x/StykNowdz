@@ -12,7 +12,9 @@
  *                      neighbours agree on winding and every half-edge has at
  *                      most one twin (b→a)
  *   H5 manifold edge   an edge joins at most two faces
- *   H6 manifold vertex the faces around a vertex form one fan (no bow-ties)
+ *   H6 bow-tie vertex  faces around a vertex that only touch there (two fans) are
+ *                      allowed, as in Blender (merging points of two pieces makes
+ *                      one); they are reported as a note, not an error
  *   H7 orphan          every vertex is used by a face, a wire edge, or is
  *                      listed as a loose point
  *   H8 duplicate face  no two faces use the same set of vertices
@@ -30,7 +32,7 @@
 
 export const TOPOLOGY_RULES = Object.freeze({
   H1: 'structure', H2: 'dangling vertex index', H3: 'degenerate face', H4: 'half-edge used twice (winding or duplicate)',
-  H5: 'non-manifold edge', H6: 'non-manifold vertex', H7: 'orphan vertex', H8: 'duplicate face', H9: 'invalid color index',
+  H5: 'non-manifold edge', H6: 'bow-tie vertex', H7: 'orphan vertex', H8: 'duplicate face', H9: 'invalid color index',
   W1: 'wire edge', W2: 'duplicate wire edge', L1: 'loose point',
 });
 
@@ -107,9 +109,10 @@ export function validateMesh(mesh, {label = 'mesh', print, log = console.error, 
       loose.add(i);
     });
   }
-  // Vertices: the faces around a vertex must form one fan. Two faces are
+  // Vertices: the faces around a vertex normally form one fan. Two faces are
   // neighbours around v when one has the half-edge v→a and the other its twin
-  // a→v; union-find over every outgoing half-edge counts the fans.
+  // a→v; union-find over every outgoing half-edge counts the fans. More than
+  // one (a bow-tie, pieces joined at a point) is noted, not refused.
   for (let v = 0; v < n; v++) {
     const out = around[v];
     if (!out.length) { if (Array.isArray(mesh.verts[v]) && !wired.has(v) && !loose.has(v)) error('H7', `Vertex ${v} is not used by any face or wire edge, and is not a loose point.`, {vertex: v}); continue; }
@@ -120,7 +123,7 @@ export function validateMesh(mesh, {label = 'mesh', print, log = console.error, 
       if (twin && parent.has(twin.face)) parent.set(root(he.face), root(twin.face));
     }
     const fans = new Set([...parent.keys()].map(root)).size;
-    if (fans > 1) error('H6', `Vertex ${v} joins ${fans} separate fans of faces (a bow-tie); faces around a vertex must form one fan.`, {vertex: v});
+    if (fans > 1) warnings.push({rule: 'H6', message: `Vertex ${v} joins ${fans} separate fans of faces (a bow-tie).`, vertex: v});
   }
   return finish();
 

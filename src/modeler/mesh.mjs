@@ -1312,6 +1312,18 @@ function pointOnEdge(mesh, a, b, t) {
   if (mesh.edges) mesh.edges = mesh.edges.flatMap(([p, q]) => (p === a && q === b) || (p === b && q === a) ? [[p, v], [v, q]] : [[p, q]]);
   return v;
 }
+/** Split face fi from corner p to corner q through new points inside it (`through`, in order from p). */
+function splitFaceThrough(mesh, fi, p, through, q) {
+  if (fi < 0) throw refused('The knife line has to run across faces between the points you click.');
+  if (!through.length) { splitFace(mesh, fi, p, q); return; }
+  const face = mesh.faces[fi], w = face.v, i = w.indexOf(p), j = w.indexOf(q), n = w.length;
+  if (i < 0 || j < 0 || p === q) throw refused('The knife line has to run across faces between the points you click.');
+  const one = [], two = [];
+  for (let k = i; ; k = (k + 1) % n) { one.push(w[k]); if (k === j) break; }
+  for (let k = j; ; k = (k + 1) % n) { two.push(w[k]); if (k === i) break; }
+  mesh.faces[fi] = {v: [...one, ...through.slice().reverse()], c: face.c};
+  mesh.faces.push({v: [...two, ...through], c: face.c});
+}
 /** Split face fi along a new edge between two of its corners. */
 function splitFace(mesh, fi, p, q) {
   const w = mesh.faces[fi].v, i = w.indexOf(p), j = w.indexOf(q), n = w.length;
@@ -1329,14 +1341,41 @@ const segmentHit = (p, q, a, b) => {
 };
 const insidePolygon = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
 
-/** Knife: cut new edges along a path of points, each on a corner ({v}) or on an
- * edge ({edge: [a, b], t}). Between two points the cut follows the straight line
- * on screen (`project`: local point → {x, y}) across the faces in between, as
- * Blender's knife does. Returns the points on the cut. */
+/** Knife: cut new edges along a path of points, each on a corner ({v}), on an
+ * edge ({edge: [a, b], t}) or inside a face ({face, at: [x, y, z]} in local
+ * space), as Blender's knife takes them. Between two points the cut follows the
+ * straight line on screen (`project`: local point → {x, y}) across the faces in
+ * between. The cut starts and ends on an edge or corner; points inside a face
+ * become new corners of the cut through it. Returns the points on the cut. */
 function knifeEdit(mesh, path, project) {
   if (path.length < 2) throw refused('Click at least two points on edges or corners for the knife to cut between.');
-  const resolve = point => point.v !== undefined ? point.v : pointOnEdge(mesh, point.edge[0], point.edge[1], point.t);
-  const onFaceOf = (point, fi) => { const w = mesh.faces[fi].v; return point.v !== undefined ? w.includes(point.v) : w.includes(point.edge[0]) && w.includes(point.edge[1]); };
+  const inside = point => point.face !== undefined;
+  if (inside(path[0]) || inside(path.at(-1))) throw refused('Start and end the cut on an edge or a corner; the points in between can be anywhere on a face.');
+  // An edge clicked twice (a notch in from one side) was already split by the first point:
+  // find the piece of it the second point is on now.
+  const pieceOf = point => {
+    const [a, b] = point.edge, A = mesh.verts[a], B = mesh.verts[b], d = sub(B, A), len2 = dot(d, d);
+    if (len2 < 1e-18) return {a, b, t: point.t};
+    const on = mesh.verts.flatMap((p, i) => { const s = dot(sub(p, A), d) / len2, q = add(A, scale(d, s)); return s >= -1e-9 && s <= 1 + 1e-9 && dot(sub(p, q), sub(p, q)) < len2 * 1e-12 ? [{i, s}] : []; }).sort((x, y) => x.s - y.s);
+    const joined = (p, q) => mesh.faces.some(f => f.v.some((v, k) => (v === p && f.v[(k + 1) % f.v.length] === q) || (v === q && f.v[(k + 1) % f.v.length] === p)));
+    for (let k = 0; k + 1 < on.length; k++) if (on[k].s <= point.t + 1e-9 && point.t <= on[k + 1].s + 1e-9 && joined(on[k].i, on[k + 1].i)) return {a: on[k].i, b: on[k + 1].i, t: (point.t - on[k].s) / Math.max(1e-12, on[k + 1].s - on[k].s)};
+    return {a, b, t: point.t};
+  };
+  const resolve = point => { if (point.v !== undefined) return point.v; const {a, b, t} = pieceOf(point); return pointOnEdge(mesh, a, b, t); };
+  const onFaceOf = (point, fi) => { if (inside(point)) return point.face === fi; const w = mesh.faces[fi].v; if (point.v !== undefined) return w.includes(point.v); const {a, b} = pieceOf(point); return w.includes(a) && w.includes(b); };
+  const where = point => inside(point) ? point.at : point.v !== undefined ? mesh.verts[point.v] : lerp(mesh.verts[point.edge[0]], mesh.verts[point.edge[1]], point.t);
+  // The face a point inside a face is on now (faces split as the cut goes): the one under it on screen, nearest in depth.
+  const faceAt = point => {
+    const at = project(point.at); let best = -1, bestD = Infinity;
+    mesh.faces.forEach((f, fi) => {
+      const poly = f.v.map(v => project(mesh.verts[v])); if (!insidePolygon(at, poly)) return;
+      const c = f.v.map(v => mesh.verts[v]), nrm = [0, 0, 0];
+      for (let i = 0; i < c.length; i++) { const a = c[i], b = c[(i + 1) % c.length]; nrm[0] += (a[1] - b[1]) * (a[2] + b[2]); nrm[1] += (a[2] - b[2]) * (a[0] + b[0]); nrm[2] += (a[0] - b[0]) * (a[1] + b[1]); }
+      const len = Math.hypot(...nrm) || 1, d = Math.abs(((point.at[0] - c[0][0]) * nrm[0] + (point.at[1] - c[0][1]) * nrm[1] + (point.at[2] - c[0][2]) * nrm[2]) / len);
+      if (d < bestD) { bestD = d; best = fi; }
+    });
+    return best;
+  };
   const cut = new Set(), crossed = new Set();
   // A face seen edge-on (the wall of a recess or a step, straight down the view)
   // has no area on screen: the cut goes straight down it, to the point of its
@@ -1361,11 +1400,32 @@ function knifeEdit(mesh, path, project) {
   };
   let cur = resolve(path[0]); cut.add(cur);
   for (let k = 1; k < path.length; k++) {
-    const target = path[k], goal = project(target.v !== undefined ? mesh.verts[target.v] : lerp(mesh.verts[target.edge[0]], mesh.verts[target.edge[1]], target.t));
+    const target = path[k], goal = project(where(target));
+    if (inside(target)) { const fi = faceAt(target); if (fi < 0) throw refused('A point of the cut is off the faces.'); target.face = fi; }
     for (let guard = 0; ; guard++) {
       if (guard > 256) throw refused('The knife line is too long to follow; add points in between.');
       const faces = mesh.faces.flatMap((f, i) => f.v.includes(cur) ? [i] : []);
       const direct = faces.find(fi => onFaceOf(target, fi));
+      if (direct !== undefined && inside(target)) {
+        // Through the face: the points clicked inside it, then out where the line to the next point leaves it.
+        const fi = direct, chain = [];
+        let j = k; while (j < path.length && inside(path[j]) && faceAt(path[j]) === fi) chain.push(path[j++].at.slice());
+        const next = path[j], ring = mesh.faces[fi].v;
+        let end;
+        if (onFaceOf(next, fi)) { end = resolve(next); k = j; }
+        else {
+          const from = project(chain.at(-1)), to = project(where(next)), poly = ring.map(v => project(mesh.verts[v]));
+          let best = null;
+          for (let i = 0; i < ring.length; i++) { const hit = segmentHit(from, to, poly[i], poly[(i + 1) % ring.length]); if (hit && (!best || hit.t < best.t)) best = {...hit, a: ring[i], b: ring[(i + 1) % ring.length]}; }
+          if (!best) throw refused('The knife line has to leave the face it crosses.');
+          end = pointOnEdge(mesh, best.a, best.b, best.u); k = j - 1;
+        }
+        if (end === cur) throw refused('A cut through a face has to leave it at a different place than it came in.');
+        const made = chain.map(at => { mesh.verts.push(at); return mesh.verts.length - 1; });
+        splitFaceThrough(mesh, fi, cur, made, end);
+        for (const v of made) cut.add(v);
+        cur = end; cut.add(cur); break;
+      }
       if (direct !== undefined) {
         const end = resolve(target), fi = mesh.faces.findIndex(f => f.v.includes(cur) && f.v.includes(end));
         if (fi >= 0) splitFace(mesh, fi, cur, end);

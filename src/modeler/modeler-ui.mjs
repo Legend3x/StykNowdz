@@ -905,7 +905,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         blocks.push(section(t("modeler.partLook"), partLook(p)));
         if (model.face && facePartOf() === p) blocks.push(section(t("modeler.face2d.title"), faceTools()));
       } else if (S.parts.size > 1) blocks.push(section(t("modeler.parts"), [el('p', {class: 'modeler-hint', text: t("modeler.partsSelected", {count: S.parts.size})}),
-        actions([[t("modeler.joinParts"), joinParts, t("modeler.joinPartsHint")]])]));
+        actions([[t("modeler.joinParts"), () => joinParts(), t("modeler.joinPartsHint")]])]));
       else blocks.push(section(t("modeler.start"), [el('p', {class: 'modeler-hint', text: model.parts.length ? t("modeler.clickAPart") : t("modeler.startHint")}),
         actions([[t("modeler.baseCharacter"), addBaseCharacter, t("modeler.baseCharacterHint")], [t("modeler.cube"), () => addPrimitive('cube')], [t("modeler.sphere"), () => addPrimitive('sphere')]]),
         el('p', {class: 'modeler-hint', text: t("modeler.examplesHint")}),
@@ -2114,8 +2114,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     catch (error) { cancelModal(); refuse(error); return; }
     m.part.mesh = mesh; S.cache.delete(m.part.id); setStatus(); draw();
   }
-  /** K (Blender's Knife): click points on edges or corners; the cut follows the line
-   * between them across the faces. Ctrl snaps to the middle of an edge. Enter or
+  /** K (Blender's Knife): click points on edges, corners or anywhere on a face; the cut
+   * follows the line between them across the faces (it starts and ends on an edge or a
+   * corner). Ctrl snaps to the middle of an edge. Enter or
    * Space cuts, Esc or right-click cancels, Backspace removes the last point. */
   function startKnife() {
     const p = editPart(); if (!p || S.mode !== 'edit') return;
@@ -2128,17 +2129,36 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     let best = null;
     c.pts.forEach((q, v) => { if (!q.ok || !c.visible[v] || !c.p.mesh.faces.some(f => f.v.includes(v))) return; const d = Math.hypot(q.x - x, q.y - y); if (d < 10 && (!best || d < best.d)) best = {v, d}; });
     if (best) return {v: best.v, local: c.p.mesh.verts[best.v].slice()};
-    const edge = pickEdge(x, y); if (!edge) return null;
+    const edge = pickEdge(x, y); if (!edge) return faceSpot(c, x, y);
     const [a, b] = edge, A = c.pts[a], B = c.pts[b], L = (B.x - A.x) ** 2 + (B.y - A.y) ** 2;
     let t = L > 1e-9 ? Math.max(0, Math.min(1, ((x - A.x) * (B.x - A.x) + (y - A.y) * (B.y - A.y)) / L)) : .5;
     if (middle) t = .5;
     return {edge, t, local: M.lerp(c.p.mesh.verts[a], c.p.mesh.verts[b], t)};
   }
+  /** The spot on a face under the pointer (the nearest face that shows), for the knife: {face, local}. */
+  function faceSpot(c, x, y) {
+    let best = null;
+    c.p.mesh.faces.forEach((f, fi) => {
+      if (!c.front[fi] && !S.xray) return;
+      const pts = f.v.map(v => c.pts[v]); if (pts.some(q => !q.ok)) return;
+      for (let i = 1; i + 1 < f.v.length; i++) {
+        const a = pts[0], b = pts[i], d3 = pts[i + 1], d = (b.y - d3.y) * (a.x - d3.x) + (d3.x - b.x) * (a.y - d3.y);
+        if (Math.abs(d) < 1e-9) continue;
+        const u = ((b.y - d3.y) * (x - d3.x) + (d3.x - b.x) * (y - d3.y)) / d, v = ((d3.y - a.y) * (x - d3.x) + (a.x - d3.x) * (y - d3.y)) / d, w = 1 - u - v;
+        if (u < -1e-4 || v < -1e-4 || w < -1e-4) continue;
+        const z = a.z * u + b.z * v + d3.z * w; if (best && z <= best.z) break;
+        const [A, B, C] = [c.p.mesh.verts[f.v[0]], c.p.mesh.verts[f.v[i]], c.p.mesh.verts[f.v[i + 1]]];
+        best = {face: fi, z, local: [0, 1, 2].map(k => A[k] * u + B[k] * v + C[k] * w)};
+        break;
+      }
+    });
+    return best && {face: best.face, local: best.local};
+  }
   function applyKnife() {
     const m = S.modal, p = m.part, tr = M.objectTransform(p);
     S.modal = null;
     if (m.path.length < 2) { restore(m.before); toast(t("modeler.knifeNeedsTwo")); return; }
-    try { S.verts = M.knife(p.mesh, m.path.map(({v, edge, t: at}) => v !== undefined ? {v} : {edge, t: at}), v => frame.project(tr(v))); }
+    try { S.verts = M.knife(p.mesh, m.path.map(({v, edge, t: at, face, local}) => v !== undefined ? {v} : face !== undefined ? {face, at: local.slice()} : {edge, t: at}), v => frame.project(tr(v))); }
     catch (error) { restore(m.before); refuse(error); return; }
     S.selectMode = 'vert'; S.lastOp = null; S.undo.push(m.before); S.redo = []; S.cache.delete(p.id); refresh();
   }
@@ -2230,7 +2250,15 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (how === 'distance') { commit(() => { const n = M.mergeByDistance(p.mesh, .001, S.verts.size > 1 ? S.verts : null); S.verts = new Set(); S.cache.delete(p.id); toast(t("modeler.mergedCount", {count: n})); }); return; }
     if (S.verts.size < 2) { toast(t("modeler.selectTwoOrMoreVertices")); return; }
     const order = [...S.verts], at = how === 'first' ? p.mesh.verts[order[0]] : how === 'last' ? p.mesh.verts[order.at(-1)] : undefined;
-    commit(() => { S.verts = how === 'collapse' ? M.collapseVerts(p.mesh, S.verts) : M.mergeVerts(p.mesh, S.verts, at?.slice()); S.cache.delete(p.id); });
+    commit(() => {
+      try { S.verts = how === 'collapse' ? M.collapseVerts(p.mesh, S.verts) : M.mergeVerts(p.mesh, S.verts, at?.slice()); }
+      catch (error) {
+        // Merging along the edge of a closed piece would give an edge three or four faces: say how to connect them instead.
+        if (error instanceof TopologyError && error.result.errors.some(e => e.rule === 'H5')) throw Object.assign(new RangeError(t("modeler.mergeClosedPieces")), {modelerMessage: true});
+        throw error;
+      }
+      S.cache.delete(p.id);
+    });
   }
   /** A menu opened by a key shows up under the mouse, as in Blender. */
   function pointerAnchor() {
@@ -2364,10 +2392,24 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     S.parts = new Set(copies.map(p => p.id)); S.active = copies[0].id; S.cache.clear();
     startTransform('grab'); if (S.modal) S.modal.before = before;
   }
-  function joinParts() {
-    const list = [...S.parts].map(part).filter(Boolean); if (list.length < 2) return;
+  /** Join: the selected parts become one, the active part (the last clicked) taking the rest, as Ctrl+J
+   * in Blender. Mirror mode follows it: a joined part that mirrors comes in with both its halves made real
+   * when the target doesn't mirror; when the target mirrors and a joined part doesn't, it asks first,
+   * since that part would be mirrored too. */
+  function joinParts({mirrorChoice = null} = {}) {
+    const chosen = [...S.parts].map(part).filter(Boolean); if (chosen.length < 2) return;
+    const target = chosen.find(p => p.id === S.active) ?? chosen[0], list = [target, ...chosen.filter(p => p !== target)];
+    const unmirrored = list.slice(1).filter(p => !p.mirror);
+    if (target.mirror && unmirrored.length && !mirrorChoice) {
+      askConfirm(t("modeler.joinMirrorAsk", {name: target.name}), () => joinParts({mirrorChoice: 'keep'}),
+        {yesLabel: t("modeler.joinMirrorKeep"), noLabel: t("modeler.joinMirrorApply"), no: () => joinParts({mirrorChoice: 'apply'})});
+      return;
+    }
     commit(() => {
-      const target = list[0], inverse = M.objectInverse(target);
+      // Apply first: the target's mirror (when asked), and the mirror of any joined part the result won't mirror.
+      if (target.mirror && mirrorChoice === 'apply') { target.mesh = appliedMirror(model, target); target.mirror = false; }
+      for (const other of list.slice(1)) if (other.mirror && !target.mirror) { other.mesh = appliedMirror(model, other); other.mirror = false; }
+      const inverse = M.objectInverse(target);
       for (const other of list.slice(1)) {
         const transform = M.objectTransform(other), base = target.mesh.verts.length;
         target.mesh.verts.push(...other.mesh.verts.map(v => inverse(transform(v))));
@@ -2380,6 +2422,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       model.parts = model.parts.filter(p => p === target || !S.parts.has(p.id)); dropEmptyFolders(model);
       S.parts = new Set([target.id]); S.active = target.id; S.cache.clear();
     });
+    toast(t(target.mirror ? "modeler.joinedMirrored" : "modeler.joinedParts", {name: target.name}));
   }
   function rename(p) {
     const row = outliner.querySelector(`[data-part="${p.id}"] .modeler-name`); if (!row) return;
@@ -2536,24 +2579,25 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
   function openModelFile() {
     const input = el('input', {type: 'file', accept: '.nowdz,application/json'});
-    input.addEventListener('change', async () => {
-      const file = input.files[0]; if (!file) return;
-      let loaded;
-      try {
-        const data = JSON.parse(await file.text());
-        if (data?.format !== MODEL_FILE_FORMAT || !data.model) throw new Error(t("modeler.notAModelFile"));
-        loaded = readModel(data.model);
-      } catch (error) { toast(error instanceof SyntaxError ? t("modeler.notAModelFile") : error.message); return; }
-      const open = () => {
-        commit(() => {
-          model = loaded; S.parts = new Set(); S.active = model.parts[0]?.id ?? null; S.verts = new Set(); S.bones = new Set(); S.mode = 'object';
-          S.faceCanvas = null; S.cache.clear(); syncRefs();
-        });
-        refresh(); frameSelected(); toast(t("modeler.modelFileOpened", {name: file.name}));
-      };
-      if (hasWork()) askConfirm(t("modeler.replaceWithFile"), open, {yesLabel: t("modeler.openModelFile"), noLabel: t("modeler.keepModeling")}); else open();
-    });
+    input.addEventListener('change', async () => { const file = input.files[0]; if (file) openModelData(await file.text(), file.name); });
     input.click();
+  }
+  /** Open a .nowdz model file's text in place of this model (asking first when there is work; one undo step). */
+  function openModelData(text, name) {
+    let loaded;
+    try {
+      const data = JSON.parse(text);
+      if (data?.format !== MODEL_FILE_FORMAT || !data.model) throw new Error(t("modeler.notAModelFile"));
+      loaded = readModel(data.model);
+    } catch (error) { toast(error instanceof SyntaxError ? t("modeler.notAModelFile") : error.message); return; }
+    const open = () => {
+      commit(() => {
+        model = loaded; S.parts = new Set(); S.active = model.parts[0]?.id ?? null; S.verts = new Set(); S.bones = new Set(); S.mode = 'object'; S.ref = null;
+        S.faceCanvas = null; S.cache.clear(); syncRefs();
+      });
+      refresh(); frameSelected(); toast(t("modeler.modelFileOpened", {name}));
+    };
+    if (hasWork()) askConfirm(t("modeler.replaceWithFile"), open, {yesLabel: t("modeler.openModelFile"), noLabel: t("modeler.keepModeling")}); else open();
   }
   /** glTF (.glb, or .gltf with its .bin): parts, colours, and the skeleton with its
    * weights. Imported bones join the model's; points keep the file's weights. */
@@ -3148,10 +3192,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   refresh();
   canvas.focus();
   if (!controlsHidden()) showControls();
-  const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
+  const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, get frame() { return frame; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
+    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, openModelData, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.

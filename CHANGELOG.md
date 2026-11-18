@@ -15,6 +15,11 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - Save your progress in 3D Nowdz with Ctrl+S: an unfinished model is kept with your project and saved with it, so you can carry on another time. It's also kept automatically while you work.
 - Save a 3D Nowdz model as its own .nowdz file from the File menu, and open it again later or in another project.
 - Press Alt+Z in 3D Nowdz to turn X-ray on or off, as in Blender.
+- 3D Nowdz can merge a point of one piece onto a point of another, as in Blender, so pieces can be joined point by point.
+- The 3D Nowdz knife can cut through points anywhere on a face, not just on edges and corners.
+- Joining parts in 3D Nowdz keeps Mirror mode on, joins into the part you clicked last, and asks before mirroring the joined parts too.
+- If an unfinished 3D Nowdz model can't be reopened, 3D Nowdz now starts fresh instead of getting stuck, and keeps the unfinished model.
+- Open a .nowdz model file from the main Open command or by dropping it on the window, and it opens in 3D Nowdz.
 - Squash and stretch 3D figures on the stage: the whole figure in any direction, from its feet or its middle, or a single part with or without the parts below it. Shapes keep their volume, and every change keys like a pose.
 - 3D Nowdz reference images are now layers: select one to nudge it with the arrow keys, move it with G (then X, Y or Z) or scale it with S, and right-click it to flip it, change its opacity, hide it or lock it in place.
 - Reference images stay in 3D Nowdz and are no longer added to the animation with the model, but they come back when you edit the model again.
