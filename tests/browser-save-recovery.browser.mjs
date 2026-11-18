@@ -38,6 +38,13 @@ async function picker(page,mode){
 async function clickSave(page){
   // Keep the actual input task/user activation, and capture the command result.
   await page.evaluate(()=>{const save=styk.actions.save;styk.actions.save=(...args)=>{window.__saved=save(...args);return __saved;};});
+  await page.locator('[data-action="save"]').first().waitFor({state:'visible',timeout:10000}).catch(async error=>{
+    console.log('SAVE-DIAG', await page.evaluate(()=>{const b=document.querySelector('[data-action="save"]'),r=b.getBoundingClientRect(),cs=getComputedStyle(b);
+      const chain=[];for(let n=b;n&&n!==document.documentElement;n=n.parentElement){const c=getComputedStyle(n);if(c.display==='none'||c.visibility!=='visible'||n.hidden)chain.push(`${n.tagName}.${n.className} d=${c.display} v=${c.visibility} h=${n.hidden}`);}
+      return JSON.stringify({rect:[r.x,r.y,r.width,r.height],display:cs.display,vis:cs.visibility,chain,band:document.querySelector('.shell-top')?.dataset.band,shell:{...document.querySelector('.shell')?.dataset},body:{...document.body.dataset},
+        dialogs:[...document.querySelectorAll('dialog[open]')].map(d=>d.id+':'+d.textContent.trim().slice(0,120)),win:[innerWidth,innerHeight]});}));
+    throw error;
+  });
   await page.locator('[data-action="save"]').first().click();
   return page.evaluate(()=>window.__saved);
 }
