@@ -69,6 +69,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed the web version now and then opening to a blank page. If part of the editor doesn't arrive, the page now loads it again, and says so if it still can't.
 - Fixed movieclips made while another layer had figures joining their figures to the wrong part (or to itself), which could stop the project from opening with “Figures contain a cyclic join.” Such projects now open with their movieclips repaired.
 - Fixed heads and other parts of older Stick Nodes figures drawing as five-sided polygons after import. Stick Nodes' legacy Filled circle parts now import as round circles, in the editor, in exports and in the import preview.
 - Fixed the 3D Nowdz knife refusing to cut across a pushed-in panel or step.

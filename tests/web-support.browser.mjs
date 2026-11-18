@@ -42,6 +42,30 @@ try {
     check('and the page has the alert role', (await page.locator('main[role="alert"]').count()) === 1);
     await page.context().close();
   }
+
+  // A module that does not arrive abandons the editor's whole module graph with no message. The page loads itself
+  // again (twice at most), and only then tells the person.
+  {
+    const page = await (await browser.newContext()).newPage();
+    let refused = 0;
+    await page.route('**/src/spatial-controls.mjs', (route) => (refused++ ? route.continue() : route.abort('failed')));
+    await page.goto(site.origin);
+    await page.waitForFunction(() => window.styk?.ready === true, null, { timeout: 30000 });
+    check('A module that fails once is loaded again on a fresh page, and the editor starts', refused === 2);
+    check('and the retry count is cleared once the editor has loaded', await page.evaluate(() => sessionStorage.getItem('styk-boot-retries') === null));
+    await page.context().close();
+  }
+  {
+    const page = await (await browser.newContext()).newPage();
+    let refused = 0;
+    await page.route('**/src/spatial-controls.mjs', (route) => { refused++; return route.abort('failed'); });
+    await page.goto(site.origin);
+    await page.getByText('StykNowdz could not finish loading').waitFor({ timeout: 30000 });
+    check('A module that keeps failing is tried three times, never in an endless loop', refused === 3);
+    await page.waitForTimeout(1000);
+    check('and then the person is told, with a way to try again', refused === 3 && await page.getByRole('button', { name: 'Reload' }).isVisible() && (await page.locator('main[role="alert"]').count()) === 1);
+    await page.context().close();
+  }
   console.log(`\n[${BROWSER}] ${checks.length} checks passed`);
 } finally {
   await browser.close();

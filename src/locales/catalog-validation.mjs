@@ -1,6 +1,6 @@
 /** Pure validation shared by generation, CI and translator tooling. */
 export const placeholders = text => [...new Set([...text.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map(match => match[1]))].sort();
-const categories = new Set(['zero', 'one', 'two', 'few', 'many', 'other']);
+const ORDER = ['zero', 'one', 'two', 'few', 'many', 'other'], categories = new Set(ORDER);
 const own = (object, key) => Object.hasOwn(object, key);
 
 export function validateCatalog(pack, english) {
@@ -10,7 +10,9 @@ export function validateCatalog(pack, english) {
   let forms = ['other'];
   try {
     if (!locale || Intl.getCanonicalLocales(locale.id)[0] !== locale.id) throw Error();
-    forms = new Intl.PluralRules(locale.id).resolvedOptions().pluralCategories;
+    // In CLDR order: the order Intl lists them in changes between ICU versions (and so between Node releases).
+    const listed = new Set(new Intl.PluralRules(locale.id).resolvedOptions().pluralCategories);
+    forms = ORDER.filter(form => listed.has(form));
     if (!['ltr', 'rtl'].includes(locale.direction) || ![locale.name, locale.nativeName].every(value => typeof value === 'string' && value.trim() && value.length <= 100 && !/[\u0000-\u001f<>]/.test(value))) throw Error();
     if (locale.aliases !== undefined && !Array.isArray(locale.aliases)) throw Error();
     for (const alias of locale.aliases ?? []) if (Intl.getCanonicalLocales(alias)[0] !== alias) throw Error();
