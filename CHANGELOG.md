@@ -70,6 +70,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed 3D Nowdz foot bones moving nothing when the boots or shoes cover the ankles. The foot now moves the bottom of the boot and the shin moves the top.
 - Fixed 3D Nowdz models that wouldn't open, or vanished after texture painting, when Mirror had been used on a whole part. Those models now open with the broken parts repaired, and Mirror on a whole part keeps its right half and copies it over the left.
 - Fixed the web version now and then opening to a blank page. If part of the editor doesn't arrive, the page now loads it again, and says so if it still can't.
 - Fixed movieclips made while another layer had figures joining their figures to the wrong part (or to itself), which could stop the project from opening with “Figures contain a cyclic join.” Such projects now open with their movieclips repaired.

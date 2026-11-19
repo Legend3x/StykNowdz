@@ -180,6 +180,23 @@ test('posing on the stage: each bone hangs from its parent bone, thighs from the
   assert.ok(!skin.bones.includes(ids.get('Thigh.L')) && skin.bones.includes(ids.get('Spine')) && skin.bones.includes(ids.get('Chest')));
 });
 
+test('a boot that covers the ankle bends there: the foot bone moves its foot, the shin its top', () => {
+  // A tall boot in a piece of its own, holding the whole foot bone: it used to follow the shin rigidly,
+  // so the Foot bone moved nothing at all.
+  const model = emptyModel(), box = cube(1);
+  const boot = {verts: box.verts.map(([x, y, z]) => [.1 + x * .14, .225 + y * .27, .045 + z * .4]), faces: box.faces.map(f => ({...f, v: f.v.slice()}))};
+  const part = addPart(model, {name: 'Boot', mesh: boot});
+  const thigh = addBone(model, {name: 'Thigh.L', head: [.1, .97, 0], tail: [.1, .57, 0]});
+  const shin = addBone(model, {name: 'Shin.L', head: [.1, .57, 0], tail: [.1, .17, 0], parent: thigh.id});
+  const foot = addBone(model, {name: 'Foot.L', head: [.1, .17, 0], tail: [.1, .1, .13], parent: shin.id});
+  const mesh = evaluatePart(part), skin = autoWeights(model, mesh, part);
+  const weight = (v, bone) => [0, 1, 2, 3].reduce((s, k) => s + (skin.bones[v * 4 + k] === bone.id ? skin.weights[v * 4 + k] : 0), 0);
+  mesh.verts.forEach((p, v) => {
+    if (p[1] < .2) assert.ok(weight(v, foot) > (p[2] > 0 ? .5 : .4), `the sole, toe most of all, goes with the foot (${p})`);
+    else assert.ok(weight(v, shin) > .5, `the top goes with the shin (${p})`);
+  });
+});
+
 test('toon look: ink outlines are inverted hulls on the part skin, and shadows follow a light fixed to the viewer', async () => {
   const {outlineHull, vertexNormals} = await import('../src/modeler/toon.mjs');
   const {toonLight, shadowColor} = await import('../src/toon-shading.mjs');

@@ -898,7 +898,10 @@ past a joint: beyond the span at a child's end or the parent's end, or along
 the middle of the parent itself and nearer it (a leg in one piece from hip to
 ankle, a shoe in one piece with the shin), so it still bends there. A parent
 much shorter than the bone (under 40% of its length: a neck under a head)
-doesn't count.
+doesn't count. Nor is it bound when its bounds hold most of a child bone (6 of
+9 samples along it): a tall boot in a piece of its own holds the whole foot
+bone, and bound to the shin it left the Foot bone moving nothing; it now
+blends, its sole and toe with the foot and its top with the shin.
 
 On a humanoid skeleton (bones named Neck, Head and UpperArm), a part centred
 above the base of the neck and inside the shoulders (hair, quills, ears, a

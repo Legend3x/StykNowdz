@@ -438,13 +438,18 @@ function bodyWeights(model, mesh, part, {smoothing = 2, rigidShare = .7} = {}) {
     // ...unless a good share of it runs on past a joint onto the next bone (a
     // leg in one piece from hip to ankle, a shoe with the shin), which must bend there.
     // (A short parent, such as a neck under a head, carries no part of its own.)
-    const hasChild = bones.some(c => deformParent.get(c.id) === bone.id), up = byId.get(deformParent.get(bone.id));
+    const children = bones.filter(c => deformParent.get(c.id) === bone.id), hasChild = children.length > 0, up = byId.get(deformParent.get(bone.id));
     const longUp = up && length(sub(up.tail, up.head)) >= len * .4, past = members.filter(i => {
       const p = mesh.verts[i], t = dot(sub(p, bone.head), axis) / len;
       // Beyond either end, or along the parent bone itself, not just by the
       // joint (a shoe in one piece with the shin).
       return (hasChild && t > len + margin) || (up && (t < -margin || longUp && alongMiddle(p, up) && segmentDistance(p, up.head, up.tail) < segmentDistance(p, bone.head, bone.tail)));
     }).length;
+    // A piece that holds most of a child bone spans that joint (a boot over the
+    // ankle holds the foot bone), so it must bend there: its foot goes with the foot.
+    const box = bounds(members.map(i => mesh.verts[i]));
+    const holdsChild = children.some(c => Array.from({length: 9}, (_, i) => add(c.head, scale(sub(c.tail, c.head), i / 8))).filter(q => [0, 1, 2].every(k => q[k] >= box.min[k] && q[k] <= box.max[k])).length >= 6);
+    if (holdsChild) continue;
     if (along / members.length >= rigidShare && past / members.length < .12) for (const i of members) singleOf[i] = bone.id;
   }
   const lists = mesh.verts.map((p, v) => {
