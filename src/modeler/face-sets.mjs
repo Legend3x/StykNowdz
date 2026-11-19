@@ -126,6 +126,7 @@ function turnedCopy(model, part, angle, drop) {
   mesh.verts = world.map(p => [...transformPoint(back, [mid[0] + (p[0] - mid[0]) * c - (p[1] - mid[1]) * s, mid[1] + (p[0] - mid[0]) * s + (p[1] - mid[1]) * c + drop, p[2]])].map(v => Math.round(v * 1e5) / 1e5));
   const copy = addPart(model, {name: part.name, mesh, position: part.position, rotation: part.rotation, scale: part.scale, mirror: part.mirror, smooth: part.smooth});
   for (const key of ['shadows', 'outline']) if (part[key] !== undefined) copy[key] = structuredClone(part[key]);
+  if (part.mirrorU) copy.mirrorU = true;
   return copy;
 }
 

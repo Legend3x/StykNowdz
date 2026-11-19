@@ -8,6 +8,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Added
 
+- Unwrap in 3D Nowdz lays the selected faces, points or edges flat in one piece, the right way up. On a Mirror part both halves show as one face, each with its own side of the texture.
 - 3D Nowdz models can have textures: images painted onto their faces show in 3D Nowdz, on the stage, in playback and in exports. Turn them off under View > Textures.
 - Textured models come in from .glb files and Open in Blender with their images and UVs, and textures painted in Blender come back too.
 - Unwrap 3D Nowdz models with U (Smart UV Project, Cube, Project from View) and arrange the UVs over the texture in the new UV editor. Unwrapping several parts gives them one shared texture with their colours already in it.

@@ -82,3 +82,42 @@ test('Paint texture opens on an empty one-frame project the size of the texture'
   assert.equal(doc._styk.layerSheet.duration, 1);
   assert.throws(() => createBlankDocument({canvas: {width: 0, height: 4}}), RangeError);
 });
+
+test('Unwrap lays each connected selection flat in one piece, upright, keeping its shape', async () => {
+  const {uvSphere} = await import('../src/modeler/primitives.mjs');
+  const sphere = uvSphere(), faces = new Set(sphere.faces.flatMap((f, i) => f.v.every(v => sphere.verts[v][2] > .1) ? [i] : []));
+  unwrapParts('unwrap', [{mesh: sphere, faces}]);
+  const at = new Map(); // one UV per point: the piece is never cut apart
+  for (const fi of faces) sphere.faces[fi].v.forEach((v, k) => { const uv = sphere.faces[fi].uv[k].map(x => x.toFixed(9)).join(); assert.ok(!at.has(v) || at.get(v) === uv, 'a point has one place'); at.set(v, uv); });
+  const signed = f => f.uv.reduce((a, p, i) => { const q = f.uv[(i + 1) % f.uv.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0);
+  assert.ok([...faces].every(fi => signed(sphere.faces[fi]) > 0), 'no face turned over');
+  const corners = [...faces].flatMap(fi => sphere.faces[fi].v.map((v, k) => [sphere.verts[v], sphere.faces[fi].uv[k]]));
+  const top = corners.reduce((a, b) => (b[0][1] > a[0][1] ? b : a)), bottom = corners.reduce((a, b) => (b[0][1] < a[0][1] ? b : a));
+  const right = corners.reduce((a, b) => (b[0][0] > a[0][0] ? b : a)), left = corners.reduce((a, b) => (b[0][0] < a[0][0] ? b : a));
+  assert.ok(top[1][1] > bottom[1][1] + .5 && right[1][0] > left[1][0] + .5, 'up is up and the piece fills the square, unmirrored');
+  for (const [, uv] of corners) assert.ok(uv.every(x => x >= 0 && x <= 1));
+});
+
+test('Unwrap on a Mirror part: the half meets its mirrored copy along u = 0.5, each with its own half of the texture', async () => {
+  const {uvSphere} = await import('../src/modeler/primitives.mjs');
+  const {mirrored} = await import('../src/modeler/mesh.mjs');
+  for (const facing of [1, -1]) { // the front of a head lands right of the middle, the back left of it
+    const s = uvSphere(), faces = new Set(s.faces.flatMap((f, i) => f.v.every(v => s.verts[v][2] * facing > .1 && s.verts[v][0] >= -1e-9) ? [i] : []));
+    unwrapParts('unwrap', [{mesh: s, faces, mirror: true, mirrorU: true}]);
+    const us = [...faces].flatMap(fi => s.faces[fi].uv.map(p => p[0]));
+    const middle = [...faces].flatMap(fi => s.faces[fi].v.flatMap((v, k) => Math.abs(s.verts[v][0]) < 1e-9 ? [s.faces[fi].uv[k][0]] : []));
+    assert.ok(middle.length && middle.every(u => Math.abs(u - .5) < 1e-9), 'the middle stands on u = 0.5');
+    assert.ok(facing > 0 ? Math.min(...us) >= .5 - 1e-9 : Math.max(...us) <= .5 + 1e-9);
+    // The mirrored copy reads the other half (Mirror U), so together they make one face without overlap.
+    const whole = mirrored({verts: s.verts, faces: [...faces].map(fi => s.faces[fi])}, 1e-4, {mirrorU: true});
+    const copies = whole.faces.slice(faces.size).flatMap(f => f.uv.map(p => p[0]));
+    assert.ok(facing > 0 ? Math.max(...copies) <= .5 + 1e-9 : Math.min(...copies) >= .5 - 1e-9);
+  }
+});
+
+test('Unwrap falls back to Smart UV Project for a closed piece, which cannot lie flat in one', async () => {
+  const {uvSphere} = await import('../src/modeler/primitives.mjs');
+  const s = uvSphere(), faces = new Set(s.faces.keys());
+  unwrapParts('unwrap', [{mesh: s, faces}]);
+  assert.ok(s.faces.every(f => f.uv?.every(p => p.every(x => x >= 0 && x <= 1))));
+});

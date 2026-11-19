@@ -14,8 +14,9 @@ export function emptyModel() {
   return {version: MODEL_VERSION, name: '3D model', parts: [], bones: [], palette: DEFAULT_PALETTE.map(c => c.slice()), references: [], nextId: 1};
 }
 
-export function addPart(model, {name = 'Part', mesh, position = [0, 0, 0], rotation = [0, 0, 0], scale: size = [1, 1, 1], mirror = false, smooth = 0, visible = true}) {
+export function addPart(model, {name = 'Part', mesh, position = [0, 0, 0], rotation = [0, 0, 0], scale: size = [1, 1, 1], mirror = false, mirrorU = false, smooth = 0, visible = true}) {
   const part = {id: model.nextId++, name, mesh, position: position.slice(), rotation: rotation.slice(), scale: size.slice(), mirror, smooth, visible};
+  if (mirrorU) part.mirrorU = true;
   model.parts.push(part);
   return part;
 }
@@ -44,6 +45,7 @@ export function readModel(value, {repaired = []} = {}) {
     if (!check.ok) throw new TopologyError(`Opening part “${part.name}”`, validateMesh(part.mesh, {label: `part “${part.name}”`, paletteSize}));
     part.smooth = Math.max(0, Math.min(SMOOTH_MAX, Math.round(part.smooth ?? 0)));
     part.mirror = Boolean(part.mirror); part.visible = part.visible !== false;
+    if (part.mirrorU) part.mirrorU = true; else delete part.mirrorU;
     // Toon look: outline settings and whether the part takes shadows.
     if (part.outline !== undefined) {
       const o = part.outline;
@@ -254,7 +256,7 @@ export function evaluatePart(part, {smooth = true} = {}) {
   let mesh = surfaceOf(transformMesh(part.mesh, objectMatrix(part)));
   // A negative scale turns faces inside out; flip them back.
   if (objectMirrors(part)) mesh.faces.forEach(flipFace);
-  if (part.mirror) mesh = mirrored(mesh);
+  if (part.mirror) mesh = mirrored(mesh, undefined, {mirrorU: part.mirrorU});
   if (part.solidify) mesh = solidify(mesh, part.solidify * (Math.abs(part.scale?.[0] ?? 1) + Math.abs(part.scale?.[1] ?? 1) + Math.abs(part.scale?.[2] ?? 1)) / 3);
   if (smooth) for (let k = 0; k < (part.smooth ?? 0); k++) mesh = catmullClark(mesh);
   cleanup(mesh);

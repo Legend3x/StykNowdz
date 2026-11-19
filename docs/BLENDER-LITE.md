@@ -612,7 +612,8 @@ them back. Figures made by older versions keep theirs in `modelSource`.
   fill) starts without UVs and shows its colour.
 - Copies, clones, joins and flips keep each UV with its corner; mirrored copies
   (Mirror, Symmetrize, mirrored scale) reuse the same UVs, so both sides show the
-  same image, as Blender's Mirror modifier does by default.
+  same image, as Blender's Mirror modifier does by default (Mirror U, below,
+  gives a Mirror part's copy its own side).
 - Smooth subdivides UVs linearly; Solidify gives the inner layer the outer UVs
   and each rim face its edge's UVs.
 - `readModel` drops textures that are not image data URLs or are oversized, and
@@ -646,14 +647,30 @@ them back. Figures made by older versions keep theirs in `modelSource`.
 
 (src/modeler/unwrap.mjs, src/modeler/uv-editor.mjs.)
 
-- **Unwrap (U)**, in Edit mode on the selected faces (all faces when none are
-  selected) and in Object mode on every selected part together, packed into one
-  texture: Smart UV Project (faces join an island while their normal stays within
+- **Unwrap (U)**, in Edit mode on the selected faces (with only points or edges
+  selected, the faces they touch; all faces when nothing is selected) and in
+  Object mode on every selected part together, packed into one texture:
+  **Unwrap** (Blender's Unwrap: each connected piece of the faces lies flat in
+  one piece, keeping its shape, by a least squares conformal map solved with
+  conjugate gradients; turned so up on the model is up in the texture and sized
+  by its area on the model; a closed piece, which can't lie flat in one, falls
+  back to Smart UV Project), Smart UV Project (faces join an island while their normal stays within
   66° of its first face; each island lies flat along its area-weighted average
   normal and is turned to fill its box), Cube Projection (by the side a face
   points at most), Project from View (the faces as the camera sees them, as one
   picture) and Reset (each face fills the square). Islands are measured in world
   space and packed in shelves, all scaled alike, so texture detail is even.
+- **Mirror parts and Mirror U.** A part's `mirrorU` (Blender's Mirror U on the
+  Mirror modifier) makes its mirrored copy read the texture at 1 − u. Unwrap
+  turns it on for a single Mirror part when it lays out the whole part (or
+  nothing else on it has UVs); the other methods keep the half layout once it is
+  on; unwrapping several parts together, or applying the mirror, turns it off.
+  With it on, the layout goes in the right half of the square: a piece reaching
+  the middle keeps its middle points on one straight line (held at u = 0 in the
+  solve) standing on u = 0.5, and one whose half lies left of that line is packed
+  by its reflection and reflected back, so the half and its copy make one face
+  across the middle, each with its own side of the texture. The UV editor shows
+  the copy dashed, and the colour bake and Paint texture's guide include it.
 - Faces unwrapped without a texture take the one picked in the UV editor, else
   the one their faces already use, else a new 1024 px texture with each face's
   colour baked in at its UVs (edges grown 1.5 px), so the model looks unchanged

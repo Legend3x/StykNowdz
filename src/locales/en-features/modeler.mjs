@@ -670,6 +670,8 @@ export default Object.freeze({
   "modeler.uv.openHint": "Use a PNG, JPEG or WebP image as a texture",
   "modeler.uv.unwrap": "Unwrap",
   "modeler.uv.unwrapHint": "Lay the selected faces flat (U)",
+  "modeler.uv.unwrap": "Unwrap",
+  "modeler.uv.unwrapHint": "Lay the selection flat in one piece, keeping its shape. On a Mirror part both halves show as one, each with its own side of the texture",
   "modeler.uv.smart": "Smart UV Project",
   "modeler.uv.smartHint": "Split at sharp turns and lay each piece flat (good for most models)",
   "modeler.uv.cube": "Cube Projection",

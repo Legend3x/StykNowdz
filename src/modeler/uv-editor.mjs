@@ -63,6 +63,16 @@ export function createUVEditor({source, begin, changed, end, header = [], t = ke
     if (src?.image?.complete !== false && (src?.image?.naturalWidth || src?.image?.width)) { ctx.imageSmoothingEnabled = V.size < (src.image.naturalWidth ?? src.image.width); ctx.drawImage(src.image, V.ox, V.oy, V.size, V.size); }
     ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1; ctx.strokeRect(V.ox + .5, V.oy + .5, V.size, V.size);
     if (!src) return;
+    // A Mirror part with Mirror U: its mirrored half reads the texture at 1 - u, shown dashed so the
+    // whole face reads as one piece (it moves with the half it copies).
+    if (src.mirrorU) {
+      ctx.setLineDash([4, 3]); ctx.strokeStyle = 'rgba(20,20,20,.55)'; ctx.lineWidth = 1;
+      for (const fi of src.faces) {
+        const f = src.mesh.faces[fi]; if (!f?.uv) continue;
+        ctx.beginPath(); f.uv.forEach(([u, v], i) => { const [x, y] = toScreen([1 - u, v], V); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
     // Faces: selected ones tinted, every edge drawn.
     for (const fi of src.faces) {
       const f = src.mesh.faces[fi]; if (!f?.uv) continue;

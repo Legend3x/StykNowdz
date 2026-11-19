@@ -296,6 +296,7 @@ def build(doc, folder):
             mod.use_axis = (True, False, False)
             mod.mirror_object = middle
             mod.use_clip = bool(p.get("clip", True))
+            mod.use_mirror_u = bool(p.get("mirrorU", False))
             mod.use_mirror_merge = True
             mod.merge_threshold = 1e-4
         if p.get("solidify"):
@@ -381,7 +382,7 @@ def live_modifiers(obj, middle):
         about_middle = mirror.mirror_object == middle or (mirror.mirror_object is None and plain)
         if tuple(mirror.use_axis) != (True, False, False) or tuple(mirror.use_bisect_axis) != (False, False, False) or not about_middle:
             return None
-        out["mirror"], out["clip"] = True, bool(mirror.use_clip)
+        out["mirror"], out["clip"], out["mirrorU"] = True, bool(mirror.use_clip), bool(mirror.use_mirror_u)
     solid = found.get("SOLIDIFY")
     if solid is not None:
         if abs(solid.offset + 1) > 1e-6 or not solid.use_rim:

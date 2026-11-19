@@ -1851,7 +1851,7 @@ export function symmetrizeSide(mesh, tolerance = 1e-4) {
 }
 
 /** Mirror a mesh across X (a copy, welded on the middle); used by the mirror modifier. */
-export function mirrored(mesh, tolerance = 1e-4) {
+export function mirrored(mesh, tolerance = 1e-4, {mirrorU = false} = {}) {
   const out = surfaceOf(mesh);
   // A part with points on both sides of the middle (a whole head, say) is cut there first and its
   // -X side replaced, as Blender's Mirror with Bisect: copying it whole would lay a second, inside-out
@@ -1864,7 +1864,12 @@ export function mirrored(mesh, tolerance = 1e-4) {
     out.verts.push([-p[0], p[1], p[2]]); return out.verts.length - 1;
   });
   const faces = out.faces.length;
-  for (let i = 0; i < faces; i++) out.faces.push(reversedFace(out.faces[i], out.faces[i].v.map(j => map[j]).reverse()));
+  for (let i = 0; i < faces; i++) {
+    const copy = reversedFace(out.faces[i], out.faces[i].v.map(j => map[j]).reverse());
+    // Mirror U (Blender's mirror modifier option): the copy reads the texture's other half.
+    if (mirrorU && copy.uv) copy.uv = copy.uv.map(([u, v]) => [1 - u, v]);
+    out.faces.push(copy);
+  }
   mirrorVData(out, map);
   cleanup(out);
   return out;

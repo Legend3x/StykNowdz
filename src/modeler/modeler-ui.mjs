@@ -81,7 +81,7 @@ function listenToBlender() {
 /** A Mirror mode part's mesh with its mirrored half made real (its own points and faces,
  * weights naming the other side's bones resolved to them), in the part's own space. */
 export function appliedMirror(model, p) {
-  const m = M.objectMatrix(p), mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m)), X.invert(m)), resolve = sideResolver(model);
+  const m = M.objectMatrix(p), mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m), undefined, {mirrorU: p.mirrorU}), X.invert(m)), resolve = sideResolver(model);
   const skin = mesh.vdata?.skin;
   if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([b, w]) => [resolve(b), w]);
   // Kept points must follow the topology rules, like any edit (a refusal leaves the part as it was).
@@ -1137,13 +1137,16 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t("modeler.close"), 'aria-label': t("modeler.close"), onclick: () => toggleUVEditor(false)}, '×'), uvFile].filter(Boolean)});
   stage.append(uvEditor.root);
   /** Faces of a part the UV tools work on: the selected faces in Edit mode, else all of them. */
+  /** The faces UV tools work on: in Edit mode the selected faces, else (points or edges picked)
+   * every face they touch; otherwise the whole part. */
   function uvFacesOf(p, {unwrapped = true} = {}) {
-    const picked = S.mode === 'edit' && p.id === S.active ? selectedFaces(p) : null;
+    let picked = S.mode === 'edit' && p.id === S.active ? selectedFaces(p) : null;
+    if (picked && !picked.size && S.verts.size) picked = new Set(p.mesh.faces.flatMap((f, i) => f.v.some(v => S.verts.has(v)) ? [i] : []));
     const list = picked?.size ? [...picked] : p.mesh.faces.map((_, i) => i);
     return new Set(unwrapped ? list.filter(fi => p.mesh.faces[fi].uv) : list);
   }
   const shownTexture = p => { const faces = p ? uvFacesOf(p) : new Set(); return S.uvTexture ?? (faces.size ? p.mesh.faces[[...faces][0]].t : undefined) ?? model.textures?.[0]?.id; };
-  function uvSource() { const p = activePart(); if (!p) return null; return {mesh: p.mesh, faces: uvFacesOf(p), image: textureImages().get(shownTexture(p)) ?? null}; }
+  function uvSource() { const p = activePart(); if (!p) return null; return {mesh: p.mesh, faces: uvFacesOf(p), image: textureImages().get(shownTexture(p)) ?? null, mirrorU: Boolean(p.mirror && p.mirrorU)}; }
   function syncUVBar() {
     if (!uvEditor.open) return;
     const p = activePart(), id = shownTexture(p);
@@ -1154,10 +1157,21 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Unwrap targets: the selected parts in Object mode (one shared texture), else the part being edited. */
   function uvTargets() {
     const ids = S.mode === 'object' && S.parts.size ? [...S.parts] : S.active ? [S.active] : [];
-    return ids.map(part).filter(p => p && p.mesh.faces.length && p.visible !== false).map(p => { const m = M.objectMatrix(p); return {p, mesh: p.mesh, faces: uvFacesOf(p, {unwrapped: false}), points: p.mesh.verts.map(v => [...X.transformPoint(m, v)])}; });
+    return ids.map(part).filter(p => p && p.mesh.faces.length && p.visible !== false).map(p => { const m = M.objectMatrix(p); return {p, mesh: p.mesh, faces: uvFacesOf(p, {unwrapped: false}), points: p.mesh.verts.map(v => [...X.transformPoint(m, v)]), mirror: Boolean(p.mirror)}; });
+  }
+  /** Whether a Mirror part gets its own texture half for the mirrored side (Blender's Mirror U).
+   * Unwrap turns it on when it lays out the whole part (or nothing else on the part has UVs);
+   * the other methods keep the half layout once it is on. Laying out several parts together turns it off. */
+  function mirrorUFor(kind, targets) {
+    if (targets.length !== 1) return targets.map(() => false);
+    const [{p, faces}] = targets;
+    if (!p.mirror) return [Boolean(p.mirrorU)];
+    if (p.mirrorU) return [true];
+    return [kind === 'unwrap' && p.mesh.faces.every((f, i) => faces.has(i) || !f.uv)];
   }
   function unwrapMenu(anchor) {
     menu(anchor, [
+      menuItem(t("modeler.uv.unwrap"), () => unwrap('unwrap'), {title: t("modeler.uv.unwrapHint")}),
       menuItem(t("modeler.uv.smart"), () => unwrap('smart'), {title: t("modeler.uv.smartHint")}),
       menuItem(t("modeler.uv.cube"), () => unwrap('cube'), {title: t("modeler.uv.cubeHint")}),
       menuItem(t("modeler.uv.view"), () => unwrap('view'), {title: t("modeler.uv.viewHint")}),
@@ -1170,6 +1184,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const targets = uvTargets();
     if (!targets.length) { toast(t("modeler.selectAPartToEdit")); return; }
     const ok = commit(() => {
+      if (kind !== 'reset') mirrorUFor(kind, targets).forEach((on, i) => { targets[i].mirrorU = on; if (on) targets[i].p.mirrorU = true; else delete targets[i].p.mirrorU; });
       unwrapParts(kind, targets, {project: q => { const s = frame.project(q); return [s.x, s.y]; }});
       const used = targets.flatMap(({mesh, faces}) => [...faces].map(fi => mesh.faces[fi].t)).find(id => id !== undefined && model.textures?.some(tex => tex.id === id));
       let id = S.uvTexture ?? used;
@@ -1190,10 +1205,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const c = document.createElement('canvas'); c.width = c.height = size;
     const g = c.getContext('2d'); g.fillStyle = hex(model.palette[0] ?? [200, 200, 200]); g.fillRect(0, 0, size, size);
     g.lineJoin = 'round'; g.lineWidth = 3;
-    for (const {mesh, faces} of targets) for (const fi of faces) {
+    for (const {mesh, faces, p} of targets) for (const fi of faces) {
       const f = mesh.faces[fi]; if (!f.uv) continue;
       g.fillStyle = g.strokeStyle = hex(model.palette[f.c] ?? model.palette[0] ?? [200, 200, 200]);
-      g.beginPath(); f.uv.forEach(([u, v], i) => i ? g.lineTo(u * size, (1 - v) * size) : g.moveTo(u * size, (1 - v) * size)); g.closePath(); g.fill(); g.stroke();
+      // A Mirror U part's mirrored half has its own place: colour it too.
+      for (const flip of p?.mirror && p.mirrorU ? [false, true] : [false]) {
+        g.beginPath(); f.uv.forEach(([u, v], i) => { const x = (flip ? 1 - u : u) * size, y = (1 - v) * size; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.fill(); g.stroke();
+      }
     }
     return {src: c.toDataURL('image/png'), width: size, height: size};
   }
@@ -1230,7 +1248,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const g = c.getContext('2d'), w = Math.max(1, Math.round(Math.max(tex.width, tex.height) / 1024));
     g.lineJoin = 'round';
     const paths = [];
-    for (const q of model.parts) for (const f of q.mesh.faces) if (f.t === tex.id && f.uv) paths.push(f.uv.map(([u, v]) => [u * tex.width, (1 - v) * tex.height]));
+    for (const q of model.parts) for (const f of q.mesh.faces) if (f.t === tex.id && f.uv) {
+      paths.push(f.uv.map(([u, v]) => [u * tex.width, (1 - v) * tex.height]));
+      if (q.mirror && q.mirrorU) paths.push(f.uv.map(([u, v]) => [(1 - u) * tex.width, (1 - v) * tex.height]));
+    }
     for (const [width, colour] of [[w * 3, 'rgba(255,255,255,.55)'], [w, 'rgba(20,20,20,.85)']]) {
       g.lineWidth = width; g.strokeStyle = colour;
       for (const pts of paths) { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.stroke(); }
@@ -1270,7 +1291,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.mode !== 'object') setMode('object');
     const made = commit(() => {
       // A mirrored head becomes whole first: each side of the face is drawn on its own.
-      if (p.mirror) { p.mesh = appliedMirror(model, p); p.mirror = false; }
+      if (p.mirror) { p.mesh = appliedMirror(model, p); p.mirror = false; delete p.mirrorU; }
       const target = wholeTarget(p), frame = faceFrame(model, [evaluatePart(p)]);
       if (!frame) throw Object.assign(new RangeError(t("modeler.face2d.noHead")), {modelerMessage: true});
       // Keep a texture whose front already shows the face; otherwise lay the head out for one.
@@ -2410,8 +2431,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     commit(() => {
       // Apply first: the target's mirror (when asked), and the mirror of any joined part the result won't mirror.
-      if (target.mirror && mirrorChoice === 'apply') { target.mesh = appliedMirror(model, target); target.mirror = false; }
-      for (const other of list.slice(1)) if (other.mirror && !target.mirror) { other.mesh = appliedMirror(model, other); other.mirror = false; }
+      if (target.mirror && mirrorChoice === 'apply') { target.mesh = appliedMirror(model, target); target.mirror = false; delete target.mirrorU; }
+      for (const other of list.slice(1)) if (other.mirror && !target.mirror) { other.mesh = appliedMirror(model, other); other.mirror = false; delete other.mirrorU; }
       const inverse = M.objectInverse(target);
       for (const other of list.slice(1)) {
         const transform = M.objectTransform(other), base = target.mesh.verts.length;
@@ -2504,7 +2525,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
    * points of the part and Mirror mode goes off, so both halves stay and can differ. */
   function applyMirror(p) {
     if (!p?.mirror) return;
-    commit(() => { p.mesh = appliedMirror(model, p); p.mirror = false; S.verts = new Set(); S.cache.delete(p.id); });
+    commit(() => { p.mesh = appliedMirror(model, p); p.mirror = false; delete p.mirrorU; S.verts = new Set(); S.cache.delete(p.id); });
     toast(t("modeler.mirrorApplied"));
   }
   /** Join to middle: the selected points go onto the mirror line (world X = 0), where the

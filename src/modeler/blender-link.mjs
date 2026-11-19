@@ -67,7 +67,7 @@ function partData(model, part, names) {
     verts: mesh.verts.map(p => p.slice()), faces: mesh.faces.map(f => f.v.slice()), colors: mesh.faces.map(f => f.c ?? 0),
     ...(mesh.faces.some(textured) ? {uvs: mesh.faces.map(f => textured(f) ? f.uv.map(p => p.slice()) : null), textures: mesh.faces.map(f => textured(f) ? `tex-${f.t}` : null)} : {}),
     edges: (mesh.edges ?? []).map(e => e.slice()), loose: (mesh.loose ?? []).slice(),
-    mirror: Boolean(part.mirror), clip: part.clip !== false, smooth: part.smooth ?? 0, solidify: part.solidify ?? 0, visible: part.visible !== false,
+    mirror: Boolean(part.mirror), mirrorU: Boolean(part.mirror && part.mirrorU), clip: part.clip !== false, smooth: part.smooth ?? 0, solidify: part.solidify ?? 0, visible: part.visible !== false,
     crease: {...(vdata.crease ?? {})}, line: {...(vdata.line ?? {})}, normal: Object.fromEntries(Object.entries(vdata.normal ?? {}).map(([i, n]) => [i, n.slice()])),
     // Blender gets the weights the animation uses, so posing there matches posing here.
     weights: model.bones.length && follows === 'skin' ? weightsByName(model, mesh, part, names) : {},
@@ -117,7 +117,7 @@ export function readBlenderReply(reply) {
 /** True when Blender's object is what Blender had last time (so it was not edited there). */
 function sameAsLast(back, last, rgbOf) {
   if (!last || Boolean(back.baked) !== Boolean(last.baked) || back.name !== last.name) return false;
-  if (Boolean(back.mirror) !== last.mirror || (back.smooth ?? 0) !== last.smooth || !close(back.solidify, last.solidify, 1e-6) || (back.visible !== false) !== last.visible || (back.clip !== false) !== last.clip) return false;
+  if (Boolean(back.mirror) !== last.mirror || (back.smooth ?? 0) !== last.smooth || !close(back.solidify, last.solidify, 1e-6) || (back.visible !== false) !== last.visible || (back.clip !== false) !== last.clip || Boolean(back.mirrorU) !== Boolean(last.mirrorU)) return false;
   if (JSON.stringify(back.follows ?? 'skin') !== JSON.stringify(last.follows ?? 'skin')) return false;
   if (!closeList(back.matrix, last.matrix, 1e-5) || back.verts.length !== last.verts.length || back.faces.length !== last.faces.length) return false;
   for (let i = 0; i < back.verts.length; i++) if (!closeList(back.verts[i], last.verts[i], 1e-5)) return false;
@@ -208,14 +208,15 @@ export function readBlenderPart(back, colorOf, boneId = new Map(), textureOf) {
   }
   const settings = {mirror: Boolean(back.mirror) && !back.baked, smooth: back.baked ? 0 : Math.max(0, Math.min(3, Math.round(back.smooth ?? 0))), visible: back.visible !== false};
   const placed = {position: [...transform.position], rotation: [...transform.rotation], scale: [...transform.scale]};
-  const extra = {solidify: !back.baked && Number.isFinite(back.solidify) && back.solidify !== 0 ? Math.max(-1, Math.min(1, back.solidify)) : 0, clip: back.clip !== false};
+  const extra = {solidify: !back.baked && Number.isFinite(back.solidify) && back.solidify !== 0 ? Math.max(-1, Math.min(1, back.solidify)) : 0, clip: back.clip !== false, mirrorU: settings.mirror && back.mirrorU === true};
   return {mesh, placed, settings, extra};
 }
 
 /** Solidify and clipping are stored only when they differ from the default. */
-export function setExtras(part, {solidify, clip}) {
+export function setExtras(part, {solidify, clip, mirrorU}) {
   if (solidify) part.solidify = solidify; else delete part.solidify;
   if (clip === false) part.clip = false; else delete part.clip;
+  if (mirrorU) part.mirrorU = true; else delete part.mirrorU;
 }
 
 /** Merge Blender's reply into the model. Returns what happened:
