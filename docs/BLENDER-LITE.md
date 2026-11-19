@@ -259,13 +259,30 @@ glTF 2.0 specification:
   the file split along UV or normal seams are welded back (1e-6), the file is
   repaired (`repairImportedMesh`, below), and the result is checked like any edit.
   Triangles stay triangles (Tris to quads, Alt+J, joins them).
-- Base colour factors become palette colours (sRGB). Textures, morph targets,
-  animations and compressed files (Draco, meshopt) aren't read; a file that
-  requires an extension says so.
-- Every skin joint becomes a bone (parent = nearest joint ancestor). Head at the
-  joint; tail from `extras.tail` (3D Nowdz's own exports), else the middle of
-  its child joints, else along the joint's Y axis for half its parent's length.
+- Base colour factors become palette colours (sRGB); a material with no base
+  colour image but an emissive one and a non-zero emissive factor (a toon or
+  unlit setup, which Blender exports as a black base colour) takes its emission
+  as colour and image. Morph targets, animations and compressed files (Draco,
+  meshopt) aren't read; a file that requires an extension says so.
+- Bones come from the skins the meshes use (an armature no mesh uses, such as a
+  second one of face controls or a leftover metarig, brings nothing), and only
+  the joints that move points, as Blender's "Deform bones only", plus the other
+  side's twin of each (`thigh.R` for `thigh.L`, for a half model): a control rig's
+  helpers and controls (Rigify's ORG-, MCH-, IK targets) stay behind. Each bone
+  hangs from its nearest kept ancestor, or through a helper chain from the kept
+  bone named like the helper (Rigify's DEF-upper_arm.L sits under ORG-shoulder.L:
+  its parent is DEF-shoulder.L). Names lose `DEF-` and a shared `mixamorig:`
+  prefix (when that names no two bones alike), and Blender's segment numbers move
+  before the side (`thigh.L.001` → `thigh.001.L`) so both sides pair up. Head at
+  the joint; tail from `extras.tail` (3D Nowdz's own exports), else the kept
+  child lying along the joint's +Y axis (Blender's bone direction), else the
+  middle of its kept children, else along +Y for half its parent's length.
   Imported bones join any the model already has.
+- Half models: Blender exports only the modelled side when its Mirror modifier
+  isn't applied (as when an Armature modifier comes first). With a skeleton that
+  has both sides, a part all on one side of the middle, with no other part
+  mirroring it, that touches the middle or has 80% of its weight on one side's
+  bones whose twins move nothing in the file, comes in with Mirror on.
 - The file's weights stay on the points (`mesh.vdata.skin`, bone ids). The
   animation and **Export GLB** use them (`partWeights`); points without them
   (new points from edits, a mirror modifier's other half) get automatic weights.

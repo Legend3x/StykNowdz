@@ -19,8 +19,8 @@
  * exporter, with the same weights the animation uses (partWeights).
  */
 import {evaluatePart} from './model.mjs';
-import {add, sub, scale, normalize, cross, length, triangulate, vertexNormals, recalculateNormals, repairImportedMesh} from './mesh.mjs';
-import {partWeights, boneOrder} from './armature.mjs';
+import {add, sub, scale, normalize, cross, length, dot, bounds, triangulate, vertexNormals, recalculateNormals, repairImportedMesh} from './mesh.mjs';
+import {partWeights, boneOrder, sideOf, otherSide} from './armature.mjs';
 import * as X from './matrix.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 import {textureFromBytes, dataUrlBytes, textured} from './uv.mjs';
@@ -126,27 +126,17 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
   const scene = json.scenes?.[json.scene ?? 0], inScene = new Set(), walk = i => { inScene.add(i); (nodes[i].children ?? []).forEach(walk); };
   (scene?.nodes ?? nodes.map((_, i) => i).filter(i => !parentOf.has(i))).forEach(walk);
 
-  // Bones: one per joint of every skin (a joint shared by two skins is one bone).
+  // Bones: one per joint of the skins the meshes use (a joint shared by two skins is one bone).
+  // Skins no mesh uses (a second armature of controls, an unused metarig) bring nothing.
+  const meshSkins = new Set([...inScene].filter(i => nodes[i].mesh !== undefined && nodes[i].skin !== undefined).map(i => nodes[i].skin));
   const bones = [], boneOf = new Map();
-  for (const skin of json.skins ?? []) for (const j of skin.joints) if (!boneOf.has(j)) { boneOf.set(j, bones.length); bones.push({node: j}); }
-  for (const b of bones) {
-    const m = worldOf(b.node), head = [...X.transformPoint(m, [0, 0, 0])];
-    const kids = (nodes[b.node].children ?? []).filter(c => boneOf.has(c)).map(c => [...X.transformPoint(worldOf(c), [0, 0, 0])]);
-    const saved = nodes[b.node].extras?.tail;
-    let tail = Array.isArray(saved) && saved.length === 3 && saved.every(Number.isFinite) ? saved.slice()
-      : kids.length ? scale(kids.reduce((s, p) => add(s, p), [0, 0, 0]), 1 / kids.length) : null;
-    if (!tail || length(sub(tail, head)) < 1e-6) {
-      // No child: along the joint's own Y axis, as long as its parent bone (or a small default).
-      const parent = parentOf.get(b.node), from = boneOf.has(parent) ? [...X.transformPoint(worldOf(parent), [0, 0, 0])] : null;
-      const size = from ? Math.max(length(sub(head, from)) * .5, 1e-3) : .1, axis = normalize([...X.transformDirection(m, [0, 1, 0])]);
-      tail = add(head, scale(length(axis) > 0 ? axis : [0, 1, 0], size));
-    }
-    let up = parentOf.get(b.node); while (up !== undefined && !boneOf.has(up)) up = parentOf.get(up);
-    Object.assign(b, {key: bones.indexOf(b), name: nodes[b.node].name || `Bone ${bones.indexOf(b) + 1}`, head, tail, parent: up === undefined ? null : boneOf.get(up)});
-  }
+  for (const [k, skin] of (json.skins ?? []).entries()) if (meshSkins.has(k)) for (const j of skin.joints) if (!boneOf.has(j)) { boneOf.set(j, bones.length); bones.push({node: j, key: bones.length, name: nodes[j].name || `Bone ${bones.length + 1}`, head: [...X.transformPoint(worldOf(j), [0, 0, 0])]}); }
 
+  // A material whose colour comes from its emission (a toon or unlit setup in Blender exports as a black
+  // base colour with an emissive image) shows its emission.
+  const emissive = material => { const m = json.materials?.[material]; return Boolean(m && m.pbrMetallicRoughness?.baseColorTexture === undefined && m.emissiveTexture !== undefined && (m.emissiveFactor ?? [0, 0, 0]).some(v => v > 0)); };
   const colorOf = material => {
-    const factor = json.materials?.[material]?.pbrMetallicRoughness?.baseColorFactor ?? [.8, .8, .8, 1];
+    const factor = emissive(material) ? [...json.materials[material].emissiveFactor.map(v => Math.min(1, v)), 1] : json.materials?.[material]?.pbrMetallicRoughness?.baseColorFactor ?? [.8, .8, .8, 1];
     const rgb = factor.slice(0, 3).map(toSrgb);
     let i = palette.findIndex(c => c.every((v, k) => Math.abs(v - rgb[k]) <= 1));
     if (i < 0) { palette.push(rgb); i = palette.length - 1; }
@@ -156,7 +146,7 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
   // Base colour images: one texture per image used (a broken or unknown image leaves its faces coloured).
   const textures = [], textureOfImage = new Map();
   const textureOf = material => {
-    const index = json.materials?.[material]?.pbrMetallicRoughness?.baseColorTexture?.index, image = json.textures?.[index]?.source;
+    const index = emissive(material) ? json.materials[material].emissiveTexture.index : json.materials?.[material]?.pbrMetallicRoughness?.baseColorTexture?.index, image = json.textures?.[index]?.source;
     if (image === undefined) return undefined;
     if (!textureOfImage.has(image)) {
       const def = json.images?.[image]; let bytes = null;
@@ -230,7 +220,85 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
       throw new TopologyError(`Importing part “${p.name}”`, check.ok ? error.result : check);
     }
   }
-  return {parts, bones: bones.map(({key, name, head, tail, parent}) => ({key, name, head, tail, parent})), textures: textures.filter(t => parts.some(p => p.mesh.faces.some(f => f.t === t.key)))};
+  const skeleton = skeletonOf(bones, nodes, parentOf, worldOf, parts);
+  markHalves(parts, skeleton);
+  return {parts, bones: skeleton, textures: textures.filter(t => parts.some(p => p.mesh.faces.some(f => f.t === t.key)))};
+}
+
+/** The skeleton an imported skin brings: only the bones that move points (Blender's
+ * "Deform bones only"), so a rig's controls and helpers (Rigify's ORG-, MCH- and
+ * widget bones, IK targets) stay behind. Each bone hangs from its nearest kept
+ * ancestor, or, through a helper chain, from the kept bone named like that helper
+ * (Rigify's DEF-upper_arm.L sits under ORG-shoulder.L: its parent is DEF-shoulder.L).
+ * A prefix every kept bone shares ("DEF-", "mixamorig:") is dropped from the names.
+ * Tails: 3D Nowdz's own `extras.tail`, else the kept child that lies along the joint's
+ * +Y axis (the bone's direction in Blender's exports), else the children's middle,
+ * else along +Y. */
+function skeletonOf(all, nodes, parentOf, worldOf, parts) {
+  // Names: a prefix every bone shares is dropped (Rigify's DEF- only where that names no other bone), and
+  // Blender's segment numbers go before the side (thigh.L.001 → thigh.001.L), so both sides pair up.
+  const prefix = ['mixamorig:', 'mixamorig_'].find(x => all.length && all.every(b => b.name.startsWith(x)));
+  for (const b of all) b.label = (prefix ? b.name.slice(prefix.length) : b.name).replace(/^DEF-/, '').replace(/\.([LR])\.(\d+)$/i, '.$2.$1');
+  const weighted = new Set(parts.flatMap(p => Object.values(p.mesh.vdata?.skin ?? {}).flatMap(pairs => pairs.filter(([, w]) => w > 0).map(([b]) => b))));
+  // A half model (Blender's Mirror modifier left unapplied) weights one side only: its other side's bones stay too.
+  const swap = name => name.replace(/\.([LRlr])((?:\.\d+)?)$/, (_, side, n) => `.${{L: 'R', R: 'L', l: 'r', r: 'l'}[side]}${n}`);
+  const pairsWith = new Set(all.filter(b => weighted.has(b.key)).map(b => swap(b.name)));
+  const kept = weighted.size ? all.filter(b => weighted.has(b.key) || pairsWith.has(b.name)) : all;
+  const byNode = new Map(kept.map(b => [b.node, b])), byName = new Map(kept.map(b => [b.name, b]));
+  const bare = name => name.replace(/^(DEF|ORG|MCH|CTRL|MCH-INT)-/, '');
+  for (const b of kept) {
+    let up = parentOf.get(b.node), parent = null;
+    while (up !== undefined && !parent) {
+      parent = byNode.get(up) ?? null;
+      if (!parent) { const named = byName.get(`DEF-${bare(nodes[up].name ?? '')}`); if (named && named !== b) parent = named; }
+      up = parentOf.get(up);
+    }
+    // Never a loop: a parent found by name must not hang below this bone.
+    for (let q = parent; q; q = q.parent === null ? null : kept.find(x => x.key === q.parent)) if (q === b) { parent = null; break; }
+    b.parent = parent ? parent.key : null;
+  }
+  for (const b of kept) {
+    const m = worldOf(b.node), axis = normalize([...X.transformDirection(m, [0, 1, 0])]), saved = nodes[b.node].extras?.tail;
+    const kids = kept.filter(c => c.parent === b.key).map(c => c.head).filter(h => length(sub(h, b.head)) > 1e-6);
+    const along = kids.map(h => [h, dot(normalize(sub(h, b.head)), axis)]).filter(([, d]) => d > .95).sort((x, y) => y[1] - x[1])[0]?.[0];
+    let tail = Array.isArray(saved) && saved.length === 3 && saved.every(Number.isFinite) ? saved.slice()
+      : along ?? (kids.length ? scale(kids.reduce((t, h) => add(t, h), [0, 0, 0]), 1 / kids.length) : null);
+    if (!tail || length(sub(tail, b.head)) < 1e-6) {
+      // No child: along the joint's own Y axis, as long as half its parent bone (or a small default).
+      const from = b.parent === null ? null : kept.find(x => x.key === b.parent)?.head;
+      const size = from ? Math.max(length(sub(b.head, from)) * .5, 1e-3) : .1;
+      tail = add(b.head, scale(length(axis) > 0 ? axis : [0, 1, 0], size));
+    }
+    b.tail = tail;
+  }
+  const unique = new Set(kept.map(b => b.label)).size === kept.length && kept.every(b => b.label);
+  return kept.map(b => ({key: b.key, name: unique ? b.label : b.name, head: b.head, tail: b.tail, parent: b.parent}));
+}
+
+/** Parts that are one half of a mirrored model: Blender's Mirror modifier, left
+ * unapplied (it is when an Armature modifier comes first), exports only the
+ * modelled side. A part all on one side of the middle with nothing mirroring it,
+ * that either touches the middle (half a torso) or moves only with one side's
+ * bones whose other side moves nothing anywhere (a left leg with no right one),
+ * gets Mirror on. Only for a skeleton with both sides. */
+function markHalves(parts, bones, tolerance = 1e-3) {
+  const nameOf = new Map(bones.map(b => [b.key, b.name]));
+  if (!bones.some(b => sideOf(b.name) === 'L') || !bones.some(b => sideOf(b.name) === 'R')) return;
+  const moving = new Set(parts.flatMap(p => Object.values(p.mesh.vdata?.skin ?? {}).flatMap(pairs => pairs.filter(([, w]) => w > 0).map(([b]) => nameOf.get(b)))));
+  const boxes = parts.map(p => bounds(p.mesh.verts));
+  parts.forEach((p, i) => {
+    const box = boxes[i], side = box.min[0] >= -tolerance ? 1 : box.max[0] <= tolerance ? -1 : 0;
+    if (!side) return;
+    const mirror = {min: [-box.max[0], box.min[1], box.min[2]], max: [-box.min[0], box.max[1], box.max[2]]};
+    const overlap = (a, b) => [0, 1, 2].reduce((v, k) => v * Math.max(0, Math.min(a.max[k], b.max[k]) - Math.max(a.min[k], b.min[k])), 1);
+    const size = [0, 1, 2].reduce((v, k) => v * Math.max(box.max[k] - box.min[k], 1e-6), 1);
+    if (boxes.some((other, j) => j !== i && overlap(other, mirror) > size * .3)) return;
+    const middle = p.mesh.verts.some(v => Math.abs(v[0]) <= tolerance);
+    // Most of its weight (80%) on one side's bones whose other side moves nothing.
+    let lone = 0, total = 0;
+    for (const pairs of Object.values(p.mesh.vdata?.skin ?? {})) for (const [b, w] of pairs) { const n = nameOf.get(b); total += w; if (sideOf(n) && !moving.has(otherSide(n))) lone += w; }
+    if (middle || (total > 0 && lone / total >= .8)) p.mirror = true;
+  });
 }
 
 // ---------- writing ----------

@@ -2638,7 +2638,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         const skin = p.mesh.vdata?.skin;
         if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([key, w]) => [ids.get(key), w]).filter(([id]) => id !== undefined);
         remapFaceTextures(p.mesh, textureIds);
-        const made = addPart(model, {name: p.name, mesh: p.mesh}); if (folder) made.folder = folder;
+        const made = addPart(model, {name: p.name, mesh: p.mesh, mirror: Boolean(p.mirror)}); if (folder) made.folder = folder;
       }
       S.parts = new Set();
       toast(t("modeler.importedGltf", {parts: result.parts.length, bones: result.bones.length}));
@@ -3221,7 +3221,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, get frame() { return frame; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, openModelData, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
+    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, openModelData, importGltfFiles, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.
