@@ -526,6 +526,19 @@ then keeps those points on the line. Turning Mirror on for a part that is all
 on one side and touches the line nowhere says how to join it (or that arms and
 legs stay apart).
 
+A part with points on both sides of the middle (a whole head, say) is cut at the
+line first and keeps its +X side, as Blender's Mirror with Bisect
+(`bisectKeepPositive` in `mirrored`): faces crossing the line are clipped, the new
+point on each crossing edge is shared by the faces on both sides of it, and the
+-X side is replaced by the copy. Copying such a part whole would lay an
+inside-out second copy over it whose faces meet the original's along the line in
+the same direction, breaking rule H4; applying that, then saving, made model
+files that would not open.
+
+`readModel` repairs a stored part that breaks the topology rules
+(`repairImportedMesh`, as for imported files, plus out-of-range colours) instead
+of refusing the whole file, and the modeler says which parts it fixed.
+
 **Apply mirror** (Blender's Apply on the Mirror modifier) makes the mirrored
 half real points of the part and turns Mirror off (`appliedMirror`: the
 mirrored mesh taken back into the part's space, weights on the copy resolved

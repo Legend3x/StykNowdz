@@ -1,7 +1,7 @@
 /** 3D Nowdz model document: parts (mesh objects), a skeleton, a color
  * palette and reference images. Plain JSON, stored on exported figures as
  * `_styk.modelSource` so a 3D figure can be reopened and edited. */
-import {cleanup, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, vertexNormals, VDATA_KEYS} from './mesh.mjs';
+import {cleanup, repairImportedMesh, mirrored, transformMesh, surfaceOf, objectMatrix, objectMirrors, edgeKey, add, scale, normalize, vertexNormals, VDATA_KEYS} from './mesh.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
 import {faceCopy, reversedFace, flipFace, textured, readTextures} from './uv.mjs';
@@ -20,8 +20,10 @@ export function addPart(model, {name = 'Part', mesh, position = [0, 0, 0], rotat
   return part;
 }
 
-/** Validate and normalize a stored model (from a figure or a file). Throws on bad data. */
-export function readModel(value) {
+/** Validate and normalize a stored model (from a figure or a file). Throws on bad data.
+ * A part whose mesh breaks the topology rules (saved by an older version, or by an edit that
+ * slipped past the checks) is repaired as an imported mesh would be; its name goes in `repaired`. */
+export function readModel(value, {repaired = []} = {}) {
   const fail = why => { throw new Error(`This 3D model can't be opened: ${why}.`); };
   if (!value || typeof value !== 'object' || value.version !== MODEL_VERSION || !Array.isArray(value.parts)) fail('unknown format');
   const model = structuredClone(value);
@@ -30,8 +32,16 @@ export function readModel(value) {
     if (!part?.mesh || !Array.isArray(part.mesh.verts) || !Array.isArray(part.mesh.faces)) fail('a part has no mesh');
     for (const key of ['position', 'rotation', 'scale']) if (!finite(part[key], 3)) fail(`a part has no ${key}`);
     // Stored meshes must follow the same topology rules as edits.
-    const check = validateMesh(part.mesh, {label: `part “${part.name}”`, paletteSize: Array.isArray(model.palette) && model.palette.length ? model.palette.length : Infinity});
-    if (!check.ok) throw new TopologyError(`Opening part “${part.name}”`, check);
+    const paletteSize = Array.isArray(model.palette) && model.palette.length ? model.palette.length : Infinity;
+    let check = validateMesh(part.mesh, {label: `part “${part.name}”`, paletteSize, print: false});
+    if (!check.ok) {
+      const mesh = structuredClone(part.mesh);
+      for (const f of mesh.faces) if (f && !(Number.isInteger(f.c) && f.c >= 0 && f.c < paletteSize)) f.c = 0;
+      try { repairImportedMesh(mesh); } catch { /* the check below reports it */ }
+      const fixed = validateMesh(mesh, {label: `part “${part.name}” (repaired)`, paletteSize, print: false});
+      if (fixed.ok) { part.mesh = mesh; repaired.push(part.name); check = fixed; }
+    }
+    if (!check.ok) throw new TopologyError(`Opening part “${part.name}”`, validateMesh(part.mesh, {label: `part “${part.name}”`, paletteSize}));
     part.smooth = Math.max(0, Math.min(SMOOTH_MAX, Math.round(part.smooth ?? 0)));
     part.mirror = Boolean(part.mirror); part.visible = part.visible !== false;
     // Toon look: outline settings and whether the part takes shadows.

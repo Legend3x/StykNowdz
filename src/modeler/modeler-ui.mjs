@@ -84,13 +84,16 @@ export function appliedMirror(model, p) {
   const m = M.objectMatrix(p), mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m)), X.invert(m)), resolve = sideResolver(model);
   const skin = mesh.vdata?.skin;
   if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([b, w]) => [resolve(b), w]);
+  // Kept points must follow the topology rules, like any edit (a refusal leaves the part as it was).
+  assertValidMesh(mesh, `Applying the mirror on “${p.name}”`);
   return mesh;
 }
 /** What a .nowdz model file says it is. */
 const MODEL_FILE_FORMAT = 'stykNowdz.model';
 export function openModeler({host = document.body, top = 0, model: initial = null, editing = false, draft = null, onDone, onClose, onPaintTexture = null, onSave = null} = {}) {
   if (draft?.model) initial = draft.model;
-  let model = initial ? readModel(initial) : emptyModel();
+  const repairedAtStart = [];
+  let model = initial ? readModel(initial, {repaired: repairedAtStart}) : emptyModel();
   const S = {facePreview: {}, faceImages: new Map(), faceCanvas: null, faceFeature: undefined, mode: 'object', posing: false, pose: new Map(), skeletonOpen: true, openLines: new Set(), connect: null, second: null, selectMode: 'vert', parts: new Set(), active: model.parts[0]?.id ?? null, verts: new Set(), bones: new Set(), boneEnd: null,
     depth: createDepthPass(), camera: defaultCamera(), showTextures: true, texImages: new Map(), xray: false, wire: false, grid: true, toonPreview: Boolean(model.toon?.shadows || model.parts.some(q => q.outline?.on)), soft: false, softRadius: .25, softFalloff: 'smooth', showBones: false, weights: true, modal: null, hover: null, polys: [], undo: [], redo: [], cache: new Map(), refImages: new Map()};
   const listeners = new AbortController(), signal = listeners.signal;
@@ -2482,7 +2485,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     return {plus, minus};
   }
   /** Mirror mode on or off. Turning it on with points on both sides of the middle says
-   * so: the mirror would double them (Symmetrize, or deleting one half, fixes that). */
+   * so: the mirror cuts the part at the middle and copies its +X half over the other. */
   function setMirror(p, on) {
     // Turning it off with a mirrored half showing asks whether to keep that half (Blender's Apply).
     if (!on && p.mirror && (sidesOf(p).plus || sidesOf(p).minus)) {
@@ -2585,17 +2588,18 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Open a .nowdz model file's text in place of this model (asking first when there is work; one undo step). */
   function openModelData(text, name) {
     let loaded;
+    const repaired = [];
     try {
       const data = JSON.parse(text);
       if (data?.format !== MODEL_FILE_FORMAT || !data.model) throw new Error(t("modeler.notAModelFile"));
-      loaded = readModel(data.model);
+      loaded = readModel(data.model, {repaired});
     } catch (error) { toast(error instanceof SyntaxError ? t("modeler.notAModelFile") : error.message); return; }
     const open = () => {
       commit(() => {
         model = loaded; S.parts = new Set(); S.active = model.parts[0]?.id ?? null; S.verts = new Set(); S.bones = new Set(); S.mode = 'object'; S.ref = null;
         S.faceCanvas = null; S.cache.clear(); syncRefs();
       });
-      refresh(); frameSelected(); toast(t("modeler.modelFileOpened", {name}));
+      refresh(); frameSelected(); toast(repaired.length ? t("modeler.partsRepaired", {parts: repaired.join(', ')}) : t("modeler.modelFileOpened", {name}));
     };
     if (hasWork()) askConfirm(t("modeler.replaceWithFile"), open, {yesLabel: t("modeler.openModelFile"), noLabel: t("modeler.keepModeling")}); else open();
   }
@@ -3192,6 +3196,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   refresh();
   canvas.focus();
   if (!controlsHidden()) showControls();
+  if (repairedAtStart.length) toast(t("modeler.partsRepaired", {parts: repairedAtStart.join(', ')}));
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, get frame() { return frame; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },

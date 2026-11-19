@@ -298,7 +298,7 @@ export default Object.freeze({
   "modeler.mirrorTag": "⇋",
   "modeler.mirrorX": "Mirror mode (X)",
   "modeler.mirrorHint": "Live mirror, like Blender's Mirror modifier: model one side and the other half follows across the middle (the red line through the floor). Keep your work on one side.",
-  "modeler.mirrorBothSides": "This part has points on both sides of the middle, so the mirror doubles them. Delete one half, or use Symmetrize to copy one side over the other.",
+  "modeler.mirrorBothSides": "This part has points on both sides of the middle, so the mirror keeps the +X half (the right in Front view) and copies it over the other. To keep the other half instead, use Symmetrize first.",
   "modeler.mirrorAllMiddle": "Mirror is on. Move your points off the middle (G, then X) to see the other half.",
   "modeler.smooth": "Smooth",
   "modeler.noParts": "No parts yet.",
@@ -755,5 +755,6 @@ export default Object.freeze({
   "modeler.modelFileSaved": "Model file saved",
   "modeler.modelFileOpened": "Opened {name}",
   "modeler.notAModelFile": "That isn't a 3D Nowdz model file",
+  "modeler.partsRepaired": "Fixed broken edges in {parts} so the model could open. Check those parts before you go on.",
   "modeler.replaceWithFile": "Open the file in place of this model? Undo brings your model back."
 });

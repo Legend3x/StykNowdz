@@ -1853,6 +1853,10 @@ export function symmetrizeSide(mesh, tolerance = 1e-4) {
 /** Mirror a mesh across X (a copy, welded on the middle); used by the mirror modifier. */
 export function mirrored(mesh, tolerance = 1e-4) {
   const out = surfaceOf(mesh);
+  // A part with points on both sides of the middle (a whole head, say) is cut there first and its
+  // -X side replaced, as Blender's Mirror with Bisect: copying it whole would lay a second, inside-out
+  // copy over it and join the two along the middle the wrong way round.
+  if (out.verts.some(p => p[0] > tolerance) && out.verts.some(p => p[0] < -tolerance)) bisectKeepPositive(out, tolerance);
   // Faces lying on the mirror plane would sit inside the whole; drop them.
   out.faces = out.faces.filter(f => !f.v.every(i => Math.abs(out.verts[i][0]) <= tolerance));
   const map = out.verts.map((p, i) => {
@@ -1864,6 +1868,45 @@ export function mirrored(mesh, tolerance = 1e-4) {
   mirrorVData(out, map);
   cleanup(out);
   return out;
+}
+
+/** Cut a surface at x = 0 and keep the +X side (in place). Faces crossing the middle are clipped; a
+ * new point where an edge crosses is shared by both faces on that edge, so the surface stays joined.
+ * New points take their per-point data from the nearer end, and UVs are interpolated. */
+function bisectKeepPositive(mesh, tolerance) {
+  const side = mesh.verts.map(p => (p[0] > tolerance ? 1 : p[0] < -tolerance ? -1 : 0));
+  mesh.verts.forEach((p, i) => { if (!side[i]) p[0] = 0; });
+  const cuts = new Map();
+  const cut = (a, b) => {
+    const k = a < b ? `${a},${b}` : `${b},${a}`;
+    if (cuts.has(k)) return cuts.get(k);
+    const p = mesh.verts[a], q = mesh.verts[b], s = p[0] / (p[0] - q[0]), j = mesh.verts.length;
+    mesh.verts.push([0, p[1] + (q[1] - p[1]) * s, p[2] + (q[2] - p[2]) * s]);
+    const near = s <= .5 ? a : b;
+    for (const key of VDATA_KEYS) {
+      const m = mesh.vdata?.[key]; if (!m || EDGE_KEYED.has(key) || m[near] === undefined) continue;
+      m[j] = key === 'skin' ? m[near].map(pair => pair.slice()) : Array.isArray(m[near]) ? m[near].slice() : m[near];
+    }
+    cuts.set(k, j); return j;
+  };
+  const faces = [];
+  for (const f of mesh.faces) {
+    const n = f.v.length;
+    if (f.v.every(i => side[i] >= 0)) { faces.push(f); continue; }
+    if (f.v.every(i => side[i] <= 0)) continue;
+    const v = [], uv = f.uv && f.uv.length === n ? [] : null;
+    for (let i = 0; i < n; i++) {
+      const a = f.v[i], b = f.v[(i + 1) % n];
+      if (side[a] >= 0) { v.push(a); uv?.push(f.uv[i].slice()); }
+      if (side[a] * side[b] < 0) {
+        v.push(cut(a, b));
+        if (uv) { const p = mesh.verts[a][0], q = mesh.verts[b][0], s = p / (p - q), x = f.uv[i], y = f.uv[(i + 1) % n]; uv.push([x[0] + (y[0] - x[0]) * s, x[1] + (y[1] - x[1]) * s]); }
+      }
+    }
+    if (v.length >= 3) { const out = faceCopy(f, v); if (uv) out.uv = uv; else delete out.uv; faces.push(out); }
+  }
+  mesh.faces = faces;
+  if (mesh.vdata?.crease) for (const k of Object.keys(mesh.vdata.crease)) if (cuts.has(k)) delete mesh.vdata.crease[k];
 }
 
 /** Axis-aligned bounds {min, max}. */
