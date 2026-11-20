@@ -797,11 +797,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     return [
       el('p', {class: 'modeler-hint', text: t("modeler.weightPaintHint", {bone: bone.name})}),
       el('button', {type: 'button', class: 'modeler-button modeler-toggle', 'aria-pressed': String(B.on), onclick: () => setPainting(!B.on)}, B.on ? t("modeler.weightPaintStop") : t("modeler.weightPaintStart")),
-      el('div', {class: 'modeler-segmented', role: 'group', 'aria-label': t("modeler.brushMode")}, PAINT_MODES.map(m => el('button', {type: 'button', class: 'modeler-button', 'aria-pressed': String(B.mode === m),
-        title: t(`modeler.brush.${m}Hint`), onclick: () => { B.mode = m; renderProps(); }}, t(`modeler.brush.${m}`)))),
-      B.mode === 'set' ? slider(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
-      slider(t("modeler.brushRadius"), B.radius, 4, 200, 1, v => { B.radius = v; draw(); }, t("modeler.brushRadiusHint")),
-      slider(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }),
+      el('div', {class: 'modeler-segmented', role: 'group', 'aria-label': t("modeler.brushMode")}, [...PAINT_MODES, 'gradient'].map(m => el('button', {type: 'button', class: 'modeler-button', 'aria-pressed': String(B.mode === m),
+        title: t(`modeler.brush.${m}Hint`), onclick: () => { B.mode = m; renderProps(); setStatus(); }}, t(`modeler.brush.${m}`)))),
+      B.mode === 'set' || B.mode === 'gradient' ? slider(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
+      B.mode === 'gradient' ? null : slider(t("modeler.brushRadius"), B.radius, 4, 200, 1, v => { B.radius = v; draw(); }, t("modeler.brushRadiusHint")),
+      B.mode === 'gradient' ? null : slider(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }),
+      actions([[t("modeler.weightFill"), () => fillWeights(null), t("modeler.weightFillHint")]]),
       el('label', {class: 'modeler-check', title: t("modeler.mirrorPaintHint")}, [el('input', {type: 'checkbox', checked: Boolean(B.mirror), onchange: e => { B.mirror = e.target.checked; }}), t("modeler.mirrorPaint")]),
       el('p', {class: 'modeler-hint', text: S.parts.size ? t("modeler.paintMaskOn", {count: S.parts.size}) : t("modeler.paintMaskOff")}),
       S.parts.size ? actions([[t("modeler.paintMaskClear"), () => { S.parts = new Set(); S.active = null; refresh(); }]]) : null,
@@ -816,9 +817,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     renderProps(); setStatus(); draw();
   }
   const paintingNow = () => S.mode === 'bones' && brush().on && S.bones.size === 1 && !isMerged(boneById([...S.bones][0]));
-  /** The surface point under the pointer (on the shown, smoothed shape), or null. */
-  function surfaceAt(x, y) {
+  /** The surface point under the pointer (on the shown, smoothed shape), or null; `hitPart`
+   * learns which part it is on. */
+  function surfaceAt(x, y, hitPart = null) {
     const poly = pickPolygon(S.polys, x, y); if (!poly) return null;
+    if (hitPart) hitPart.id = poly.item.partId;
     // Posed, the brush still paints the rest shape: the same spot of the same face.
     const mesh = poly.item.restMesh ?? poly.item.mesh, f = poly.face, pts = poly.pts;
     // Screen-space barycentric weights on the face's fan, applied to its 3D corners.
@@ -876,7 +879,120 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     for (let i = 1; i <= steps; i++) paintDab(stroke, from.x + (p.x - from.x) * i / steps, from.y + (p.y - from.y) * i / steps, invert);
     stroke.last = p; draw();
   }
+  /** Every point the brush could reach, as [part, point, where, bone] (a Mirror part's
+   * other half is its source point with the other side's bone), with the stroke state per part. */
+  function paintSpots(bone, {mirror = brush().mirror} = {}) {
+    const mask = paintMask(), out = [], other = mirrorBone(model, bone);
+    for (const q of model.parts) {
+      if (q.visible === false || !q.mesh.faces.length || (mask && !mask.has(q.id))) continue;
+      const to = M.objectTransform(q);
+      q.mesh.verts.forEach((v, i) => {
+        const at = to(v), flip = [-at[0], at[1], at[2]];
+        out.push([q, i, at, bone]);
+        if (q.mirror && Math.abs(at[0]) > 1e-4) out.push([q, i, flip, other]);
+        // Mirror painting on a model whose sides are separate points: each point also takes, for the
+        // other side's bone, what its mirror image gets.
+        else if (mirror && !q.mirror && other !== bone) out.push([q, i, flip, other, true]);
+      });
+    }
+    return out;
+  }
+  /** Set weights exactly (Gradient, Fill): `amountAt(spot)` gives each spot's value, or null to leave it. */
+  function setWeights(spots, amountAt) {
+    const before = snapshot(), states = new Map(), touched = new Set(), bone = [...S.bones][0];
+    for (const spot of spots) {
+      const [q, v, , which] = spot, value = amountAt(spot); if (value === null) continue;
+      let state = states.get(q.id);
+      if (!state) { state = startStroke(model, q, bone); states.set(q.id, state); }
+      if (paintPoint(state, v, 'set', 1, {bone: which, value})) touched.add(q.id);
+    }
+    if (!touched.size) return 0;
+    for (const id of touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
+    S.lastOp = null; S.undo.push(before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch();
+    return [...states.values()].reduce((n, st) => n + st.touched.size, 0);
+  }
+  /** The spots of the piece under a screen point (its connected points: an arm, a boot), and with
+   * Mirror painting its mirror image on the other side for the other side's bone, as a test; null
+   * when nothing is there. Highlighted parts, when there are any, are the piece instead. */
+  function pieceAt(spots, pointer) {
+    if (paintMask()) return sp => !sp[4];
+    // The part whose shown surface is under the pointer: a smoothed sleeve's own points lie off its
+    // surface, nearer a forearm inside it than the sleeve itself.
+    const on = {}, hit = pointer ? surfaceAt(pointer.x, pointer.y, on) : null; if (!hit) return null;
+    const near = spots.filter(sp => !sp[4] && sp[0].id === on.id).reduce((best, sp) => { const d = Math.hypot(sp[2][0] - hit[0], sp[2][1] - hit[1], sp[2][2] - hit[2]); return d < best[1] ? [sp, d] : best; }, [null, Infinity])[0];
+    if (!near) return null;
+    const [q, v, , which] = near, piece = M.linkedVerts(q.mesh, new Set([v])), other = mirrorBone(model, which);
+    const flip = brush().mirror && other !== which ? spots.filter(sp => sp[0] === q && piece.has(sp[1]) && sp[3] === which && !sp[4]).map(sp => [-sp[2][0], sp[2][1], sp[2][2]]) : [];
+    const size = M.bounds(q.mesh.verts), eps = Math.max(1e-4, 1e-3 * Math.hypot(...M.sub(size.max, size.min)));
+    const mirrorOf = new Set(spots.filter(sp => !sp[4] && sp[3] === other && flip.some(f => Math.hypot(f[0] - sp[2][0], f[1] - sp[2][1], f[2] - sp[2][2]) <= eps)).map(sp => `${sp[0].id}:${sp[1]}:${sp[3]}`));
+    return sp => !sp[4] && ((sp[0] === q && piece.has(sp[1]) && sp[3] === which) || mirrorOf.has(`${sp[0].id}:${sp[1]}:${sp[3]}`));
+  }
+  /** Gradient (Blender's Weights > Gradient (Linear)): the Amount behind the line's start, fading to
+   * none at its end, on the piece the line starts on (as Blender works on one object) or the highlighted
+   * parts; points past the end keep their weights. */
+  function applyGradient(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy, B = brush();
+    if (len2 < 16) return;
+    const spots = paintSpots([...S.bones][0]), inside = pieceAt(spots, a) ?? pieceAt(spots, b);
+    if (!inside) { toast(t("modeler.weightGradientWhere")); return; }
+    // Mirror painting: the mirror image's points follow the mirrored line.
+    const n = setWeights(spots, sp => {
+      if (!inside(sp)) return null;
+      const s = frame.project(sp[2]), t0 = ((s.x - a.x) * dx + (s.y - a.y) * dy) / len2;
+      return t0 >= 1 ? null : B.value * (1 - Math.max(0, t0));
+    });
+    toast(t("modeler.weightGradientDone", {count: n}));
+  }
+  /** Fill (Blender's Set Weight, Ctrl+X): Amount on the highlighted parts, or else on the piece
+   * under the pointer, with its mirror image on the other side. */
+  function fillWeights(pointer) {
+    const spots = paintSpots([...S.bones][0]), inside = pieceAt(spots, pointer);
+    if (!inside) { toast(t("modeler.weightFillWhere")); return; }
+    toast(t("modeler.weightFilled", {count: setWeights(spots, sp => (inside(sp) ? brush().value : null))}));
+  }
+  /** Sample (Blender's Sample Weight, Shift+X): Amount becomes the bone's weight at the point under the pointer. */
+  function sampleWeight(pointer) {
+    const on = {}, hit = pointer ? surfaceAt(pointer.x, pointer.y, on) : null; if (!hit) return;
+    const bone = [...S.bones][0], near = paintSpots(bone, {mirror: false}).filter(sp => sp[0].id === on.id).reduce((best, sp) => { const d = Math.hypot(sp[2][0] - hit[0], sp[2][1] - hit[1], sp[2][2] - hit[2]); return d < best[1] ? [sp, d] : best; }, [null, Infinity])[0];
+    if (!near) return;
+    const [q, v, , which] = near, state = startStroke(model, q, bone);
+    brush().value = Math.round((state.skin[v]?.find(([b]) => b === which)?.[1] ?? 0) * 100) / 100;
+    toast(t("modeler.weightSampled", {value: brush().value.toFixed(2)})); renderProps();
+  }
+  /** F / Shift+F: size or strength follows the pointer's distance from the circle's middle; a click or
+   * Enter keeps it, Esc or a right-click puts it back (as in Blender). */
+  function startBrushResize(kind) {
+    const B = brush(), at = S.pointer ?? {x: canvas.clientWidth / 2, y: canvas.clientHeight / 2};
+    S.brushResize = {kind, at, was: kind === 'radius' ? B.radius : B.strength};
+    setStatus(); draw();
+  }
+  function moveBrushResize(p) {
+    const R = S.brushResize, B = brush(), d = Math.hypot(p.x - R.at.x, p.y - R.at.y);
+    if (R.kind === 'radius') B.radius = Math.round(Math.max(4, Math.min(400, d)));
+    else B.strength = Math.round(Math.max(.02, Math.min(1, d / 200)) * 50) / 50;
+    draw();
+  }
+  function endBrushResize(keep) {
+    const R = S.brushResize; if (!R) return;
+    if (!keep) brush()[R.kind === 'radius' ? 'radius' : 'strength'] = R.was;
+    S.brushResize = null; renderProps(); setStatus(); draw();
+  }
   function drawBrush(ctx) {
+    const R = S.brushResize;
+    if (R) {
+      const r = R.kind === 'radius' ? brush().radius : brush().strength * 200;
+      ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(R.at.x, R.at.y, r, 0, Math.PI * 2); ctx.stroke();
+      if (R.kind === 'strength') { ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fill(); }
+      ctx.restore(); return;
+    }
+    if (drag?.kind === 'gradient' && drag.end) {
+      const {start: a, end: b} = drag;
+      ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.fillStyle = '#e53935'; ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1e40ff'; ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      return;
+    }
+    if (brush().mode === 'gradient') return;
     const p = S.pointer; if (!p) return;
     ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(p.x, p.y, brush().radius, 0, Math.PI * 2); ctx.stroke();
@@ -2965,6 +3081,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       placeLoopCut(pickEdge(p.x, p.y), S.modal.cuts);
       return;
     }
+    if (S.brushResize) { e.preventDefault(); endBrushResize(e.button === 0); return; }
     const orbit = e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey && S.mode !== 'edit');
     canvas.setPointerCapture(e.pointerId);
     // While painting, an Alt+click that doesn't move (Alt+drag still orbits) highlights a part or
@@ -2982,6 +3099,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // Weight painting: a stroke is one undo step; Ctrl paints the other way (Add ↔ Remove).
     // While painting, Shift+click picks another bone to paint.
     if (e.button === 0 && paintingNow() && e.shiftKey) { const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
+    if (e.button === 0 && paintingNow() && brush().mode === 'gradient') { drag = {kind: 'gradient', start: p, end: null}; return; }
     if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', before: snapshot(), parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey}; paintTo(drag, p, drag.invert); return; }
     // Pose mode: drag a bone to turn it (a joint shared with its parent turns the parent, as on the stage).
     if (e.button === 0 && S.mode === 'bones' && S.posing) {
@@ -3006,8 +3124,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'loopslide') { S.modal.mouse = p; applyLoopSlide(); return; }
     if (S.modal?.kind === 'knife' && !drag) { S.modal.hover = knifeSnap(p.x, p.y, e.ctrlKey || e.metaKey); draw(); return; }
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
+    if (S.brushResize) { moveBrushResize(p); return; }
     if (!drag) { if (paintingNow() || S.connect) draw(); return; }
     if (drag.kind === 'paint') { paintTo(drag, p, drag.invert); return; }
+    if (drag.kind === 'gradient') { drag.end = p; draw(); return; }
     if (drag.kind === 'pose') { poseDrag(drag, p); return; }
     if (drag.kind === 'origin') { setOrigin(model, screenToWorld(p, drag.through)); drag.moved = true; draw(); return; }
     const dx = p.x - drag.last.x, dy = p.y - drag.last.y; drag.last = p;
@@ -3028,6 +3148,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (d.kind === 'origin') { if (d.moved) { S.lastOp = null; S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; refresh(); } return; }
     // A right-click that doesn't move (a right-drag orbits) opens the menu for what is under the pointer.
     if (d.kind === 'orbit' && d.button === 2 && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { viewMenu(d.start, e); return; }
+    if (d.kind === 'gradient') { if (d.end) applyGradient(d.start, d.end); draw(); return; }
     if (d.kind === 'paint') { if (d.touched.size) { S.lastOp = null; S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
     if (d.maskClick && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { const poly = pickPolygon(S.polys, d.start.x, d.start.y); if (poly) selectPart(poly.item.partId, true); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
@@ -3071,7 +3192,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     let handled = true;
     // A selected reference image takes the arrow keys, G and S (as its own view shows it).
     const ref = !S.modal && S.ref ? selectedRef() : null;
-    if (S.refModal) {
+    if (S.brushResize) {
+      if (key === 'Enter' || key === ' ') endBrushResize(true);
+      else if (key === 'Escape') endBrushResize(false);
+    }
+    else if (S.refModal) {
       if (['x', 'y', 'z'].includes(key) && !ctrl) setRefAxis(key.toUpperCase());
       else if (key === 'Enter' || key === ' ') finishRefModal(true);
       else if (key === 'Escape') finishRefModal(false);
@@ -3097,6 +3222,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (S.modal && !ctrl && ['g', 'r', 's'].includes(key)) switchTransform({g: 'grab', r: 'rotate', s: 'scale'}[key]);
     else if (S.modal?.kind === 'loopcut' && ['+', '=', '-'].includes(key)) { S.modal.cuts = Math.max(1, Math.min(M.LOOP_CUTS_MAX, S.modal.cuts + (key === '-' ? -1 : 1))); setStatus(); draw(); }
     else if (S.modal) handled = false;
+    // Weight painting, with Blender's keys: F size, Shift+F strength, Ctrl+X fill, Shift+X sample.
+    else if (paintingNow() && !e.altKey && key === 'f' && !ctrl) startBrushResize(e.shiftKey ? 'strength' : 'radius');
+    else if (paintingNow() && !e.altKey && key === 'x' && ctrl && !e.shiftKey) fillWeights(S.pointer);
+    else if (paintingNow() && !e.altKey && key === 'x' && e.shiftKey && !ctrl) sampleWeight(S.pointer);
     else if (ctrl && key === 's' && !e.shiftKey && !e.altKey) saveProgress();
     else if (ctrl && key === 'z') e.shiftKey ? redo() : undo();
     // Alt+Z: X-ray, as in Blender (select and see points on the far side too).

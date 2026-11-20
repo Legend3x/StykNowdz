@@ -104,6 +104,40 @@ try {
     assert.deepEqual({...result, steps: result.steps - setup.undo}, {painted: true, onTorso: true, steps: 1, undone: true});
     assert.equal(setup.sliders, 2);
   });
+  await step('Weights: Gradient fades a bone along one piece, Ctrl+X fills the piece under the pointer, Shift+X samples, F sizes the brush', async () => {
+    const setup = await page.evaluate(async () => {
+      const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); m.state.bones = new Set([fore.id]); m.state.parts = new Set(); m.refresh(); await wait(100);
+      if (!m.state.brush?.on) button('Paint weights').click();
+      await wait(50); button('Gradient').click(); await wait(50);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
+      const lerp = k => fore.head.map((v, i) => v + (fore.tail[i] - v) * k);
+      window.paintedOn = name => Object.keys(m.model.parts.find(p => p.name === name)?.mesh.vdata?.skin ?? {}).length;
+      return {from: at(lerp(.2)), to: at(lerp(1.6)), undo: m.state.undo.length, parts: m.model.parts.map(p => [p.name, paintedOn(p.name)])};
+    });
+    await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to, {steps: 4}); await page.mouse.up();
+    const gradient = await page.evaluate(async () => { await wait(100); return {steps: m.state.undo.length, parts: m.model.parts.map(p => [p.name, paintedOn(p.name)])}; });
+    const changed = gradient.parts.filter(([name, n]) => n !== setup.parts.find(([x]) => x === name)[1]).map(([name]) => name);
+    assert.equal(gradient.steps - setup.undo, 1, 'one undo step');
+    assert.equal(changed.length, 1, `only the piece the line starts on changes (${changed})`);
+    // F, then a click 70 pixels out: the brush is 70 pixels.
+    await page.mouse.move(...setup.from); await page.evaluate(() => press('f')); await page.mouse.move(setup.from[0] + 70, setup.from[1]); await page.mouse.down(); await page.mouse.up();
+    const resized = await page.evaluate(() => m.state.brush.radius);
+    assert.ok(Math.abs(resized - 70) <= 2, `brush ${resized}`);
+    // Shift+X at the line's start samples the full weight; Ctrl+X with Amount 0 empties the piece (the sleeve
+    // the line started on), in one step.
+    await page.mouse.move(...setup.from);
+    const fill = await page.evaluate(async name => {
+      press('X', {shiftKey: true}); const sampled = m.state.brush.value;
+      m.state.brush.value = 0; const before = m.state.undo.length; press('x', {ctrlKey: true}); await wait(100);
+      const {partWeights} = await import('/src/modeler/armature.mjs'), {evaluatePart} = await import('/src/modeler/model.mjs');
+      const fore = m.model.bones.find(b => b.name === 'LowerArm.L'), piece = m.model.parts.find(p => p.name === 'Forearm');
+      const mesh = evaluatePart(piece), w = partWeights(m.model, mesh, piece);
+      let most = 0; for (let v = 0; v < mesh.verts.length; v++) if (mesh.verts[v][0] > 0) for (let k = 0; k < 4; k++) if (w.bones[v * 4 + k] === fore.id) most = Math.max(most, w.weights[v * 4 + k]);
+      return {sampled, steps: m.state.undo.length - before, most};
+    }, changed[0]);
+    assert.deepEqual({...fill, most: fill.most < .01}, {sampled: 1, steps: 1, most: true});
+  });
   await step('Pose: dragging a bone bends the model, changes nothing, and Stop posing puts it back', async () => {
     const setup = await page.evaluate(async () => {
       if (m.state.brush?.on) { m.state.brush.on = false; m.refresh(); }

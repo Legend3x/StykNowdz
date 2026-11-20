@@ -882,6 +882,25 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   everywhere** clears it, as Blender's face mask.
 - **Mirror painting** paints the same spot on the other side with the other
   side's bone (Shoulder.L ↔ Shoulder.R), as X-Mirror in Blender.
+- Blender's quick tools, with its keys, while painting:
+  - **Gradient** (a brush; Blender's Weights > Gradient (Linear)): drag a line;
+    points behind its start get the Amount, fading to none at its end, and
+    points past the end keep theirs. Only the piece the line starts on (its
+    connected points, found on the part whose shown surface is under the
+    pointer, since a smoothed sleeve's own points lie nearer a forearm inside
+    it), or the highlighted parts, change, as Blender works on one object.
+    Every point of that piece changes, seen or not.
+  - **Fill** (**Ctrl+X**, Blender's Set Weight): the Amount (1 unless Set or
+    Gradient shows another) on the highlighted parts, or else on the piece
+    under the pointer.
+  - **Sample** (**Shift+X**): the Amount becomes the bone's weight at the point
+    under the pointer.
+  - **F** / **Shift+F**: the brush size / strength follows the pointer's
+    distance from the circle's middle (200 pixels is full strength); a click or
+    Enter keeps it, Esc or a right-click puts it back.
+  Gradient and Fill set weights exactly (no Strength) and take Mirror painting
+  along: the mirror image (found by position) gets the other side's bone. Each
+  is one undo step.
 - `src/modeler/weight-paint.mjs`: a painted point stores complete weights in
   `part.mesh.vdata.skin` (where an imported rig keeps its weights, saved with
   the model) and always adds up to 1 (Auto Normalize): weight taken from the
