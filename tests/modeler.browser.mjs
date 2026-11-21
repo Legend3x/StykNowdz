@@ -138,6 +138,45 @@ try {
     }, changed[0]);
     assert.deepEqual({...fill, most: fill.most < .01}, {sampled: 1, steps: 1, most: true});
   });
+  await step('Weights: Paint only selected points: clicks pick points, Ctrl+X sets just those, a skeleton file loads back', async () => {
+    const setup = await page.evaluate(async () => {
+      const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); m.state.bones = new Set([fore.id]); m.refresh(); await wait(50);
+      if (!m.state.brush?.on) button('Paint weights').click();
+      await wait(50); button('Set').click(); await wait(50);
+      const box = [...document.querySelectorAll('.modeler-check')].find(l => /Paint only selected points/.test(l.textContent)).querySelector('input');
+      box.click(); await wait(50);
+      // Two points of the Forearm, on screen.
+      const canvas = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, canvas.width, canvas.height), {objectTransform} = await import('/src/modeler/mesh.mjs');
+      const q = m.model.parts.find(p => p.name === 'Forearm'), to = objectTransform(q);
+      const onScreen = w => { const s = f.project(w); return s.ok && s.x > 40 && s.y > 40 && s.x < canvas.width - 40 && s.y < canvas.height - 40; };
+      const front = q.mesh.verts.map((v, i) => [i, to(v)]).filter(([, w]) => w[2] > 0 && Math.abs(w[0]) > .01 && onScreen(w)).sort((a, b) => b[1][2] - a[1][2]).slice(0, 2);
+      return {points: front.map(([, w]) => { const s = f.project(w); return [canvas.left + s.x, canvas.top + s.y]; }), undo: m.state.undo.length};
+    });
+    await page.mouse.click(...setup.points[0]);
+    await page.keyboard.down('Shift'); await page.mouse.click(...setup.points[1]); await page.keyboard.up('Shift');
+    const picked = await page.evaluate(() => m.state.paintPoints.size);
+    assert.equal(picked, 2, 'a click picks a point, Shift+click adds one');
+    const filled = await page.evaluate(async () => {
+      m.state.brush.value = .5; m.state.brush.mirror = false; press('x', {ctrlKey: true}); await wait(100);
+      const q = m.model.parts.find(p => p.name === 'Forearm'), fore = m.model.bones.find(b => b.name === 'LowerArm.L');
+      const skin = q.mesh.vdata?.skin ?? {}, set = Object.entries(skin).filter(([, pairs]) => pairs.some(([b, w]) => b === fore.id && Math.abs(w - .5) < 1e-6) || pairs.some(([b, w]) => Math.abs(w - .5) < 1e-6));
+      return {steps: m.state.undo.length, halves: set.length};
+    });
+    assert.equal(filled.steps - setup.undo, 1);
+    assert.equal(filled.halves, 2, 'exactly the two picked points (or their source points) take the Amount');
+    // Save the skeleton's file, change a bone, load the file back: the bone returns, painted points keep their weights.
+    const loaded = await page.evaluate(async () => {
+      const {skeletonFile} = await import('/src/modeler/skeleton-file.mjs'), text = JSON.stringify(skeletonFile(m.model));
+      const fore = m.model.bones.find(b => b.name === 'LowerArm.L'), was = fore.head.slice(); fore.head[1] += .2; m.refresh();
+      m.loadSkeletonData(text); await wait(100); button('Load skeleton…')?.click(); await wait(100);
+      const back = m.model.bones.find(b => b.name === 'LowerArm.L'), q = m.model.parts.find(p => p.name === 'Forearm');
+      return {same: back.id === fore.id && back.head.every((v, i) => Math.abs(v - was[i]) < 1e-9), painted: Object.keys(q.mesh.vdata?.skin ?? {}).length};
+    });
+    assert.ok(loaded.same, 'the bone comes back where the file has it, with the same id');
+    assert.ok(loaded.painted >= 2, 'and the painted points keep their weights');
+    await page.evaluate(() => { const box = [...document.querySelectorAll('.modeler-check')].find(l => /Paint only selected points/.test(l.textContent))?.querySelector('input'); if (box?.checked) box.click(); });
+  });
   await step('Pose: dragging a bone bends the model, changes nothing, and Stop posing puts it back', async () => {
     const setup = await page.evaluate(async () => {
       if (m.state.brush?.on) { m.state.brush.on = false; m.refresh(); }

@@ -901,6 +901,29 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   Gradient and Fill set weights exactly (no Strength) and take Mirror painting
   along: the mirror image (found by position) gets the other side's bone. Each
   is one undo step.
+- **Paint only selected points** (Blender's vertex selection masking): the
+  model's points show as dots; a click (no drag) picks the point nearest the
+  surface under the pointer within 12 pixels, Shift+click adds or drops one
+  (ahead of picking a bone), A picks all, Alt+A none. Brushes, Gradient and
+  Fill (Ctrl+X: the Amount on exactly the picked points, the tutorial's
+  click-points-then-Set-Weight) then change only picked points; Mirror painting
+  also changes the points lying at their mirror images. A drag still paints.
+  Until a point is picked the brush paints everywhere. Picks are kept by part,
+  point and half (`part:point:0|1`, 1 for a Mirror part's mirrored half), for
+  the session only.
+
+### Skeleton files
+
+File > **Save skeleton…** writes the bones alone as a `.nowdzskel` file
+(`src/modeler/skeleton-file.mjs`, format `stykNowdz.skeleton` v1: each bone's
+id, name, head, tail, parent, layer state, face settings, Strength and Reach,
+plus the origin). Painted weights stay with the model: they belong to its
+points. **Load skeleton…** puts a file's bones in place of the model's (asking
+first when it has bones; one undo step), as saved, without fitting: a bone
+named like one the model has takes that bone's id, so weights painted for it
+stay; weights for bones that are gone are dropped (a point left with none goes
+back to automatic), and so are parts' and folders' links to them. A file with
+loops or missing parents loads with those bones hung from the root.
 - `src/modeler/weight-paint.mjs`: a painted point stores complete weights in
   `part.mesh.vdata.skin` (where an imported rig keeps its weights, saved with
   the model) and always adds up to 1 (Auto Normalize): weight taken from the

@@ -2,6 +2,7 @@
  * over the app. Object mode arranges parts, Edit mode shapes their polygons,
  * Bones mode builds the skeleton the figure is posed with. Everything works
  * on a plain model document (model.mjs); `onDone(model)` hands it back. */
+import {skeletonFile, readSkeletonFile, applySkeleton} from './skeleton-file.mjs';
 import {t} from '../localization.mjs';
 import {faceCopy, reversedFace, adoptTextures, remapFaceTextures, addTexture, textureFromBytes, TEXTURE_LIMIT} from './uv.mjs';
 import {unwrapParts} from './unwrap.mjs';
@@ -209,6 +210,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         onSave ? el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.saveProgressHint"), onclick: () => { closePopover(); saveProgress(); }}, [t("modeler.saveProgress"), el('kbd', {text: 'Ctrl S'})]) : null,
         el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.saveModelFileHint"), onclick: () => { closePopover(); saveModelFile(); }}, t("modeler.saveModelFile")),
         el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.openModelFileHint"), onclick: () => { closePopover(); openModelFile(); }}, t("modeler.openModelFile")),
+        el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.saveSkeletonHint"), onclick: () => { closePopover(); saveSkeletonFile(); }}, t("modeler.saveSkeleton")),
+        el('button', {type: 'button', class: 'modeler-menu-item', title: t("modeler.loadSkeletonHint"), onclick: () => { closePopover(); loadSkeletonFile(); }}, t("modeler.loadSkeleton")),
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); importObjFile(); }}, t("modeler.importObj")),
         editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t("modeler.startOver")),
         el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); exportObjFile(); }}, t("modeler.exportObj")),
@@ -802,6 +805,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       B.mode === 'set' || B.mode === 'gradient' ? slider(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
       B.mode === 'gradient' ? null : slider(t("modeler.brushRadius"), B.radius, 4, 200, 1, v => { B.radius = v; draw(); }, t("modeler.brushRadiusHint")),
       B.mode === 'gradient' ? null : slider(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }),
+      el('label', {class: 'modeler-check', title: t("modeler.paintPointsHint")}, [el('input', {type: 'checkbox', checked: Boolean(B.points), onchange: e => { B.points = e.target.checked; if (!B.points) S.paintPoints = new Set(); renderProps(); setStatus(); draw(); }}), t("modeler.paintPoints")]),
+      B.points ? el('p', {class: 'modeler-hint'}, S.paintPoints?.size ? t("modeler.paintPointsPicked", {count: S.paintPoints.size}) : t("modeler.paintPointsNone")) : null,
       actions([[t("modeler.weightFill"), () => fillWeights(null), t("modeler.weightFillHint")]]),
       el('label', {class: 'modeler-check', title: t("modeler.mirrorPaintHint")}, [el('input', {type: 'checkbox', checked: Boolean(B.mirror), onchange: e => { B.mirror = e.target.checked; }}), t("modeler.mirrorPaint")]),
       el('p', {class: 'modeler-hint', text: S.parts.size ? t("modeler.paintMaskOn", {count: S.parts.size}) : t("modeler.paintMaskOff")}),
@@ -851,10 +856,13 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     return changed;
   }
   function dabAt(stroke, hit, reach, bone, mode, mirrorDab) {
-    const B = brush(), mask = paintMask();
+    const B = brush(), mask = paintMask(), picked = pointMask();
+    // The mirrored dab of Mirror painting paints the mirror images of the picked points.
+    const only = picked && mirrorDab ? (stroke.mirrorPicked ??= mirroredKeys(picked)) : picked;
     let changed = false;
     for (const q of model.parts) {
       if (q.visible === false || !q.mesh.faces.length || (mask && !mask.has(q.id))) continue;
+      if (only && ![...only].some(k => k.startsWith(`${q.id}:`))) continue;
       // A Mirror part already paints both halves from one dab.
       if (mirrorDab && q.mirror) continue;
       const to = M.objectTransform(q);
@@ -863,7 +871,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         const p = to(q.mesh.verts[v]);
         // A Mirror part's other half is painted through its source point, with the other side's bone.
         const spots = q.mirror && Math.abs(p[0]) > 1e-4 ? [[p, bone], [[-p[0], p[1], p[2]], mirrorBone(model, bone)]] : [[p, bone]];
-        for (const [at, which] of spots) {
+        for (const [k, [at, which]] of spots.entries()) {
+          if (only && !only.has(`${q.id}:${v}:${k}`)) continue;
           const d = Math.hypot(at[0] - hit[0], at[1] - hit[1], at[2] - hit[2]); if (d > reach) continue;
           if (!state) { state = startStroke(model, q, bone); stroke.parts.set(q.id, state); }
           const fall = (1 - (d / reach) ** 2) ** 2;
@@ -889,7 +898,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       q.mesh.verts.forEach((v, i) => {
         const at = to(v), flip = [-at[0], at[1], at[2]];
         out.push([q, i, at, bone]);
-        if (q.mirror && Math.abs(at[0]) > 1e-4) out.push([q, i, flip, other]);
+        if (q.mirror && Math.abs(at[0]) > 1e-4) out.push([q, i, flip, other, false, true]);
         // Mirror painting on a model whose sides are separate points: each point also takes, for the
         // other side's bone, what its mirror image gets.
         else if (mirror && !q.mirror && other !== bone) out.push([q, i, flip, other, true]);
@@ -900,7 +909,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Set weights exactly (Gradient, Fill): `amountAt(spot)` gives each spot's value, or null to leave it. */
   function setWeights(spots, amountAt) {
     const before = snapshot(), states = new Map(), touched = new Set(), bone = [...S.bones][0];
+    const only = pointMask();
     for (const spot of spots) {
+      if (only && !spot[4] && !only.has(spotKey(spot))) continue;
       const [q, v, , which] = spot, value = amountAt(spot); if (value === null) continue;
       let state = states.get(q.id);
       if (!state) { state = startStroke(model, q, bone); states.set(q.id, state); }
@@ -910,6 +921,67 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     for (const id of touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
     S.lastOp = null; S.undo.push(before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch();
     return [...states.values()].reduce((n, st) => n + st.touched.size, 0);
+  }
+  /** A spot's key: part, point, and 1 for a Mirror part's mirrored half. */
+  const spotKey = sp => `${sp[0].id}:${sp[1]}:${sp[5] ? 1 : 0}`;
+  /** Paint only selected points (Blender's vertex selection masking): the picked spots, or null
+   * when the option is off or nothing is picked yet (then the brush paints everywhere). */
+  function pointMask() { return brush().points && S.paintPoints?.size ? S.paintPoints : null; }
+  /** A test for the chosen spots and, with Mirror painting, their mirror images (found by position)
+   * for the other side's bone. Mirror painting's own extra spots are never chosen themselves. */
+  function withMirror(spots, chosen) {
+    const bone = [...S.bones][0], other = mirrorBone(model, bone);
+    if (!brush().mirror || other === bone) return chosen;
+    const picked = spots.filter(chosen), keys = new Set();
+    for (const sp of picked) {
+      const f = [-sp[2][0], sp[2][1], sp[2][2]], size = M.bounds(sp[0].mesh.verts), eps = Math.max(1e-4, 1e-3 * Math.hypot(...M.sub(size.max, size.min)));
+      for (const o of spots) if (!o[4] && o[3] !== sp[3] && Math.hypot(f[0] - o[2][0], f[1] - o[2][1], f[2] - o[2][2]) <= eps) keys.add(`${spotKey(o)}:${o[3]}`);
+    }
+    return sp => chosen(sp) || (!sp[4] && keys.has(`${spotKey(sp)}:${sp[3]}`));
+  }
+  /** The keys of the points lying where the given points' mirror images are. */
+  function mirroredKeys(keys) {
+    const spots = paintSpots([...S.bones][0], {mirror: false}), out = new Set();
+    for (const sp of spots.filter(o => keys.has(spotKey(o)))) {
+      const f = [-sp[2][0], sp[2][1], sp[2][2]], size = M.bounds(sp[0].mesh.verts), eps = Math.max(1e-4, 1e-3 * Math.hypot(...M.sub(size.max, size.min)));
+      for (const o of spots) if (Math.hypot(f[0] - o[2][0], f[1] - o[2][1], f[2] - o[2][2]) <= eps) out.add(spotKey(o));
+    }
+    return out;
+  }
+  /** The point (spot) nearest a click: within 12 pixels on screen, the one nearest the surface under the
+   * pointer (so a point behind the model isn't picked), else the nearest on screen. */
+  function pointNear(p) {
+    const spots = paintSpots([...S.bones][0], {mirror: false}), hit = surfaceAt(p.x, p.y);
+    let best = null, score = Infinity;
+    for (const sp of spots) {
+      const q = frame.project(sp[2]); if (!q.ok) continue;
+      const px = Math.hypot(q.x - p.x, q.y - p.y); if (px > 12) continue;
+      const d = hit ? Math.hypot(sp[2][0] - hit[0], sp[2][1] - hit[1], sp[2][2] - hit[2]) : q.d;
+      if (d < score) { score = d; best = sp; }
+    }
+    return best;
+  }
+  function pickPaintPoint(p, extend) {
+    const sp = pointNear(p); S.paintPoints ??= new Set();
+    if (!extend) S.paintPoints = new Set();
+    if (sp) { const k = spotKey(sp); if (extend && S.paintPoints.has(k)) S.paintPoints.delete(k); else S.paintPoints.add(k); }
+    renderProps(); setStatus(); draw();
+  }
+  function selectAllPaintPoints(all) {
+    S.paintPoints = all ? new Set(paintSpots([...S.bones][0], {mirror: false}).map(spotKey)) : new Set();
+    renderProps(); setStatus(); draw();
+  }
+  /** The points of the point mask: picked ones orange, the rest small and dark. */
+  function drawPaintPoints(ctx) {
+    if (!brush().points) return;
+    const picked = S.paintPoints ?? new Set();
+    ctx.save();
+    for (const sp of paintSpots([...S.bones][0], {mirror: false})) {
+      const q = frame.project(sp[2]); if (!q.ok) continue;
+      const on = picked.has(spotKey(sp));
+      ctx.fillStyle = on ? '#ff8a00' : 'rgba(20,20,20,.8)'; ctx.beginPath(); ctx.arc(q.x, q.y, on ? 4 : 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
   }
   /** The spots of the piece under a screen point (its connected points: an arm, a boot), and with
    * Mirror painting its mirror image on the other side for the other side's bone, as a test; null
@@ -921,11 +993,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const on = {}, hit = pointer ? surfaceAt(pointer.x, pointer.y, on) : null; if (!hit) return null;
     const near = spots.filter(sp => !sp[4] && sp[0].id === on.id).reduce((best, sp) => { const d = Math.hypot(sp[2][0] - hit[0], sp[2][1] - hit[1], sp[2][2] - hit[2]); return d < best[1] ? [sp, d] : best; }, [null, Infinity])[0];
     if (!near) return null;
-    const [q, v, , which] = near, piece = M.linkedVerts(q.mesh, new Set([v])), other = mirrorBone(model, which);
-    const flip = brush().mirror && other !== which ? spots.filter(sp => sp[0] === q && piece.has(sp[1]) && sp[3] === which && !sp[4]).map(sp => [-sp[2][0], sp[2][1], sp[2][2]]) : [];
-    const size = M.bounds(q.mesh.verts), eps = Math.max(1e-4, 1e-3 * Math.hypot(...M.sub(size.max, size.min)));
-    const mirrorOf = new Set(spots.filter(sp => !sp[4] && sp[3] === other && flip.some(f => Math.hypot(f[0] - sp[2][0], f[1] - sp[2][1], f[2] - sp[2][2]) <= eps)).map(sp => `${sp[0].id}:${sp[1]}:${sp[3]}`));
-    return sp => !sp[4] && ((sp[0] === q && piece.has(sp[1]) && sp[3] === which) || mirrorOf.has(`${sp[0].id}:${sp[1]}:${sp[3]}`));
+    const [q, v, , which] = near, piece = M.linkedVerts(q.mesh, new Set([v]));
+    return withMirror(spots, sp => !sp[4] && sp[0] === q && piece.has(sp[1]) && sp[3] === which);
   }
   /** Gradient (Blender's Weights > Gradient (Linear)): the Amount behind the line's start, fading to
    * none at its end, on the piece the line starts on (as Blender works on one object) or the highlighted
@@ -946,7 +1015,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Fill (Blender's Set Weight, Ctrl+X): Amount on the highlighted parts, or else on the piece
    * under the pointer, with its mirror image on the other side. */
   function fillWeights(pointer) {
-    const spots = paintSpots([...S.bones][0]), inside = pieceAt(spots, pointer);
+    const spots = paintSpots([...S.bones][0]);
+    if (pointMask()) { toast(t("modeler.weightFilled", {count: setWeights(spots, sp => withMirror(spots, sp => !sp[4] && pointMask().has(spotKey(sp)))(sp) ? brush().value : null)})); return; }
+    const inside = pieceAt(spots, pointer);
     if (!inside) { toast(t("modeler.weightFillWhere")); return; }
     toast(t("modeler.weightFilled", {count: setWeights(spots, sp => (inside(sp) ? brush().value : null))}));
   }
@@ -978,6 +1049,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     S.brushResize = null; renderProps(); setStatus(); draw();
   }
   function drawBrush(ctx) {
+    drawPaintPoints(ctx);
     const R = S.brushResize;
     if (R) {
       const r = R.kind === 'radius' ? brush().radius : brush().strength * 200;
@@ -2717,6 +2789,32 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       else download(`${name}.nowdz`, text, 'application/json');
     } catch (error) { toast(error.message); }
   }
+  /** File > Save skeleton: the bones on their own (.nowdzskel), to keep in case or load onto another model. */
+  async function saveSkeletonFile() {
+    if (!model.bones.length) { toast(t("modeler.noSkeleton")); return; }
+    const name = `${(model.name || 'model').replace(/[^\w-]+/g, '_')}-skeleton`, text = JSON.stringify(skeletonFile(model));
+    try {
+      if (desktop()?.saveFile) { const saved = await desktop().saveFile({data: text, encoding: 'utf8', defaultPath: `${name}.nowdzskel`, filters: [{name: t("modeler.skeletonFileType"), extensions: ['nowdzskel']}]}); if (saved?.saved) toast(t("modeler.skeletonSaved")); }
+      else download(`${name}.nowdzskel`, text, 'application/json');
+    } catch (error) { toast(error.message); }
+  }
+  function loadSkeletonFile() {
+    const input = el('input', {type: 'file', accept: '.nowdzskel,application/json'});
+    input.addEventListener('change', async () => { const file = input.files[0]; if (file) loadSkeletonData(await file.text()); });
+    input.click();
+  }
+  /** Load a skeleton file's bones in place of this model's (asking first when it has bones; one undo step). */
+  function loadSkeletonData(text) {
+    let loaded;
+    try { loaded = readSkeletonFile(JSON.parse(text)); } catch { toast(t("modeler.notASkeletonFile")); return; }
+    const load = () => {
+      let result;
+      commit(() => { result = applySkeleton(model, loaded); S.bones = new Set(); S.cache.clear(); });
+      if (S.mode !== 'bones') setMode('bones'); else refresh();
+      toast(t("modeler.skeletonLoaded", {count: model.bones.length, kept: result.kept.length}));
+    };
+    if (model.bones.length) askConfirm(t("modeler.replaceSkeleton"), load, {yesLabel: t("modeler.loadSkeleton"), noLabel: t("modeler.keepModeling")}); else load();
+  }
   function openModelFile() {
     const input = el('input', {type: 'file', accept: '.nowdz,application/json'});
     input.addEventListener('change', async () => { const file = input.files[0]; if (file) openModelData(await file.text(), file.name); });
@@ -3098,7 +3196,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (e.button === 0 && S.mode === 'bones' && !S.posing && !paintingNow() && nearOrigin(p)) { drag = {kind: 'origin', before: snapshot(), through: originOf(model).slice(), moved: false}; return; }
     // Weight painting: a stroke is one undo step; Ctrl paints the other way (Add ↔ Remove).
     // While painting, Shift+click picks another bone to paint.
-    if (e.button === 0 && paintingNow() && e.shiftKey) { const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
+    // With Paint only selected points, a Shift+click on a point adds or drops it instead.
+    if (e.button === 0 && paintingNow() && e.shiftKey) { if (brush().points && pointNear(p)) { pickPaintPoint(p, true); return; } const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
+    // Paint only selected points: a click picks a point, a drag paints.
+    if (e.button === 0 && paintingNow() && brush().points && brush().mode !== 'gradient') { drag = {kind: 'paint', before: snapshot(), parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey, pending: p}; return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'gradient') { drag = {kind: 'gradient', start: p, end: null}; return; }
     if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', before: snapshot(), parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey}; paintTo(drag, p, drag.invert); return; }
     // Pose mode: drag a bone to turn it (a joint shared with its parent turns the parent, as on the stage).
@@ -3126,7 +3227,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
     if (S.brushResize) { moveBrushResize(p); return; }
     if (!drag) { if (paintingNow() || S.connect) draw(); return; }
-    if (drag.kind === 'paint') { paintTo(drag, p, drag.invert); return; }
+    if (drag.kind === 'paint') {
+      if (drag.pending) { if (Math.hypot(p.x - drag.pending.x, p.y - drag.pending.y) < 4) return; const from = drag.pending; drag.pending = null; paintTo(drag, from, drag.invert); }
+      paintTo(drag, p, drag.invert); return;
+    }
     if (drag.kind === 'gradient') { drag.end = p; draw(); return; }
     if (drag.kind === 'pose') { poseDrag(drag, p); return; }
     if (drag.kind === 'origin') { setOrigin(model, screenToWorld(p, drag.through)); drag.moved = true; draw(); return; }
@@ -3149,6 +3253,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // A right-click that doesn't move (a right-drag orbits) opens the menu for what is under the pointer.
     if (d.kind === 'orbit' && d.button === 2 && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { viewMenu(d.start, e); return; }
     if (d.kind === 'gradient') { if (d.end) applyGradient(d.start, d.end); draw(); return; }
+    if (d.kind === 'paint' && d.pending) { pickPaintPoint(d.pending, false); return; }
     if (d.kind === 'paint') { if (d.touched.size) { S.lastOp = null; S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
     if (d.maskClick && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { const poly = pickPolygon(S.polys, d.start.x, d.start.y); if (poly) selectPart(poly.item.partId, true); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
@@ -3226,6 +3331,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     else if (paintingNow() && !e.altKey && key === 'f' && !ctrl) startBrushResize(e.shiftKey ? 'strength' : 'radius');
     else if (paintingNow() && !e.altKey && key === 'x' && ctrl && !e.shiftKey) fillWeights(S.pointer);
     else if (paintingNow() && !e.altKey && key === 'x' && e.shiftKey && !ctrl) sampleWeight(S.pointer);
+    else if (paintingNow() && brush().points && key === 'a' && !ctrl && !e.shiftKey) selectAllPaintPoints(!e.altKey);
     else if (ctrl && key === 's' && !e.shiftKey && !e.altKey) saveProgress();
     else if (ctrl && key === 'z') e.shiftKey ? redo() : undo();
     // Alt+Z: X-ray, as in Blender (select and see points on the far side too).
@@ -3350,7 +3456,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   const api = {close, requestClose, element: root, get state() { return S; }, get model() { return model; }, get frame() { return frame; }, setMode, startTransform, extrude, addBaseCharacter, addPrimitive, selectAll, setView, applyColor,
     /** Where a model-space point is on screen, in client coordinates (for tests and tours). */
     screenPoint(p) { const q = frame?.project(p), box = canvas.getBoundingClientRect(); return q?.ok ? {x: box.left + q.x, y: box.top + q.y} : null; },
-    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, openModelData, importGltfFiles, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
+    showControls, closeControls, unwrap, toggleUVEditor, paintTexture, joinToMiddle, setMirror, openModelData, importGltfFiles, loadSkeletonData, add2DFace, paintFaceState, previewFace, renderProps, get uvEditor() { return uvEditor; },
     /** Redraw after the model was changed from outside (tests). */
     refresh() { S.cache.clear(); refresh(); }};
   // Tests and tours reach the workspace through its element.
