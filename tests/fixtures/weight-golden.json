@@ -1,0 +1,17 @@
+{
+  "juniper.weights": "2ed53bb9de533ca2343af42b",
+  "juniper.posed": "a59604b4167dab8ef2de3ca6",
+  "juniper.gltf": "e1a2bff77ba677b8f14ac062",
+  "kettle.weights": "801ae65bf223c2b97f1e2df2",
+  "kettle.posed": "a369663161587765af17eca3",
+  "kettle.gltf": "dd9ea7faf344a67b23a09a38",
+  "painted.stored": "5ac596d2c7360350dd61a2bd",
+  "painted.weights": "841625e428a041d3350a21bb",
+  "painted.posed": "0d513a6fee1c246057442985",
+  "painted.saved": "841625e428a041d3350a21bb",
+  "painted.gltf": "10b3548ab3a16794851ac564",
+  "merged.stored": "418760f756b4d531b90ff484",
+  "merged.weights": "758365886082754f42957142",
+  "skeleton.stored": "154a2f7a1c5c3bd8df001bd0",
+  "skeleton.weights": "dcee65b2a7c06ef3a995fc09"
+}
