@@ -177,13 +177,16 @@ export function importGltf(source, {palette = [], files = new Map()} = {}) {
       if ((prim.mode ?? 4) !== 4) continue; // triangles only (no lines or points)
       if (prim.attributes?.POSITION === undefined) continue;
       const pos = read(prim.attributes.POSITION), base = verts.length;
-      const joints = skin && prim.attributes.JOINTS_0 !== undefined ? read(prim.attributes.JOINTS_0) : null, weights = joints && prim.attributes.WEIGHTS_0 !== undefined ? read(prim.attributes.WEIGHTS_0) : null;
+      // Every set of four joints and weights (JOINTS_0/WEIGHTS_0, JOINTS_1/WEIGHTS_1, …): a point may have
+      // more than four bones, and all of them are kept (deformation and export use the strongest four).
+      const sets = [];
+      for (let k = 0; skin && prim.attributes[`JOINTS_${k}`] !== undefined && prim.attributes[`WEIGHTS_${k}`] !== undefined; k++) sets.push([read(prim.attributes[`JOINTS_${k}`]), read(prim.attributes[`WEIGHTS_${k}`])]);
       for (let i = 0; i < pos.count; i++) {
         const p = [pos.data[i * 3], pos.data[i * 3 + 1], pos.data[i * 3 + 2]];
-        if (jointMats && joints && weights) {
+        if (jointMats && sets.length) {
           // Rest pose: the skinning sum with the file's bind matrices.
           let q = [0, 0, 0], total = 0; const pairs = [];
-          for (let k = 0; k < 4; k++) {
+          for (const [joints, weights] of sets) for (let k = 0; k < 4; k++) {
             const w = weights.data[i * 4 + k], j = joints.data[i * 4 + k]; if (!(w > 0) || !jointMats[j]) continue;
             q = add(q, scale([...X.transformPoint(jointMats[j], p)], w)); total += w;
             pairs.push([boneOf.get(skin.joints[j]), w]);

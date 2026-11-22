@@ -6,6 +6,8 @@ import {validateMesh, TopologyError} from './topology.mjs';
 import {DEFAULT_PALETTE} from './primitives.mjs';
 import {faceCopy, reversedFace, flipFace, textured, readTextures} from './uv.mjs';
 import {readFace} from '../face-rig.mjs';
+import {readStoredWeights} from './weight-manager.mjs';
+import {readGroups, syncGroups} from './vertex-groups.mjs';
 
 export const MODEL_VERSION = 1;
 export const SMOOTH_MAX = 3;
@@ -29,6 +31,8 @@ export function readModel(value, {repaired = []} = {}) {
   if (!value || typeof value !== 'object' || value.version !== MODEL_VERSION || !Array.isArray(value.parts)) fail('unknown format');
   const model = structuredClone(value);
   const finite = (v, n) => Array.isArray(v) && v.length === n && v.every(Number.isFinite);
+  // The vertex groups weights may name (vertex-groups.mjs): the bones' and any without a bone.
+  const groupIdsSaved = new Set(readGroups(value.groups, new Set((value.bones ?? []).map(b => b?.id))).map(g => g.id));
   for (const part of model.parts) {
     if (!part?.mesh || !Array.isArray(part.mesh.verts) || !Array.isArray(part.mesh.faces)) fail('a part has no mesh');
     for (const key of ['position', 'rotation', 'scale']) if (!finite(part[key], 3)) fail(`a part has no ${key}`);
@@ -59,12 +63,9 @@ export function readModel(value, {repaired = []} = {}) {
     if (part.mesh.vdata !== undefined) {
       const raw = part.mesh.vdata, n = part.mesh.verts.length, clean = {};
       if (raw && typeof raw === 'object') {
-        const line = {}, normal = {}, skin = {}, boneIds = new Set((value.bones ?? []).map(b => b.id));
-        for (const [i, list] of Object.entries(raw.skin ?? {})) {
-          if (!(Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n) || !Array.isArray(list)) continue;
-          const pairs = list.filter(pair => Array.isArray(pair) && boneIds.has(pair[0]) && Number.isFinite(pair[1]) && pair[1] > 0).slice(0, 4), sum = pairs.reduce((t, pair) => t + pair[1], 0);
-          if (sum > 0) skin[i] = pairs.map(([b, w]) => [b, w / sum]);
-        }
+        // Stored weights (weight-manager.mjs) for groups the model has, kept as saved: any number per
+        // point, not rescaled.
+        const line = {}, normal = {}, skin = readStoredWeights(raw.skin, n, id => groupIdsSaved.has(id));
         if (Object.keys(skin).length) clean.skin = skin;
         for (const [i, w] of Object.entries(raw.line ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Number.isFinite(w)) line[i] = Math.max(0, Math.min(4, w));
         for (const [i, v] of Object.entries(raw.normal ?? {})) if (Number.isInteger(Number(i)) && Number(i) >= 0 && Number(i) < n && Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) && Math.hypot(...v) > 1e-9) normal[i] = normalize(v);
@@ -98,6 +99,9 @@ export function readModel(value, {repaired = []} = {}) {
     if (b.strength !== undefined) { if (Number.isFinite(b.strength) && b.strength !== 1) b.strength = Math.max(0, Math.min(2, b.strength)); else delete b.strength; }
     if (b.range !== undefined) { if (Number.isFinite(b.range) && b.range > 0) b.range = Math.min(100, b.range); else delete b.range; }
   }
+  // Vertex groups: one per bone (same id), any without a bone, locks; and the weight paint options.
+  syncGroups(model);
+  if (model.weightPaint !== undefined) { if (model.weightPaint?.autoNormalize === false) model.weightPaint = {autoNormalize: false}; else delete model.weightPaint; }
   // Layers (docs/BLENDER-LITE.md, "Layers"): folders of parts, each part in at most one
   // folder, folders inside folders; a locked part can't be picked in the view.
   const folders = Array.isArray(model.folders) ? model.folders.filter(f => f && Number.isInteger(f.id) && f.id > 0) : [];
@@ -125,7 +129,7 @@ export function readModel(value, {repaired = []} = {}) {
   const face = readFace(model.face, new Set((model.textures ?? []).map(t => t.id)));
   if (face) model.face = face; else delete model.face;
   for (const ref of model.references) if (ref && typeof ref === 'object') for (const k of ['flip', 'hidden', 'locked']) if (ref[k] !== true) delete ref[k];
-  model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1), ...(model.folders ?? []).map(f => f.id + 1));
+  model.nextId = Math.max(model.nextId ?? 1, ...model.parts.map(p => p.id + 1), ...model.bones.map(b => b.id + 1), ...model.groups.map(g => g.id + 1), ...(model.folders ?? []).map(f => f.id + 1));
   return model;
 }
 
@@ -195,9 +199,10 @@ export function catmullClark(mesh) {
       if (key === 'line') return sources.some(i => src[i] !== undefined) ? sources.reduce((sum, i) => sum + (src[i] ?? 1), 0) / sources.length : undefined;
       if (!sources.every(i => src[i])) return undefined;
       if (key === 'skin') {
-        // Mean of the sources' weights per bone, the four largest kept.
+        // Mean of the sources' weights per group, every group kept (deformation picks the strongest
+        // four), as shares of the point: deformation divides by the total anyway.
         const sum = new Map(); for (const i of sources) for (const [b, w] of src[i]) sum.set(b, (sum.get(b) ?? 0) + w / sources.length);
-        const pairs = [...sum].sort((x, y) => y[1] - x[1]).slice(0, 4), total = pairs.reduce((t, [, w]) => t + w, 0);
+        const pairs = [...sum].sort((x, y) => y[1] - x[1]), total = pairs.reduce((t, [, w]) => t + w, 0);
         return total > 0 ? pairs.map(([b, w]) => [b, w / total]) : undefined;
       }
       if (key === 'hide') return 1;

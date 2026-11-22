@@ -3,6 +3,7 @@
  * are layers that are loose, grouped or merged with the model, and the origin is
  * the point the figure stands on and turns about on the stage. */
 import {completeSkin, boneState, setBoneState, isMerged, otherSide, sideOf} from './armature.mjs';
+import {setStoredWeights} from './weight-manager.mjs';
 
 // ---------- Folders ----------
 
@@ -104,9 +105,7 @@ export function mergeBone(model, id) {
     for (const [v, pairs] of Object.entries(full)) {
       if (kept[v] !== undefined) continue;
       if (!pairs.some(([b, w]) => w > 0 && (b === id || (part.mirror && b === partner)))) continue;
-      part.mesh.vdata ??= {};
-      part.mesh.vdata.skin ??= {};
-      part.mesh.vdata.skin[v] = pairs.map(([b, w]) => [b, Math.round(w * 1e5) / 1e5]);
+      setStoredWeights(part.mesh, Number(v), pairs.map(([b, w]) => [b, Math.round(w * 1e5) / 1e5]));
       frozen++;
     }
   }

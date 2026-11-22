@@ -283,15 +283,18 @@ glTF 2.0 specification:
   has both sides, a part all on one side of the middle, with no other part
   mirroring it, that touches the middle or has 80% of its weight on one side's
   bones whose twins move nothing in the file, comes in with Mirror on.
-- The file's weights stay on the points (`mesh.vdata.skin`, bone ids). The
-  animation and **Export GLB** use them (`partWeights`); points without them
-  (new points from edits, a mirror modifier's other half) get automatic weights.
+- The file's weights stay on the points (`mesh.vdata.skin`, bone ids), from
+  every set of joints (`JOINTS_0`/`WEIGHTS_0`, `JOINTS_1`/`WEIGHTS_1`, …), so a
+  point keeps more than four bones (see "Vertex groups and stored weights"). The
+  animation and **Export GLB** use them (`partWeights`, the strongest four);
+  points without them (new points from edits, a mirror modifier's other half)
+  get automatic weights.
 
 **File > Export GLB (with bones)** writes the visible parts, evaluated (mirror,
 smooth), as triangles with smooth or custom normals, one material per palette
 colour (linear factors), and with a skeleton a skin named Armature: one joint per
 bone, +Y along the bone like Blender's exporter, inverse bind matrices, up to
-four weights per point (normalised). Bone tails ride along in `extras.tail`, so
+four weights per point (the strongest four, normalised: `limitTotal`). Bone tails ride along in `extras.tail`, so
 a model exported and imported again keeps its exact skeleton.
 
 ### Open in Blender
@@ -929,6 +932,53 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   point and half (`part:point:0|1`, 1 for a Mirror part's mirrored half), for
   the session only.
 
+### Vertex groups and stored weights
+
+Blender keeps weights in **vertex groups**: a named list of point weights per
+group, any number of groups per point, each weight 0–1, and a lock per group.
+3D Nowdz keeps the same data (`src/modeler/vertex-groups.mjs`,
+`src/modeler/weight-manager.mjs`), so Blender's weight tools can be built on it.
+
+- `model.groups`: `{id, bone}` for each bone, with the bone's own id, so a stored
+  weight `[id, w]` names the group and the bone at once and models saved before
+  groups existed need no change; `{id, name}` for a group with no bone (its
+  weights move nothing, as Blender's non-deforming groups; its id comes from
+  `model.nextId`, so it never matches a bone); `lock: true` on a locked group.
+  Opening a model (`readModel`) and `syncGroups` make a group for every bone and
+  drop the groups of bones that are gone (their weights stopped counting
+  already). There is no group list in the panel yet, and painting doesn't use
+  locks yet.
+- Stored weights (`mesh.vdata.skin`, `{point: [[group, weight], …]}`) are read
+  and written through the Weight Manager (`setStoredWeights`,
+  `clearStoredWeights`, `remapStoredWeights`, `readStoredWeights`). They are kept
+  as given: any number of groups per point, not rescaled to add up to 1, so a
+  file opens with exactly the weights it was saved with. A group named twice
+  on a point counts once (its weights added); a weight above 1 is cut to 1.
+- **The four-bone limit is applied where weights are used, not where they are
+  stored.** `limitTotal` keeps the strongest four bones of a point and scales
+  them to add up to 1 (Blender's Limit Total, then the Armature modifier
+  dividing by the total). Deformation (`partWeights`: the Pose preview, the
+  stage, the weight colours, Open in Blender) and Export GLB use it. Painting,
+  saving, opening, the Smooth modifier, glTF import and Blender's weights coming
+  back don't trim. Before, every one of those cut a point to its four strongest
+  bones and rescaled the rest, so painting one bone quietly changed others.
+- **Auto Normalize** (Blender's weight paint option) is stored with the model
+  as `weightPaint: {autoNormalize: false}` when off and is on by default. There
+  is no switch for it yet: painting always shares a point's bone weights out to
+  1, as before. While it is on, painting reads a point's stored bone weights as
+  shares of 1 (`completeSkin`).
+- Weights in a group with no bone are left alone by painting, applying a
+  skeleton and deformation; a point storing only such weights keeps automatic
+  bones beside them.
+- Golden results (`tests/support/weight-golden.mjs`,
+  `tests/fixtures/weight-golden.json`, `tests/modeler-weight-golden.test.mjs`)
+  hold what the Juniper and Kettle examples give for weights, posed points, a
+  fixed paint series, saving, glTF export, merging a bone and applying a
+  skeleton file. They were recorded before this data layer; the three results
+  that changed with it are a point that now keeps its fifth and sixth bones
+  (merging Chest, then painting) and glTF weights opening exactly as the file
+  stores them (no longer rescaled, a 0.000001 difference).
+
 ### Skeleton files
 
 File > **Save skeleton…** writes the bones alone as a `.nowdzskel` file
@@ -938,12 +988,15 @@ plus the origin). Painted weights stay with the model: they belong to its
 points. **Load skeleton…** puts a file's bones in place of the model's (asking
 first when it has bones; one undo step), as saved, without fitting: a bone
 named like one the model has takes that bone's id, so weights painted for it
-stay; weights for bones that are gone are dropped (a point left with none goes
-back to automatic), and so are parts' and folders' links to them. A file with
+stay; weights for bones that are gone are dropped and the bones left share the
+point out to 1 again (a point left with none goes back to automatic), and so
+are parts' and folders' links to them and their vertex groups; groups with no
+bone stay. A file with
 loops or missing parents loads with those bones hung from the root.
 - `src/modeler/weight-paint.mjs`: a painted point stores complete weights in
   `part.mesh.vdata.skin` (where an imported rig keeps its weights, saved with
-  the model) and always adds up to 1 (Auto Normalize): weight taken from the
+  the model, through the Weight Manager), keeping every bone it has, and its
+  bones always add up to 1 (Auto Normalize): weight taken from the
   bone goes to the bones already there, or where it had the point alone, to the
   bones that would have it without it. Weight taken away (Remove, or Set and
   Smooth lowering it) goes only to bones that don't ride on the painted bone

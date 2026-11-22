@@ -1,6 +1,8 @@
 // Skeleton files (.nowdzskel): a model's bones on their own, to keep a rig in case or to bring it to
 // another model. Painted weights stay with the model: they belong to its points.
 import {readModel, emptyModel} from './model.mjs';
+import {remapStoredWeights} from './weight-manager.mjs';
+import {syncGroups} from './vertex-groups.mjs';
 
 export const SKELETON_FILE_FORMAT = 'stykNowdz.skeleton';
 const BONE_KEYS = ['id', 'name', 'head', 'tail', 'parent', 'state', 'face', 'reach', 'cut', 'strength', 'range'];
@@ -39,16 +41,14 @@ export function applySkeleton(model, {bones, origin}) {
   }
   const before = model.bones;
   model.bones = bones.map(b => ({...structuredClone(b), id: map.get(b.id), parent: map.get(b.parent) ?? 0}));
-  const ids = new Set(model.bones.map(b => b.id));
+  const ids = new Set(model.bones.map(b => b.id)), plain = new Set((model.groups ?? []).filter(g => g.bone === undefined).map(g => g.id));
   for (const part of model.parts) {
-    const skin = part.mesh.vdata?.skin;
-    if (skin) for (const [i, pairs] of Object.entries(skin)) {
-      const left = pairs.filter(([b]) => ids.has(b)), sum = left.reduce((t, [, w]) => t + w, 0);
-      if (sum > 0) skin[i] = left.map(([b, w]) => [b, w / sum]); else delete skin[i];
-    }
-    if (skin && !Object.keys(skin).length) delete part.mesh.vdata.skin;
+    // Groups of bones that are gone go with them; the bones left share the point out to 1 again.
+    // A point left with no bone weights goes back to automatic bones (completeSkin).
+    remapStoredWeights(part.mesh, id => (ids.has(id) || plain.has(id) ? id : undefined), {normalize: ids});
     if (part.bone !== undefined && !ids.has(part.bone)) delete part.bone;
   }
+  syncGroups(model);
   for (const f of model.folders ?? []) if (f.bone && !ids.has(f.bone)) delete f.bone;
   if (origin) model.origin = origin.slice();
   model.nextId = Math.max(model.nextId, ...model.bones.map(b => b.id + 1));

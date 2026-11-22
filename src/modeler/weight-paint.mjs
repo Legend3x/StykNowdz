@@ -7,7 +7,9 @@
  * same place an imported rig keeps its weights) as complete lists: a point
  * painted once keeps all its bones, so later automatic changes (a bone moved,
  * Strength changed) no longer reach it, until Back to automatic clears it.
- * A point always adds up to 1 across its bones (Blender's Auto Normalize):
+ * Stored weights go through weight-manager.mjs and keep every bone a point has
+ * (deformation uses the strongest four). A point always adds up to 1 across its
+ * bones (Blender's Auto Normalize, always on for now):
  * taking weight from the bone gives it to the bones already sharing the point,
  * or, where the bone had it all, to the bones that would have it without it.
  *
@@ -16,6 +18,7 @@
  * smooth or set); clearPainted(part, verts?) returns points to automatic. */
 import {completeSkin, autoWeights, otherSide, isMerged} from './armature.mjs';
 import {transformMesh, objectMatrix} from './mesh.mjs';
+import {setStoredWeights, clearStoredWeights, storedCount} from './weight-manager.mjs';
 
 export const PAINT_MODES = Object.freeze(['add', 'remove', 'smooth', 'set']);
 const clamp01 = x => Math.max(0, Math.min(1, x));
@@ -42,7 +45,7 @@ export function startStroke(model, part, bone) {
     for (let k = 0; k < 4; k++) if (w.bones[v * 4 + k] && w.bones[v * 4 + k] !== b && w.weights[v * 4 + k] > 0) pairs.push([w.bones[v * 4 + k], w.weights[v * 4 + k]]);
     return pairs;
   };
-  return {model, part, bone, skin, neighbours, fallback, touched: new Set()};
+  return {model, part, bone, skin, neighbours, fallback, bones: new Set(model.bones.map(b => b.id)), touched: new Set()};
 }
 
 /** A point's weights with `bone` at `w`, the rest scaled to share what is left. */
@@ -55,7 +58,8 @@ export function withWeight(pairs, bone, w, fallback = () => []) {
   if (rest <= 1e-9) return [[bone, 1]];
   const out = others.map(([b, x]) => [b, x / rest * (1 - w)]);
   if (w > 0) out.push([bone, w]);
-  const kept = out.filter(([, x]) => x > 1e-4).sort((a, b) => b[1] - a[1]).slice(0, 4), total = kept.reduce((t, [, x]) => t + x, 0);
+  // Every bone sharing the point is kept (deformation, not storage, limits it to four).
+  const kept = out.filter(([, x]) => x > 1e-4).sort((a, b) => b[1] - a[1]), total = kept.reduce((t, [, x]) => t + x, 0);
   return kept.map(([b, x]) => [b, Math.round(x / total * 1e5) / 1e5]);
 }
 
@@ -80,7 +84,7 @@ function lowered(model, pairs, bone, amount, fallback, held = new Set()) {
   const total = takers.reduce((t, [, x]) => t + x, 0), out = new Map((pairs ?? []).filter(([, x]) => x > 0));
   out.set(bone, Math.max(0, (out.get(bone) ?? 0) - amount));
   for (const [b, x] of takers) out.set(b, (out.get(b) ?? 0) + amount * x / total);
-  const kept = [...out].filter(([, x]) => x > 1e-4).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = kept.reduce((t, [, x]) => t + x, 0);
+  const kept = [...out].filter(([, x]) => x > 1e-4).sort((a, b) => b[1] - a[1]), sum = kept.reduce((t, [, x]) => t + x, 0);
   return kept.map(([b, x]) => [b, Math.round(x / sum * 1e5) / 1e5]);
 }
 
@@ -88,7 +92,9 @@ function lowered(model, pairs, bone, amount, fallback, held = new Set()) {
  * its neighbours' average (smooth) or `value` (set). `bone` defaults to the
  * stroke's bone (a Mirror copy paints the other side's bone). True if it changed. */
 export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value = 1} = {}) {
-  const {skin, part} = stroke, all = skin[v] ?? [];
+  const {skin, part} = stroke;
+  // Weights in groups without a bone move nothing: painting a bone leaves them as they are.
+  const aside = (skin[v] ?? []).filter(([b]) => !stroke.bones.has(b)), all = (skin[v] ?? []).filter(([b]) => stroke.bones.has(b));
   // A merged bone's weights are frozen: painting another bone shares only what they leave.
   const held = new Set(stroke.model.bones.filter(b => b.id !== bone && isMerged(b)).map(b => b.id));
   const kept = all.filter(([b]) => held.has(b)), free = 1 - kept.reduce((t, [, x]) => t + x, 0);
@@ -109,24 +115,15 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
   if (Math.abs(next - now) * free < 1e-4) return false;
   const fallback = () => stroke.fallback(v, bone).filter(([b]) => !held.has(b));
   const changed = next < now ? lowered(stroke.model, pairs, bone, now - next, fallback, held) ?? withWeight(pairs, bone, next, fallback) : withWeight(pairs, bone, next, fallback);
-  skin[v] = kept.length ? [...kept, ...changed.map(([b, x]) => [b, Math.round(x * free * 1e5) / 1e5])].filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1]).slice(0, 4) : changed;
-  part.mesh.vdata ??= {};
-  part.mesh.vdata.skin ??= {};
-  part.mesh.vdata.skin[v] = skin[v].map(pair => pair.slice());
+  skin[v] = [...(kept.length ? [...kept, ...changed.map(([b, x]) => [b, Math.round(x * free * 1e5) / 1e5])].filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1]) : changed), ...aside];
+  setStoredWeights(part.mesh, v, skin[v]);
   stroke.touched.add(v);
   return true;
 }
 
 /** Points back to automatic weights (all of a part's points when `verts` is omitted). */
-export function clearPainted(part, verts = null) {
-  const kept = part.mesh.vdata?.skin; if (!kept) return 0;
-  let cleared = 0;
-  for (const v of verts ?? Object.keys(kept).map(Number)) if (kept[v] !== undefined) { delete kept[v]; cleared++; }
-  if (!Object.keys(kept).length) delete part.mesh.vdata.skin;
-  if (part.mesh.vdata && !Object.keys(part.mesh.vdata).length) delete part.mesh.vdata;
-  return cleared;
-}
+export const clearPainted = (part, verts = null) => clearStoredWeights(part.mesh, verts);
 
 /** How many of a part's points carry their own weights. */
-export const paintedCount = part => Object.keys(part.mesh.vdata?.skin ?? {}).length;
+export const paintedCount = part => storedCount(part.mesh);
 

@@ -75,6 +75,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 ### Fixed
 
+- Fixed weight painting in 3D Nowdz quietly changing other bones' weights where a point is moved by more than four bones. Every bone's weight is now kept, and models open with exactly the weights they were saved with.
 - Rigged .glb models from Blender come into 3D Nowdz cleaner: only the bones that move the model come in, a model built with Mirror gets both halves, and toon or unlit textures show.
 - Fixed 3D Nowdz foot bones moving nothing when the boots or shoes cover the ankles. The foot now moves the bottom of the boot and the shin moves the top.
 - Fixed 3D Nowdz models that wouldn't open, or vanished after texture painting, when Mirror had been used on a whole part. Those models now open with the broken parts repaired, and Mirror on a whole part keeps its right half and copies it over the left.

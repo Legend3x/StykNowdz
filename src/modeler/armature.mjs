@@ -4,6 +4,8 @@
  * faces the front view, so its left (".L") is on +X. */
 import {sub, dot, add, scale, length, bounds, transformMesh, objectMatrix} from './mesh.mjs';
 import {evaluatePart} from './model.mjs';
+import {limitTotal, normalizedWeights} from './weight-manager.mjs';
+import {groupIds, autoNormalizeOn} from './vertex-groups.mjs';
 
 export const sideOf = name => /\.L$/i.test(name) ? 'L' : /\.R$/i.test(name) ? 'R' : '';
 export const otherSide = name => name.replace(/\.L$/, '.~').replace(/\.R$/, '.L').replace(/\.~$/, '.R').replace(/\.l$/, '.~').replace(/\.r$/, '.l').replace(/\.~$/, '.r');
@@ -243,9 +245,10 @@ export function segmentDistance(p, a, b) {
 }
 
 /**
- * Skin weights for world-space vertices: up to four bones each, weights
- * summing to one. A part bound to a bone (`part.bone`) follows it rigidly (its
- * mirrored half follows the opposite-side bone), and so does a part whose
+ * Skin weights for world-space vertices: up to four bones each (DEFORM_LIMIT
+ * in weight-manager.mjs), weights summing to one. A part bound to a bone
+ * (`part.bone`) follows it rigidly (its mirrored half follows the
+ * opposite-side bone), and so does a part whose
  * vertices are at least `rigidShare` nearest one bone. Otherwise each vertex blends
  * its nearest bones among those running through its part, limited to that
  * nearest bone's parent and children, so a torso never follows an arm hanging
@@ -266,7 +269,7 @@ export function partWeights(model, mesh, part, options = {}) {
   const full = completeSkin(model, part, options), n = mesh.verts.length, resolve = sideResolver(model);
   const out = {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
   const write = (v, pairs) => pairs.forEach(([b, w], k) => { out.bones[v * 4 + k] = b; out.weights[v * 4 + k] = w; });
-  if (options.cage) { for (let v = 0; v < n; v++) if (full[v]) write(v, full[v]); return out; }
+  if (options.cage) { for (let v = 0; v < n; v++) { const pairs = full[v] && cleanPairs(model, full[v]); if (pairs) write(v, pairs); } return out; }
   // How much of each smoothed point comes from carried points: carried as a
   // point value (0 on carried points, as Smooth averages a missing value as 1).
   const share = Object.fromEntries(Object.keys(kept).map(v => [v, 0]));
@@ -291,24 +294,42 @@ export function sideResolver(model) {
   const byName = new Map(model.bones.map(b => [b.name, b.id])), byId = new Map(model.bones.map(b => [b.id, b]));
   return id => id >= 0 ? id : (byName.get(otherSide(byId.get(-id)?.name ?? '')) ?? -id);
 }
-/** A point's weights: real bones only, the four largest, adding up to 1; null when none. */
+/** A point's weights as deformation uses them: real bones only, the four
+ * strongest, adding up to 1 (limitTotal); null when none. */
 function cleanPairs(model, list, resolve = sideResolver(model)) {
   if (!Array.isArray(list)) return null;
   const ids = new Set(model.bones.map(b => b.id)), sum = new Map();
   for (const [b, w] of list) { const id = resolve(b); if (ids.has(id) && w > 0) sum.set(id, (sum.get(id) ?? 0) + w); }
-  const pairs = [...sum].sort((x, y) => y[1] - x[1]).slice(0, 4), total = pairs.reduce((t, [, w]) => t + w, 0);
-  return total > 0 ? pairs.map(([b, w]) => [b, w / total]) : null;
+  return limitTotal([...sum]);
 }
 
-/** Weights for every point of a part's own points: those it carries, automatic
- * for the rest (worked out on its points in model space). {[i]: [[bone, w], …]}. */
+/** A point's stored weights as painting works on them: every group the model
+ * has, none trimmed. With Auto Normalize on, the bone weights are scaled to add
+ * up to 1 (groups without a bone keep theirs). Strongest first; null when it
+ * stores no bone weights (its bones are automatic). */
+function storedPairs(list, groups, bones, normalize) {
+  if (!Array.isArray(list)) return null;
+  const sum = new Map();
+  for (const [g, w] of list) if (groups.has(g) && w > 0) sum.set(g, (sum.get(g) ?? 0) + w);
+  let deform = [...sum].filter(([g]) => bones.has(g)).sort((x, y) => y[1] - x[1]);
+  if (!deform.length) return null;
+  if (normalize) deform = normalizedWeights(deform);
+  return [...deform, ...[...sum].filter(([g]) => !bones.has(g))].sort((x, y) => y[1] - x[1]);
+}
+
+/** Weights for every point of a part's own points: those it carries (every
+ * group, untrimmed: storedPairs), automatic for the rest (worked out on its
+ * points in model space). {[i]: [[group, w], …]}. */
 export function completeSkin(model, part, options = {}) {
   const cage = transformMesh(part.mesh, objectMatrix(part)), kept = part.mesh.vdata?.skin ?? {}, auto = autoWeights(model, cage, part, options), out = {};
+  const groups = groupIds(model), bones = new Set(model.bones.map(b => b.id)), normalize = autoNormalizeOn(model);
   for (let v = 0; v < cage.verts.length; v++) {
-    const own = cleanPairs(model, kept[v]);
+    const own = storedPairs(kept[v], groups, bones, normalize);
     if (own) { out[v] = own; continue; }
     const pairs = [];
     for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] && auto.weights[v * 4 + k] > 0) pairs.push([auto.bones[v * 4 + k], auto.weights[v * 4 + k]]);
+    // A point storing only weights that move nothing keeps them beside its automatic bones.
+    if (kept[v]) for (const [g, w] of kept[v]) if (groups.has(g) && !bones.has(g) && w > 0) pairs.push([g, w]);
     if (pairs.length) out[v] = pairs;
   }
   return out;

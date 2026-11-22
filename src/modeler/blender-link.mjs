@@ -35,6 +35,7 @@ import {decomposeTRS} from './matrix.mjs';
 import {addPart} from './model.mjs';
 import {addBone, deleteBones, boneOrder, partWeights, autoWeights, pullOf, setPull} from './armature.mjs';
 import {validateMesh, TopologyError} from './topology.mjs';
+import {cleanWeights, normalizedWeights, clearStoredWeights} from './weight-manager.mjs';
 import {textured, dataUrlBytes, imageInfo, addTexture, TEXTURE_LIMIT, TEXTURE_MAX_SIDE} from './uv.mjs';
 
 export const LINK_FORMAT = 'styk-blender-link';
@@ -155,8 +156,9 @@ function meshFrom(back, colorOf, boneId, textureOf = () => undefined) {
   for (const [i, v] of Object.entries(back.normal ?? {})) if (inRange(i) && finite3(v) && Math.hypot(...v) > 1e-9) normal[i] = normalize(v);
   for (const [i, pairs] of Object.entries(back.weights ?? {})) {
     if (!inRange(i) || !Array.isArray(pairs)) continue;
-    const kept = pairs.filter(p => Array.isArray(p) && boneId.has(p[0]) && Number.isFinite(p[1]) && p[1] > 1e-4).map(([name, w]) => [boneId.get(name), w]).sort((a, b) => b[1] - a[1]).slice(0, 4);
-    const sum = kept.reduce((s, [, w]) => s + w, 0); if (sum > 0) skin[i] = kept.map(([b, w]) => [b, w / sum]);
+    // Kept as Blender has them: every bone's group, not rescaled (weight-manager.mjs).
+    const kept = cleanWeights(pairs.filter(p => Array.isArray(p) && boneId.has(p[0]) && Number.isFinite(p[1]) && p[1] > 1e-4).map(([name, w]) => [boneId.get(name), w])).sort((a, b) => b[1] - a[1]);
+    if (kept.length) skin[i] = kept;
   }
   if (Object.keys(crease).length) vdata.crease = crease;
   if (Object.keys(line).length) vdata.line = line;
@@ -177,10 +179,10 @@ function keepPaintedWeights(model, part) {
   for (const [i, pairs] of Object.entries(skin)) {
     const v = Number(i), mine = new Map();
     for (let k = 0; k < 4; k++) { const id = auto.bones[v * 4 + k]; if (id) mine.set(id, (mine.get(id) ?? 0) + auto.weights[v * 4 + k]); }
-    const theirs = new Map(pairs), ids = new Set([...mine.keys(), ...theirs.keys()]);
-    if ([...ids].every(id => Math.abs((mine.get(id) ?? 0) - (theirs.get(id) ?? 0)) <= .1)) delete skin[i]; else painted++;
+    // Compared as shares of the point, as the Armature modifier uses them.
+    const theirs = new Map(normalizedWeights(pairs)), ids = new Set([...mine.keys(), ...theirs.keys()]);
+    if ([...ids].every(id => Math.abs((mine.get(id) ?? 0) - (theirs.get(id) ?? 0)) <= .1)) clearStoredWeights(part.mesh, [v]); else painted++;
   }
-  if (!Object.keys(skin).length) { delete part.mesh.vdata.skin; if (!Object.keys(part.mesh.vdata).length) delete part.mesh.vdata; }
   return painted;
 }
 
@@ -301,7 +303,7 @@ export function applyBlenderLink(model, rawReply, session) {
     // object not attached to the armature at all stays with the body's root; otherwise weights.
     const follows = back.follows ?? 'skin', root = boneOrder(model).find(b => !b.parent);
     const bound = follows === 'root' ? root : typeof follows?.bone === 'string' ? model.bones.find(b => b.id === boneId.get(follows.bone)) : null;
-    if (bound) { part.bone = bound.id; if (part.mesh.vdata?.skin) { delete part.mesh.vdata.skin; if (!Object.keys(part.mesh.vdata).length) delete part.mesh.vdata; } }
+    if (bound) { part.bone = bound.id; clearStoredWeights(part.mesh); }
     else { delete part.bone; report.painted += keepPaintedWeights(model, part); }
     claimedParts.add(part.id); order.push(part); remember(part.id);
   }

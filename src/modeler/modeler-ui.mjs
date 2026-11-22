@@ -22,6 +22,7 @@ import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
 import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES} from './weight-paint.mjs';
+import {remapStoredWeights} from './weight-manager.mjs';
 import {poseFrames, posedBy, posedMesh, turnBone, axisAngle, isPosed} from './pose.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf, referenceCorners} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
@@ -83,8 +84,7 @@ function listenToBlender() {
  * weights naming the other side's bones resolved to them), in the part's own space. */
 export function appliedMirror(model, p) {
   const m = M.objectMatrix(p), mesh = M.transformMesh(M.mirrored(M.transformMesh(p.mesh, m), undefined, {mirrorU: p.mirrorU}), X.invert(m)), resolve = sideResolver(model);
-  const skin = mesh.vdata?.skin;
-  if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([b, w]) => [resolve(b), w]);
+  remapStoredWeights(mesh, resolve);
   // Kept points must follow the topology rules, like any edit (a refusal leaves the part as it was).
   assertValidMesh(mesh, `Applying the mirror on “${p.name}”`);
   return mesh;
@@ -2941,8 +2941,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       for (const b of result.bones) { const made = addBone(model, {name: b.name, head: b.head, tail: b.tail, parent: b.parent === null ? 0 : ids.get(b.parent) ?? 0}); ids.set(b.key, made.id); }
       const folder = result.parts.length > 1 ? addFolder(model, {name: main.name.replace(/\.(glb|gltf)$/i, '') || 'Model'}).id : 0;
       for (const p of result.parts) {
-        const skin = p.mesh.vdata?.skin;
-        if (skin) for (const [i, pairs] of Object.entries(skin)) skin[i] = pairs.map(([key, w]) => [ids.get(key), w]).filter(([id]) => id !== undefined);
+        remapStoredWeights(p.mesh, key => ids.get(key));
         remapFaceTextures(p.mesh, textureIds);
         const made = addPart(model, {name: p.name, mesh: p.mesh, mirror: Boolean(p.mirror)}); if (folder) made.folder = folder;
       }
