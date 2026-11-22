@@ -11,5 +11,6 @@ test('weight painting golden results are unchanged', async () => {
   const expected = JSON.parse(readFileSync(FIXTURE, 'utf8')), results = await goldenResults();
   assert.deepEqual(Object.keys(results).sort(), Object.keys(expected).sort());
   const changed = Object.keys(expected).filter(k => !sameSummary(expected[k], summaryOf(results[k])));
-  assert.deepEqual(changed, [], `changed: ${changed.join(', ')}`);
+  const detail = changed.map(k => { const a = expected[k], b = summaryOf(results[k]); return `${k} (n ${a.n} → ${b.n}, sum ${b.sum - a.sum}, size ${b.size - a.size}, placed ${b.placed - a.placed})`; });
+  assert.deepEqual(changed, [], `changed: ${detail.join('; ')}`);
 });
