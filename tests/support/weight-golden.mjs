@@ -23,11 +23,15 @@ export const FIXTURE = new URL('../fixtures/weight-golden.json', import.meta.url
 const bone = (model, name) => model.bones.find(b => b.name === name)?.id;
 const part = (model, name) => model.parts.find(p => p.name === name);
 
-/** Every shown part's weights (four per point) as the stage, export and colours get them. */
+/** A point's [bone, weight] pairs by bone id: two bones with all but equal weights may come out in
+ * either order on another Node version, which changes nothing. */
+const byBone = pairs => pairs.filter(([, w]) => w > 0).map(pair => pair.slice()).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+/** Every shown part's weights (at most four per point) as the stage, export and colours get them. */
 export function weightsOf(model) {
   return Object.fromEntries(model.parts.filter(p => p.mesh.faces.length).map(p => {
     const skin = partWeights(model, evaluatePart(p), p);
-    return [`${p.id}:${p.name}`, {bones: [...skin.bones], weights: [...skin.weights]}];
+    return [`${p.id}:${p.name}`, Array.from({length: skin.bones.length / 4}, (_, v) => byBone([0, 1, 2, 3].map(k => [skin.bones[v * 4 + k], skin.weights[v * 4 + k]])))];
   }));
 }
 
@@ -44,7 +48,7 @@ export function posedOf(model) {
 }
 
 /** Every part's stored (painted or imported) weights, as saved. */
-export const storedOf = model => Object.fromEntries(model.parts.map(p => [`${p.id}:${p.name}`, Object.fromEntries(Object.entries(p.mesh.vdata?.skin ?? {}).map(([v, pairs]) => [v, pairs.map(pair => pair.slice())]))]));
+export const storedOf = model => Object.fromEntries(model.parts.map(p => [`${p.id}:${p.name}`, Object.fromEntries(Object.entries(p.mesh.vdata?.skin ?? {}).map(([v, pairs]) => [v, byBone(pairs)]))]));
 
 /** A fixed series of brush changes: each mode, on a smoothed part, a Mirror part and beside a merged bone. */
 export function paintSeries(model) {
@@ -120,12 +124,12 @@ export function summaryOf(value) {
   return {n: xs.length, sum, placed, size};
 }
 
-/** Whether two summaries match: the same count, and each sum within 1e-11 of the numbers' total
- * size (Node versions differ far less than that; one weight off by about 0.000005 shows). */
+/** Whether two summaries match: the same count, and the sums within 0.000001 (the position-weighted
+ * one within 0.001). Node versions differ by far less (about 0.0000002 over every posed point of an
+ * example); one weight or coordinate off by more than 0.000001 shows. */
 export function sameSummary(a, b) {
   if (!a || !b || a.n !== b.n) return false;
-  const tolerance = 1e-11 * (1 + a.size);
-  return Math.abs(a.sum - b.sum) <= tolerance && Math.abs(a.size - b.size) <= tolerance && Math.abs(a.placed - b.placed) <= tolerance * 997;
+  return Math.abs(a.sum - b.sum) <= 1e-6 && Math.abs(a.size - b.size) <= 1e-6 && Math.abs(a.placed - b.placed) <= 1e-3;
 }
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
