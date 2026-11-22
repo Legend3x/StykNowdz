@@ -93,8 +93,10 @@ export function normalizedWeights(pairs) {
 }
 
 /** The `limit` strongest weights, scaled to add up to 1 (Blender's Limit Total, then the Armature
- * modifier dividing by the total): what deformation and export use. Null when there are none. */
+ * modifier dividing by the total): what deformation and export use. Null when there are none.
+ * Weights within 1e-9 of each other count as equal and go by group id, so every computer keeps the
+ * same four (another Node version can make two all but equal weights differ in the last digit). */
 export function limitTotal(pairs, limit = DEFORM_LIMIT) {
-  const kept = [...pairs].sort((a, b) => b[1] - a[1]).slice(0, limit), total = kept.reduce((t, [, w]) => t + w, 0);
+  const kept = [...pairs].sort((a, b) => (Math.abs(b[1] - a[1]) > 1e-9 ? b[1] - a[1] : a[0] - b[0])).slice(0, limit), total = kept.reduce((t, [, w]) => t + w, 0);
   return total > 0 ? kept.map(([id, w]) => [id, w / total]) : null;
 }

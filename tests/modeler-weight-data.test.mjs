@@ -25,6 +25,11 @@ test('Weight Manager: lists are cleaned but never trimmed or rescaled', () => {
   assert.deepEqual(top.map(([id]) => id), [1, 2, 3, 4]);
   assert.ok(Math.abs(sum(top) - 1) < 1e-12);
   assert.equal(limitTotal([]), null);
+  // All but equal weights (another computer may differ in the last digit) go by group id, so every
+  // computer keeps the same four.
+  const tie = [[1, .4], [2, .3], [9, .1 + 1e-17], [5, .1], [7, .1 - 1e-12]];
+  assert.deepEqual(limitTotal(tie).map(([id]) => id), [1, 2, 5, 7]);
+  assert.deepEqual(limitTotal([...tie].reverse()).map(([id]) => id), [1, 2, 5, 7]);
   assert.deepEqual(normalizedWeights([[1, .2], [2, .2]]), [[1, .5], [2, .5]]);
   // Only points that exist are read from a file.
   assert.deepEqual(readStoredWeights({0: seven, 3: [[1, .5]], 9: [[1, 1]], x: [[1, 1]], 1: 'bad'}, 4, () => true), {0: seven, 3: [[1, .5]]});

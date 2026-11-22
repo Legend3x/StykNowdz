@@ -957,7 +957,8 @@ group, any number of groups per point, each weight 0–1, and a lock per group.
 - **The four-bone limit is applied where weights are used, not where they are
   stored.** `limitTotal` keeps the strongest four bones of a point and scales
   them to add up to 1 (Blender's Limit Total, then the Armature modifier
-  dividing by the total). Deformation (`partWeights`: the Pose preview, the
+  dividing by the total); weights within 1e-9 of each other go by group id, so
+  every computer keeps the same four. Deformation (`partWeights`: the Pose preview, the
   stage, the weight colours, Open in Blender) and Export GLB use it. Painting,
   saving, opening, the Smooth modifier, glTF import and Blender's weights coming
   back don't trim. Before, every one of those cut a point to its four strongest
