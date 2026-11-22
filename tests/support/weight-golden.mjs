@@ -3,9 +3,13 @@
 // give, recorded before the weight data layer changed, so a change that should keep results
 // the same can be checked number for number.
 //
+// The fixture holds sums of each result (summaryOf), not the numbers themselves: small enough to
+// keep in the repository, and compared with a tolerance (sameSummary), since Node versions differ
+// in the last digits of Math.sin, Math.exp and the like.
+//
 // node tests/support/weight-golden.mjs write   → records tests/fixtures/weight-golden.json
-// node tests/support/weight-golden.mjs dump F  → writes the full (unhashed) results to F
-import {createHash} from 'node:crypto';
+// node tests/support/weight-golden.mjs dump F  → writes the full results to F (for a side-by-side diff)
+// node tests/support/weight-golden.mjs         → lists which results changed
 import {readFileSync, writeFileSync} from 'node:fs';
 import {readModel, evaluatePart, emptyModel, addPart} from '../../src/modeler/model.mjs';
 import {partWeights, addBone} from '../../src/modeler/armature.mjs';
@@ -16,7 +20,6 @@ import {skeletonFile, readSkeletonFile, applySkeleton} from '../../src/modeler/s
 import {exportGlb, importGltf} from '../../src/modeler/gltf-format.mjs';
 
 export const FIXTURE = new URL('../fixtures/weight-golden.json', import.meta.url);
-const round = x => Math.round(x * 1e6) / 1e6;
 const bone = (model, name) => model.bones.find(b => b.name === name)?.id;
 const part = (model, name) => model.parts.find(p => p.name === name);
 
@@ -24,7 +27,7 @@ const part = (model, name) => model.parts.find(p => p.name === name);
 export function weightsOf(model) {
   return Object.fromEntries(model.parts.filter(p => p.mesh.faces.length).map(p => {
     const skin = partWeights(model, evaluatePart(p), p);
-    return [`${p.id}:${p.name}`, {bones: [...skin.bones], weights: skin.weights.map(round)}];
+    return [`${p.id}:${p.name}`, {bones: [...skin.bones], weights: [...skin.weights]}];
   }));
 }
 
@@ -36,12 +39,12 @@ export function posedOf(model) {
   const frames = poseFrames(model, pose);
   return Object.fromEntries(model.parts.filter(p => p.mesh.faces.length).map(p => {
     const mesh = evaluatePart(p);
-    return [`${p.id}:${p.name}`, posedMesh(mesh, partWeights(model, mesh, p), frames).verts.map(q => q.map(round))];
+    return [`${p.id}:${p.name}`, posedMesh(mesh, partWeights(model, mesh, p), frames).verts.map(q => q.slice())];
   }));
 }
 
 /** Every part's stored (painted or imported) weights, as saved. */
-export const storedOf = model => Object.fromEntries(model.parts.map(p => [`${p.id}:${p.name}`, Object.fromEntries(Object.entries(p.mesh.vdata?.skin ?? {}).map(([v, pairs]) => [v, pairs.map(([b, w]) => [b, round(w)])]))]));
+export const storedOf = model => Object.fromEntries(model.parts.map(p => [`${p.id}:${p.name}`, Object.fromEntries(Object.entries(p.mesh.vdata?.skin ?? {}).map(([v, pairs]) => [v, pairs.map(pair => pair.slice())]))]));
 
 /** A fixed series of brush changes: each mode, on a smoothed part, a Mirror part and beside a merged bone. */
 export function paintSeries(model) {
@@ -100,15 +103,37 @@ export async function goldenResults() {
   return out;
 }
 
-export const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
+/** Every number in a result, in a fixed order (keys as stored, arrays in order). */
+const numbers = (value, out = []) => {
+  if (typeof value === 'number') out.push(value);
+  else if (Array.isArray(value)) for (const x of value) numbers(x, out);
+  else if (value && typeof value === 'object') for (const k of Object.keys(value)) numbers(value[k], out);
+  return out;
+};
+
+/** A result's sums: how many numbers, their total, their total weighted by position (so a value
+ * moving to another point or bone shows), and their sizes (for the tolerance). */
+export function summaryOf(value) {
+  const xs = numbers(value);
+  let sum = 0, placed = 0, size = 0;
+  xs.forEach((x, i) => { sum += x; placed += x * ((i % 997) + 1); size += Math.abs(x); });
+  return {n: xs.length, sum, placed, size};
+}
+
+/** Whether two summaries match: the same count, and each sum within 1e-11 of the numbers' total
+ * size (Node versions differ far less than that; one weight off by about 0.000005 shows). */
+export function sameSummary(a, b) {
+  if (!a || !b || a.n !== b.n) return false;
+  const tolerance = 1e-11 * (1 + a.size);
+  return Math.abs(a.sum - b.sum) <= tolerance && Math.abs(a.size - b.size) <= tolerance && Math.abs(a.placed - b.placed) <= tolerance * 997;
+}
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
   const results = await goldenResults();
-  if (process.argv[2] === 'write') writeFileSync(FIXTURE, JSON.stringify(Object.fromEntries(Object.entries(results).map(([k, v]) => [k, digest(v)])), null, 2) + '\n');
+  if (process.argv[2] === 'write') writeFileSync(FIXTURE, JSON.stringify(Object.fromEntries(Object.entries(results).map(([k, v]) => [k, summaryOf(v)])), null, 2) + '\n');
   else if (process.argv[2] === 'dump') writeFileSync(process.argv[3], JSON.stringify(results));
   else {
-    // Which results differ from the recorded fixture.
     const expected = JSON.parse(readFileSync(FIXTURE, 'utf8'));
-    for (const [k, v] of Object.entries(results)) console.log(digest(v) === expected[k] ? 'same   ' : 'CHANGED', k);
+    for (const [k, v] of Object.entries(results)) console.log(sameSummary(expected[k], summaryOf(v)) ? 'same   ' : 'CHANGED', k);
   }
 }

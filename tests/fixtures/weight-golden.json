@@ -1,17 +1,92 @@
 {
-  "juniper.weights": "2ed53bb9de533ca2343af42b",
-  "juniper.posed": "a59604b4167dab8ef2de3ca6",
-  "juniper.gltf": "e1a2bff77ba677b8f14ac062",
-  "kettle.weights": "801ae65bf223c2b97f1e2df2",
-  "kettle.posed": "a369663161587765af17eca3",
-  "kettle.gltf": "dd9ea7faf344a67b23a09a38",
-  "painted.stored": "5ac596d2c7360350dd61a2bd",
-  "painted.weights": "841625e428a041d3350a21bb",
-  "painted.posed": "0d513a6fee1c246057442985",
-  "painted.saved": "841625e428a041d3350a21bb",
-  "painted.gltf": "8c8f8118b343a1bcb9857ebb",
-  "merged.stored": "5f2419717eee07deb4ec7d44",
-  "merged.weights": "75b8f00a7eecfe3adbe9782c",
-  "skeleton.stored": "154a2f7a1c5c3bd8df001bd0",
-  "skeleton.weights": "dcee65b2a7c06ef3a995fc09"
+  "juniper.weights": {
+    "n": 40936,
+    "sum": 144342.0000000002,
+    "placed": 71114915.91581118,
+    "size": 144342.0000000002
+  },
+  "juniper.posed": {
+    "n": 15351,
+    "sum": 5284.151024773564,
+    "placed": 2580723.377513418,
+    "size": 6672.262666928512
+  },
+  "juniper.gltf": {
+    "n": 13956,
+    "sum": 67584.00000029779,
+    "placed": 34766554.724815294,
+    "size": 67584.00000029779
+  },
+  "kettle.weights": {
+    "n": 20240,
+    "sum": 68881.99999999999,
+    "placed": 34268586.340387985,
+    "size": 68881.99999999999
+  },
+  "kettle.posed": {
+    "n": 7590,
+    "sum": 3032.984715872825,
+    "placed": 1415384.28186887,
+    "size": 3736.92329526216
+  },
+  "kettle.gltf": {
+    "n": 5794,
+    "sum": 24970.99999999255,
+    "placed": 12406545.12791634,
+    "size": 24970.99999999255
+  },
+  "painted.stored": {
+    "n": 346,
+    "sum": 3131.9999399999992,
+    "placed": 560335.77688,
+    "size": 3131.9999399999992
+  },
+  "painted.weights": {
+    "n": 40936,
+    "sum": 156342.0000000003,
+    "placed": 77076342.87802334,
+    "size": 156342.0000000003
+  },
+  "painted.posed": {
+    "n": 15351,
+    "sum": 5281.6913588344,
+    "placed": 2579440.868288777,
+    "size": 6668.816434152979
+  },
+  "painted.saved": {
+    "n": 40936,
+    "sum": 156342.0000000003,
+    "placed": 77076342.87802334,
+    "size": 156342.0000000003
+  },
+  "painted.gltf": {
+    "n": 15184,
+    "sum": 72829.99999775256,
+    "placed": 36436185.99132969,
+    "size": 72829.99999775256
+  },
+  "merged.stored": {
+    "n": 552,
+    "sum": 4800.999947430475,
+    "placed": 1398454.461585472,
+    "size": 4800.999947430475
+  },
+  "merged.weights": {
+    "n": 40936,
+    "sum": 157436.00000000015,
+    "placed": 77565239.36166193,
+    "size": 157436.00000000015
+  },
+  "skeleton.stored": {
+    "n": 222,
+    "sum": 1946,
+    "placed": 223766.89923385557,
+    "size": 1946
+  },
+  "skeleton.weights": {
+    "n": 40936,
+    "sum": 179458.00000000017,
+    "placed": 88087478.70727234,
+    "size": 179458.00000000017
+  }
 }
