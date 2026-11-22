@@ -882,6 +882,23 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   everywhere** clears it, as Blender's face mask.
 - **Mirror painting** paints the same spot on the other side with the other
   side's bone (Shoulder.L ↔ Shoulder.R), as X-Mirror in Blender.
+- **The painting toolbar**, as in Photoshop: while painting, a rail of tools runs
+  down the left of the view (Add, Remove, Smooth, Set, then Gradient, Fill,
+  Sample and Select points) and the tool's options sit in a bar along its top
+  (the bone being painted, Amount, Size, Strength, Falloff, Seen only, Mirror
+  painting, Picked only, Stop painting); the properties panel keeps starting
+  and stopping, the part highlight and Back to automatic. The rail's buttons
+  carry `data-paint-tool`, not `data-tool`, which the app's own tool rail
+  answers to. Sample goes back to the tool you had once it has taken the
+  weight; Fill is a click on a piece; Select points picks with clicks and boxes
+  (a box takes only the points the view shows: none with something of the
+  model in front of them, with slack for smoothed parts).
+- **Precise painting.** **Seen only** (on by default) makes the brush the circle
+  on screen: it paints the points inside it that the view shows, not ones round
+  the back or in a piece behind (each point's visibility is worked out once per
+  stroke). Off, the brush is a ball as wide as the circle around the surface
+  point under it, as before. **Falloff**: Smooth (the old fade), Sharp or
+  Constant (the whole circle evenly). The brush can be as small as 2 pixels.
 - Blender's quick tools, with its keys, while painting:
   - **Gradient** (a brush; Blender's Weights > Gradient (Linear)): drag a line;
     points behind its start get the Amount, fading to none at its end, and

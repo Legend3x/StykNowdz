@@ -107,6 +107,8 @@ const shapes = Object.freeze({
   // the column, a limb bending at its joint, Lucide box (depth), pipette and magnet.
   modifiers: '<path d="M9 18v-6H5l7-7 7 7h-4v6H9z" /> <path d="M9 21h6" />',
   bend: '<path d="M4 20 10 11l10-5" /> <circle cx="10" cy="11" r="2.2" /> <circle cx="20" cy="6" r="1.2" />',
+  gradient: '<rect x="3" y="4" width="18" height="16" rx="2" /> <path d="M8 4v16" /> <path d="M13 4v16" stroke-dasharray="2 2" /> <path d="M18 4v16" stroke-dasharray="1 3" />',
+  'select-points': '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3" /> <circle cx="9" cy="10" r="1.7" fill="currentColor" /> <circle cx="15" cy="14.5" r="1.7" fill="currentColor" />',
   eyedropper: '<path d="m2 22 1-1h3l9-9" /> <path d="M3 21v-3l9-9" /> <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />',
   depth: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /> <path d="m3.3 7 8.7 5 8.7-5" /> <path d="M12 22V12" />',
   magnet: '<path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15" /> <path d="m5 8 4 4" /> <path d="m12 15 4 4" />',

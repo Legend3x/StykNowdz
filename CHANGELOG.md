@@ -10,6 +10,8 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 
 - Weight painting in 3D Nowdz gains Blender's quick tools: a Gradient brush, Ctrl+X to fill a whole piece, Shift+X to sample a weight, and F or Shift+F to resize the brush.
 - Pick points on the model to paint only those, then set their weight with Ctrl+X.
+- Weight painting has its own toolbar, like Photoshop: tools down the left of the view and their options along the top.
+- Weight painting is more precise: the brush paints only what you can see inside its circle, and a Constant falloff paints the circle evenly.
 - Save a 3D Nowdz skeleton to its own file and load it back, or onto another model.
 - Unwrap in 3D Nowdz lays the selected faces, points or edges flat in one piece, the right way up. On a Mirror part both halves show as one face, each with its own side of the texture.
 - 3D Nowdz models can have textures: images painted onto their faces show in 3D Nowdz, on the stage, in playback and in exports. Turn them off under View > Textures.

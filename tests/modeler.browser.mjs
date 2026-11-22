@@ -34,6 +34,7 @@ try {
     window.T = await import('/src/modeler/topology.mjs');
     window.m = document.querySelector('.modeler').modeler;
     window.button = text => [...document.querySelectorAll('.modeler button')].find(x => x.textContent.trim() === text);
+    window.tool = name => document.querySelector(`.modeler-paint-tool[data-paint-tool="${name}"]`);
     window.allValid = () => m.model.parts.every(p => T.validateMesh(p.mesh, {print: false}).ok);
   });
 
@@ -90,7 +91,7 @@ try {
       const sliders = [...document.querySelectorAll('.modeler-live input[type=range]')].length;
       const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
       const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
-      button('Paint weights').click(); await wait(50); button('Remove').click(); await wait(50);
+      button('Paint weights').click(); await wait(50); tool('remove').click(); await wait(50);
       return {sliders, from: at([.05, 1.24, .13]), to: at([.15, 1.24, .13]), undo: m.state.undo.length};
     });
     await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to); await page.mouse.up();
@@ -108,7 +109,7 @@ try {
     const setup = await page.evaluate(async () => {
       const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); m.state.bones = new Set([fore.id]); m.state.parts = new Set(); m.refresh(); await wait(100);
       if (!m.state.brush?.on) button('Paint weights').click();
-      await wait(50); button('Gradient').click(); await wait(50);
+      await wait(50); tool('gradient').click(); await wait(50);
       const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
       const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
       const lerp = k => fore.head.map((v, i) => v + (fore.tail[i] - v) * k);
@@ -142,9 +143,7 @@ try {
     const setup = await page.evaluate(async () => {
       const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); m.state.bones = new Set([fore.id]); m.refresh(); await wait(50);
       if (!m.state.brush?.on) button('Paint weights').click();
-      await wait(50); button('Set').click(); await wait(50);
-      const box = [...document.querySelectorAll('.modeler-check')].find(l => /Paint only selected points/.test(l.textContent)).querySelector('input');
-      box.click(); await wait(50);
+      await wait(50); tool('select').click(); await wait(50);
       // Two points of the Forearm, on screen.
       const canvas = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
       const f = cameraFrame(m.state.camera, canvas.width, canvas.height), {objectTransform} = await import('/src/modeler/mesh.mjs');
@@ -175,7 +174,7 @@ try {
     });
     assert.ok(loaded.same, 'the bone comes back where the file has it, with the same id');
     assert.ok(loaded.painted >= 2, 'and the painted points keep their weights');
-    await page.evaluate(() => { const box = [...document.querySelectorAll('.modeler-check')].find(l => /Paint only selected points/.test(l.textContent))?.querySelector('input'); if (box?.checked) box.click(); });
+    await page.evaluate(() => { tool('add').click(); const only = document.querySelector('.modeler-paint-bar [aria-label="Picked only"]'); if (only?.getAttribute('aria-pressed') === 'true') only.click(); });
   });
   await step('Pose: dragging a bone bends the model, changes nothing, and Stop posing puts it back', async () => {
     const setup = await page.evaluate(async () => {

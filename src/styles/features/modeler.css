@@ -216,6 +216,29 @@
   .modeler-badge-swap { background: var(--surface-hover); color: var(--text-1); border: 1px solid var(--line-control); }
   .modeler-choice { flex: none; inline-size: 18px; padding: 0; border: 0; background: none; color: var(--text-3); font-size: 13px; line-height: 1; cursor: pointer; }
   .modeler-choice-on { color: var(--accent-text); }
+  /* Weight painting's tools, as in Photoshop: a rail of tools down the left of the
+   * view and the tool's options in a bar along its top (shown while painting). */
+  .modeler-paint-bar { position: absolute; inset-block-start: var(--space-2); inset-inline: var(--space-2); z-index: 2; display: flex; align-items: center; flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2); min-block-size: 40px; padding: var(--space-1) var(--space-2); background: var(--surface); border: 1px solid var(--line-control);
+    border-radius: var(--radius-md); box-shadow: var(--shadow-thumb); font-size: var(--text-sm, 12px); }
+  .modeler-paint-rail { position: absolute; inset-block-start: 60px; inset-inline-start: var(--space-2); z-index: 2; display: flex; flex-direction: column;
+    gap: 2px; padding: var(--space-1); background: var(--surface); border: 1px solid var(--line-control); border-radius: var(--radius-md); box-shadow: var(--shadow-thumb); }
+  :where(.modeler-paint-bar, .modeler-paint-rail)[hidden] { display: none; }
+  .modeler-paint-rail .modeler-paint-tool { inline-size: 34px; block-size: 34px; padding: 0; justify-content: center; border-radius: var(--radius-sm); }
+  .modeler-paint-rail .modeler-paint-tool svg { inline-size: 18px; block-size: 18px; }
+  .modeler-paint-rail .modeler-paint-tool[aria-pressed="true"] { background: var(--surface-selected); color: var(--accent-text-strong); box-shadow: inset 0 0 0 1px var(--accent-text-strong); }
+  .modeler-paint-rail-gap { block-size: 1px; margin: 3px 4px; background: var(--line-control); }
+  .modeler-paint-bone { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--accent-text-strong); }
+  .modeler-paint-bone svg { inline-size: 16px; block-size: 16px; }
+  .modeler-paint-tool-name { font-weight: 600; color: var(--text-1); }
+  .modeler-paint-divider { inline-size: 1px; align-self: stretch; margin-block: 4px; background: var(--line-control); }
+  .modeler-paint-field { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
+  .modeler-paint-field input[type="range"] { inline-size: 76px; }
+  .modeler-paint-value { min-inline-size: 2.6em; font-variant-numeric: tabular-nums; color: var(--text-1); }
+  .modeler-paint-note { color: var(--text-2); }
+  .modeler-paint-bar .modeler-paint-toggle { inline-size: auto; padding-inline: 8px; gap: 5px; }
+  .modeler-paint-bar .modeler-paint-toggle svg { inline-size: 16px; block-size: 16px; }
+  .modeler-paint-bar .modeler-spacer { flex: 1; }
   /* The second view: a small read-only view in the corner of the stage. */
   .modeler-second { position: absolute; inset-block-end: var(--space-3); inset-inline-end: var(--space-3); inline-size: min(32%, 300px); aspect-ratio: 4 / 3;
     border: 1px solid var(--line-control); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-stage); pointer-events: none; box-shadow: var(--shadow-thumb); }
