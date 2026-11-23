@@ -199,11 +199,19 @@ if mode == "detail":
     eb = arm.data.edit_bones.new("Sword")
     eb.head, eb.tail = (-.42, -.06, .4), (-.42, -.06, -.1)
     eb.parent = arm.data.edit_bones["Hand.R"]
-    arm.data.edit_bones["Jaw"].name = "Jaw.Main"
+    arm.data.edit_bones["Chest"].name = "Chest.Main"
     bpy.ops.object.mode_set(mode="OBJECT")
     for side in "LR":
         arm.data.bones["Shoulder.%s" % side]["Strength"] = .3
-    note("Bones: Sword added under Hand.R, Jaw renamed Jaw.Main, shoulders Strength 0.3")
+    note("Bones: Sword added under Hand.R, Chest renamed Chest.Main, shoulders Strength 0.3")
+    # Preserve Volume: 3D Nowdz sent it on; switched off on every Armature modifier, it comes back off.
+    sent_on = [m.use_deform_preserve_volume for o in bpy.data.objects if o.get("styk_key") for m in o.modifiers if m.type == "ARMATURE"]
+    assert sent_on and all(sent_on), "Armature modifiers arrive with Preserve Volume on"
+    for o in bpy.data.objects:
+        for m in o.modifiers:
+            if m.type == "ARMATURE":
+                m.use_deform_preserve_volume = False
+    note("Preserve Volume: on as sent on %d Armature modifiers, then switched off" % len(sent_on))
 
     # 11. The single hair strand goes; a camera and a light are added (they stay in Blender).
     bpy.data.objects.remove(bpy.data.objects["Ahoge"], do_unlink=True)
