@@ -11,7 +11,7 @@ import {assertValidMesh} from './topology.mjs';
 import {outlineHull, partOutline, toonSettings} from './toon.mjs';
 import {toonLight, toonThreshold, inkColor} from '../toon-shading.mjs';
 import {evaluateModel, readModel} from './model.mjs';
-import {boneOrder, partWeights, addBone, headBone} from './armature.mjs';
+import {boneOrder, partWeights, addBone, headBone, skinningMethod} from './armature.mjs';
 import {originOf, swapSets, swapChoiceOf} from './layers.mjs';
 import {MESH_LIMITS} from '../spatial-mesh.mjs';
 import {readFace} from '../face-rig.mjs';
@@ -165,6 +165,8 @@ export function modelToFigure(source, {figureTypeId = 1, previous = null} = {}) 
       ...(toon.shadows ? {toon: {light: [...toonLight(toon.turn, toon.height)], threshold: toonThreshold(toon.size), strength: toon.strength, flat}} : {}),
       ...(toon.shadows && customNormals ? {normals} : {}),
       ...(meshTextures.length ? {textures: meshTextures, uvs, textureIndex} : {}),
+      // Preserve Volume off: the stage blends bones linearly, as the Pose preview does (skinning.mjs).
+      ...(skinningMethod(model) === 'linear' ? {skinning: 'linear'} : {}),
       // The 2D face (docs/FACE-RIG.md) draws on its texture's slot, when that texture is shown.
       ...faceOf(model, textureSlot, meshTextures)}, modelSource: source}};
   return {figure, hiddenChoices, stats: {vertices: positions.length / 3, triangles: indices.length / 3, bones: bones.length, parts: parts.length}};

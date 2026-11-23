@@ -19,6 +19,7 @@ whatever the density of its surface.
 | `views`, `viewVertices`, `viewPoints` | Optional four- or eight-view targets for single-bone vertices, with the semantics of view-corrected skin. |
 | `groups` | Optional named, ordered triangle ranges, such as "Mask" or "Left boot". |
 | `normals` | Optional bind-space XYZ shading normal per vertex for toon shadows; all zero = the smooth normal of its faces. Each is turned by its vertex's (blended) bone rotation and the figure's rotation or reflection, and replaces the smooth normal in the lit/shadow test. |
+| `skinning` | Optional `'linear'`: vertices between bones take a linear blend (3D Nowdz with Preserve Volume off). Absent: dual quaternion. |
 | `textures`, `uvs`, `textureIndex` | Optional, together (3D Nowdz textures): up to 16 images (`{src, width, height}`, a PNG, JPEG or WebP data URL up to 4096 px a side), each triangle corner's UV (two numbers per index, v up, repeating outside 0..1) and each triangle's image (-1 keeps its colour). |
 
 Validation bounds vertices (200,000), triangles (400,000), palette size and
@@ -27,7 +28,13 @@ rejects degenerate or out-of-range triangles. Native STYK/STKZ containers store
 the flat numeric arrays in their binary sections.
 
 A pose evaluates the mesh once, after its bones, in `src/spatial-mesh.mjs`.
-Skinning follows rig-spatial skin points operation for operation: single-bone
+The skinning formulas live in `src/skinning.mjs`, shared with rig-spatial skin
+points and 3D Nowdz's Pose preview, so a model bends the same in all three; the
+mesh loop keeps its packed per-bone values and calls them. With `skinning:
+'linear'`, a vertex between bones is moved by each bone's frame (stretch, part
+proportions and pose choices included) and the results are averaged by weight;
+its custom normal turns by the normalised blended rotation. Otherwise skinning
+follows rig-spatial skin points operation for operation: single-bone
 vertices use the bone frame, including stretch, part proportions and pose
 choices; several bones use dual-quaternion skinning, scale separated: each
 bone's part proportions, pose-choice scale and stretch are applied in bind space

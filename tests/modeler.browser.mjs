@@ -200,6 +200,24 @@ try {
     });
     assert.deepEqual({...result, steps: result.steps - setup.undo}, {swung: true, blocked: true, unchanged: true, steps: 0, back: true});
   });
+  await step('Preserve volume: unticking it is one undo step, changes the Pose preview, and reaches the stage mesh', async () => {
+    const result = await page.evaluate(async () => {
+      m.setMode('bones'); m.refresh(); await wait(50);
+      const box = () => document.querySelector('[data-preserve-volume]'), undo = m.state.undo.length;
+      const {modelToFigure} = await import('/src/modeler/export-figure.mjs'), {poseFrames, posedMesh, axisAngle} = await import('/src/modeler/pose.mjs');
+      const {partWeights, skinningMethod} = await import('/src/modeler/armature.mjs'), {evaluatePart} = await import('/src/modeler/model.mjs');
+      const spine = m.model.bones.find(b => b.name === 'Spine'), torso = m.model.parts.find(p => p.name === 'Torso'), mesh = evaluatePart(torso);
+      const frames = poseFrames(m.model, new Map([[spine.id, axisAngle([1, 0, 0], 1.2)]])), skin = partWeights(m.model, mesh, torso);
+      const bent = () => posedMesh(mesh, skin, frames, skinningMethod(m.model)).verts;
+      const on = {checked: box().checked, mesh: modelToFigure(m.model).figure._styk.spatialMesh.skinning, shape: bent()};
+      box().click(); await wait(50);
+      const off = {checked: box().checked, stored: m.model.preserveVolume, steps: m.state.undo.length - undo, mesh: modelToFigure(m.model).figure._styk.spatialMesh.skinning, shape: bent()};
+      const moved = Math.max(...on.shape.map((p, i) => Math.hypot(...p.map((v, k) => v - off.shape[i][k]))));
+      box().click(); await wait(50);
+      return {on: [on.checked, on.mesh ?? 'dual-quaternion'], off: [off.checked, off.stored, off.steps, off.mesh], moved: moved > .001, back: [box().checked, m.model.preserveVolume]};
+    });
+    assert.deepEqual(result, {on: [true, 'dual-quaternion'], off: [false, false, 1, 'linear'], moved: true, back: [true, undefined]});
+  });
   await step('Add Cylinder: Vertices, Radius, Depth and Cap fill type change it afterwards; one undo removes it; the next edit ends it', async () => {
     const result = await page.evaluate(async () => {
       if (m.state.posing) button('Stop posing')?.click();

@@ -3,6 +3,7 @@ import {messageError} from './localized-error.mjs';
 /** Spatial articulation in the native rig dependency graph. Rotation still uses
  * ordinary angle channels; depth is derived, never a separate animated scene. */
 import {projectSpatial} from './spatial-projection.mjs';
+import {moveByDual,rigidDual} from './skinning.mjs';
 const EPS=1e-9;
 export const spatialBone=s=>Boolean(s?._stykRig?.spatial?.origin);
 export const spatialSkin=s=>Boolean(s?._stykRig?.spatial?.bindings);
@@ -92,11 +93,8 @@ function skinPoint(s,get){
     x+=q[0]*weight;y+=q[1]*weight;z+=q[2]*weight;w+=q[3]*weight;dx+=d[0]*weight;dy+=d[1]*weight;dz+=d[2]*weight;dw+=d[3]*weight;
     if(bindDeforms(f)){const p=bindSpacePoint(f,s.point);for(let i=0;i<3;i++)offset[i]+=(p[i]-s.point[i])*b.weight;}
   }
-  const norm=Math.hypot(x,y,z,w);x/=norm;y/=norm;z/=norm;w/=norm;dx/=norm;dy/=norm;dz/=norm;dw/=norm;
-  const a=s.point[0]+offset[0],b=s.point[1]+offset[1],c=s.point[2]+offset[2],tx=2*(y*c-z*b),ty=2*(z*a-x*c),tz=2*(x*b-y*a);
-  return [a+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y),
-    b+w*ty+z*tx-x*tz+2*(-dw*y+dx*z+dy*w-dz*x),
-    c+w*tz+x*ty-y*tx+2*(-dw*z-dx*y+dy*x+dz*w)];
+  const out=[0,0,0];moveByDual(x,y,z,w,dx,dy,dz,dw,s.point[0]+offset[0],s.point[1]+offset[1],s.point[2]+offset[2],out);
+  return out;
 }
 // Evenly spaced turn targets are expressed relative to the binding origin, in the
 // frontal coordinate axes of each view. A pose owns one interpolation frame;
@@ -164,7 +162,7 @@ export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,rest
     if(travel){const direction=quatRotate(q,axis);origin=origin.map((n,i)=>n+direction[i]*travel);}
     const rotatedOrigin=quatRotate(q,s.origin),t=origin.map((n,i)=>n-rotatedOrigin[i]);
     const stretch=!motion&&length>EPS&&Math.abs(scale)>EPS?input.length/scale/length:1;
-    spatial={q,t,dual:quatMultiply([...t,0],q).map(n=>n*.5),nativeBend,authoredBend,...(motion?{motionValue}:{}),origin:s.origin,axis,stretch};
+    spatial={q,t,dual:rigidDual(q,t),nativeBend,authoredBend,...(motion?{motionValue}:{}),origin:s.origin,axis,stretch};
     // A hidden expression must lose its area, not flatten into a visible card.
     // Ordinary bones retain axial stretching and their existing radial width.
     if(segment._stykPoseChoice?.hidden===0)spatial.choiceScale=stretch;

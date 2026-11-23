@@ -8,10 +8,11 @@ import {messageError} from './localized-error.mjs';
  * converted from native skin joints reproduces their projected positions. */
 import {spatialBone,spatialViewInterpolation} from './rig-spatial.mjs';
 import {shadowColor} from './toon-shading.mjs';
+import {moveByDual} from './skinning.mjs';
 
 const EPS=1e-9,NEAR=.05;
 export const MESH_LIMITS=Object.freeze({vertices:200000,triangles:400000,colors:1024,groups:1024});
-const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals','textures','uvs','textureIndex','face']);
+const KEYS=new Set(['positions','bones','weights','indices','colors','materials','basis','z','views','viewVertices','viewPoints','groups','toon','normals','textures','uvs','textureIndex','face','skinning']);
 export const MESH_TEXTURES=16,MESH_TEXTURE_SIDE=4096;
 import {readFace,faceRecipe,faceUrl,readFaceValues} from './face-rig.mjs';
 import {registerFace, isFaceUrl, faceRecipeOf} from './face-compose.mjs';
@@ -55,6 +56,8 @@ export function validateSpatialMesh(figure){
   if(!Array.isArray(materials)||materials.length!==triangles||materials.some(i=>!Number.isInteger(i)||i<0||i>=colors.length))fail("errors.spatialMesh.each3dMeshTriangleNeedsAColour", {});
   if(!Array.isArray(basis)||basis.length!==3||basis.some(id=>!Number.isInteger(id)||(id!==0&&!ids.has(id)))||basis[1]===0||basis[2]===0||basis[1]===basis[2])
     fail("errors.spatialMesh.a3dMeshNeedsItsOriginXAnd", {});
+  // Skinning: dual quaternion unless the mesh says 'linear' (skinning.mjs).
+  if(m.skinning!==undefined&&m.skinning!=='linear')fail("errors.spatialMesh.invalid3dMesh", {});
   if(m.z!==undefined&&(typeof m.z!=='number'||!Number.isFinite(m.z)||Math.abs(m.z)>1e6))fail("errors.spatialMesh.failure3dMeshDepthOrderMustBeFinite", {});
   if(m.views!==undefined||m.viewVertices!==undefined||m.viewPoints!==undefined){
     const {views,viewVertices,viewPoints}=m;
@@ -147,7 +150,7 @@ export function spatialMeshPlan(figure,ids){
     indices:Uint32Array.from(mesh.indices),materials:Uint16Array.from(mesh.materials),palette:mesh.colors,basis:mesh.basis,base:Number(mesh.z??0),
     views:mesh.views??0,viewSlot,viewPoints:mesh.viewPoints?new Float64Array(mesh.viewPoints):null,toon:toonPlan(mesh,triangles),
     uvs:mesh.textureIndex?.some(i=>i>=0)?Float32Array.from(mesh.uvs):null,textureIndex:mesh.textureIndex?.some(i=>i>=0)?Int16Array.from(mesh.textureIndex):null,
-    normals:customNormals(mesh,vertices)};
+    normals:customNormals(mesh,vertices),linear:mesh.skinning==='linear'};
   plans.set(mesh,{ids,plan});
   return plan;
 }
@@ -199,26 +202,30 @@ function bindPoint(F,b,x0,y0,z0,out,at){
 }
 const scratch=new Float64Array(3);
 
-/** A vertex bound to several bones: dual-quaternion skinning. Each bone's
- * shape, choice scale and stretch are applied in bind space first and blended
- * by weight, then the blended rigid motion moves the point (scale-separated
- * DQS), so stretched and twisted limbs keep their volume instead of pinching
- * like a linear blend ("candy wrapper"). Same as rig-spatial skinPoint. */
+/** A vertex bound to several bones (skinning.mjs). Dual quaternion (the
+ * default, Blender's Preserve Volume): each bone's shape, choice scale and
+ * stretch are applied in bind space first and blended by weight, then the
+ * blended rigid motion moves the point (scale-separated DQS), so stretched and
+ * twisted limbs keep their volume instead of pinching like a linear blend
+ * ("candy wrapper"). Same as rig-spatial skinPoint. Linear (`skinning:
+ * 'linear'`): the point moved by each bone's frame, averaged by weight; its
+ * normal turns by the blended rotation. */
 function blendedVertex(plan,F,v,px,py,pz,out,rotation){
   const count=plan.counts[v],base=v*4,first=plan.slots[base]*STRIDE;
-  let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,ox=0,oy=0,oz=0;
+  let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,ox=0,oy=0,oz=0,lx=0,ly=0,lz=0,total=0;
+  const linear=plan.linear;
   for(let k=0;k<count;k++){
     const b=plan.slots[base+k]*STRIDE,own=plan.weights[base+k];
     const weight=own*(F[b]*F[first]+F[b+1]*F[first+1]+F[b+2]*F[first+2]+F[b+3]*F[first+3]<0?-1:1);
-    x+=F[b]*weight;y+=F[b+1]*weight;z+=F[b+2]*weight;w+=F[b+3]*weight;dx+=F[b+18]*weight;dy+=F[b+19]*weight;dz+=F[b+20]*weight;dw+=F[b+21]*weight;
+    x+=F[b]*weight;y+=F[b+1]*weight;z+=F[b+2]*weight;w+=F[b+3]*weight;
+    if(linear){framePoint(F,b,px,py,pz,scratch,0);lx+=scratch[0]*own;ly+=scratch[1]*own;lz+=scratch[2]*own;total+=own;continue;}
+    dx+=F[b+18]*weight;dy+=F[b+19]*weight;dz+=F[b+20]*weight;dw+=F[b+21]*weight;
     if(F[b+15]===F[b+15]||F[b+14]===F[b+14]||F[b+22]===1){bindPoint(F,b,px,py,pz,scratch,0);ox+=(scratch[0]-px)*own;oy+=(scratch[1]-py)*own;oz+=(scratch[2]-pz)*own;}
   }
-  const norm=Math.hypot(x,y,z,w);x/=norm;y/=norm;z/=norm;w/=norm;dx/=norm;dy/=norm;dz/=norm;dw/=norm;
-  const ax=px+ox,ay=py+oy,az=pz+oz,tx=2*(y*az-z*ay),ty=2*(z*ax-x*az),tz=2*(x*ay-y*ax);
-  out[0]=ax+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y);
-  out[1]=ay+w*ty+z*tx-x*tz+2*(-dw*y+dx*z+dy*w-dz*x);
-  out[2]=az+w*tz+x*ty-y*tx+2*(-dw*z-dx*y+dy*x+dz*w);
-  if(rotation){rotation[0]=x;rotation[1]=y;rotation[2]=z;rotation[3]=w;}
+  if(linear){out[0]=lx/total;out[1]=ly/total;out[2]=lz/total;}
+  if(linear&&!rotation)return;
+  const norm=linear?Math.hypot(x,y,z,w):moveByDual(x,y,z,w,dx,dy,dz,dw,px+ox,py+oy,pz+oz,out,0);
+  if(rotation){rotation[0]=x/norm;rotation[1]=y/norm;rotation[2]=z/norm;rotation[3]=w/norm;}
 }
 
 const FRAME_VALUES=14;

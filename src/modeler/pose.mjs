@@ -7,7 +7,10 @@
  * bone's own start, in the rest skeleton's frame. Each bone turns about its start
  * and carries the bones below it, as a figure's joints do on the stage.
  * poseFrames(model, pose) works out where every bone has gone; posedPoint and
- * posedMesh move points by their skin weights (linear blend skinning, as the stage). */
+ * posedMesh move points by their skin weights with the stage's own skinning
+ * (src/skinning.mjs): dual quaternion with Preserve Volume on (the default),
+ * linear with it off, so the preview bends exactly as the animation will. */
+import {skinPoint, DEFAULT_SKINNING} from '../skinning.mjs';
 
 const qmul = (a, b) => [
   a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
@@ -48,21 +51,27 @@ const carry = (frame, p) => { const r = rotate(frame.turn, [p[0] - frame.head[0]
 /** A point moved by one bone. */
 export const posedBy = (frames, bone, p) => frames.has(bone) ? carry(frames.get(bone), p) : p.slice();
 
-/** A point moved by its weights ({bones, weights} four per point, as partWeights gives). */
-export function posedPoint(frames, skin, v, p) {
-  let x = 0, y = 0, z = 0, total = 0;
+/** Each bone's pose as the stage keeps it: rotate by q, then move by t (skinning.mjs). */
+const motions = new WeakMap();
+export function motionsOf(frames) {
+  if (!motions.has(frames)) motions.set(frames, new Map([...frames].map(([id, f]) => { const r = rotate(f.turn, f.head); return [id, {q: f.turn, t: [f.at[0] - r[0], f.at[1] - r[1], f.at[2] - r[2]]}]; })));
+  return motions.get(frames);
+}
+
+/** A point moved by its weights ({bones, weights} four per point, as partWeights gives), blended
+ * by `method` ('dual-quaternion' or 'linear', skinning.mjs). The weights are divided by their
+ * total, as Blender does; a point with no bones stays where it is. */
+export function posedPoint(frames, skin, v, p, method = DEFAULT_SKINNING) {
+  const by = motionsOf(frames), moving = [], weights = [];
   for (let k = 0; k < 4; k++) {
     const b = skin.bones[v * 4 + k], w = skin.weights[v * 4 + k];
-    if (!b || !(w > 0) || !frames.has(b)) continue;
-    const q = carry(frames.get(b), p); x += q[0] * w; y += q[1] * w; z += q[2] * w; total += w;
+    if (b && w > 0 && by.has(b)) { moving.push(by.get(b)); weights.push(w); }
   }
-  if (total <= 0) return p.slice();
-  // Weights add up to 1; any shortfall stays where it was.
-  return [x + p[0] * (1 - total), y + p[1] * (1 - total), z + p[2] * (1 - total)];
+  return skinPoint(moving, weights, p, method);
 }
 
 /** A mesh with every point moved by its weights (faces and point data shared). */
-export const posedMesh = (mesh, skin, frames) => ({...mesh, verts: mesh.verts.map((p, v) => posedPoint(frames, skin, v, p))});
+export const posedMesh = (mesh, skin, frames, method = DEFAULT_SKINNING) => ({...mesh, verts: mesh.verts.map((p, v) => posedPoint(frames, skin, v, p, method))});
 
 /** The pose with `bone` turned by `delta` (a rotation in the scene's frame, about its posed start). */
 export function turnBone(model, pose, bone, delta, from = pose) {

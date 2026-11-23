@@ -12,12 +12,13 @@
 // node tests/support/weight-golden.mjs         → lists which results changed
 import {readFileSync, writeFileSync} from 'node:fs';
 import {readModel, evaluatePart, emptyModel, addPart} from '../../src/modeler/model.mjs';
-import {partWeights, addBone} from '../../src/modeler/armature.mjs';
+import {partWeights, addBone, skinningMethod} from '../../src/modeler/armature.mjs';
 import {poseFrames, posedMesh, axisAngle} from '../../src/modeler/pose.mjs';
 import {startStroke, paintPoint} from '../../src/modeler/weight-paint.mjs';
 import {mergeBone} from '../../src/modeler/layers.mjs';
 import {skeletonFile, readSkeletonFile, applySkeleton} from '../../src/modeler/skeleton-file.mjs';
 import {exportGlb, importGltf} from '../../src/modeler/gltf-format.mjs';
+import {stageOf, evaluateOnStage} from './stage-pose.mjs';
 
 export const FIXTURE = new URL('../fixtures/weight-golden.json', import.meta.url);
 const bone = (model, name) => model.bones.find(b => b.name === name)?.id;
@@ -35,15 +36,23 @@ export function weightsOf(model) {
   }));
 }
 
-/** Every part's points moved by a fixed pose (the modeler's Pose preview). */
-export function posedOf(model) {
+/** A fixed pose: an arm, a leg, the spine and the head turned. */
+export function fixedPose(model) {
   const turns = [['UpperArm.L', [0, 0, 1], .6], ['LowerArm.L', [1, 0, 0], .8], ['Thigh.R', [1, 0, 0], -.5], ['Spine', [0, 1, 0], .3], ['Head', [1, 0, 0], .25]];
   const pose = new Map(turns.filter(([n]) => bone(model, n)).map(([n, axis, angle]) => [bone(model, n), axisAngle(axis, angle)]));
   if (!pose.size && model.bones.length) pose.set(model.bones.at(-1).id, axisAngle([1, 0, 0], .5));
-  const frames = poseFrames(model, pose);
+  return pose;
+}
+
+/** The stage figure's points in that pose ([x, y] per vertex, figure space). */
+export const stagedOf = model => { const stage = stageOf(model); return [...evaluateOnStage(stage, fixedPose(stage.model)).positions]; };
+
+/** Every part's points moved by a fixed pose (the modeler's Pose preview). */
+export function posedOf(model) {
+  const frames = poseFrames(model, fixedPose(model));
   return Object.fromEntries(model.parts.filter(p => p.mesh.faces.length).map(p => {
     const mesh = evaluatePart(p);
-    return [`${p.id}:${p.name}`, posedMesh(mesh, partWeights(model, mesh, p), frames).verts.map(q => q.slice())];
+    return [`${p.id}:${p.name}`, posedMesh(mesh, partWeights(model, mesh, p), frames, skinningMethod(model)).verts.map(q => q.slice())];
   }));
 }
 
@@ -83,6 +92,7 @@ export async function goldenResults() {
     const model = await example(name);
     out[`${name}.weights`] = weightsOf(model);
     out[`${name}.posed`] = posedOf(model);
+    out[`${name}.stage`] = stagedOf(model);
     out[`${name}.gltf`] = storedOf(modelFromGltf(exportGlb(model)));
   }
   const painted = await example('juniper');

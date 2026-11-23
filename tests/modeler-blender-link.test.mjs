@@ -113,3 +113,21 @@ test('parts follow the skeleton as they did in Blender: bone parent, weights, or
   assert.equal(by('Cape').bone, undefined, 'an Armature modifier means weights');
   assert.equal(arm.bone, id('UpperArm.L'), 'an untouched bound part keeps its bone');
 });
+
+test('Preserve Volume travels to Blender and comes back when switched there', () => {
+  const model = hero();
+  let {doc, session} = startBlenderLink(model);
+  assert.equal(doc.preserveVolume, true, 'Blender\'s Armature modifiers bend as the Pose preview and the stage do');
+  // Blender's script reports the setting; left as sent, nothing changes.
+  applyBlenderLink(model, {...JSON.parse(JSON.stringify(untouched(doc))), preserveVolume: true}, session);
+  assert.equal(model.preserveVolume, undefined);
+  applyBlenderLink(model, {...JSON.parse(JSON.stringify(untouched(doc))), preserveVolume: false}, session);
+  assert.equal(model.preserveVolume, false, 'turned off in Blender');
+  ({doc, session} = startBlenderLink(model));
+  assert.equal(doc.preserveVolume, false);
+  // A reply without the setting (no Armature modifier) leaves the model's own.
+  applyBlenderLink(model, JSON.parse(JSON.stringify(untouched(doc))), session);
+  assert.equal(model.preserveVolume, false);
+  applyBlenderLink(model, {...JSON.parse(JSON.stringify(untouched(doc))), preserveVolume: true}, session);
+  assert.equal(model.preserveVolume, undefined, 'turned back on in Blender');
+});

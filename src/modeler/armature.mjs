@@ -294,6 +294,12 @@ export function sideResolver(model) {
   const byName = new Map(model.bones.map(b => [b.name, b.id])), byId = new Map(model.bones.map(b => [b.id, b]));
   return id => id >= 0 ? id : (byName.get(otherSide(byId.get(-id)?.name ?? '')) ?? -id);
 }
+/** How the model bends where a point follows several bones (src/skinning.mjs):
+ * 'dual-quaternion' with Preserve Volume on (the default, as the stage has
+ * always done), 'linear' with it off (model.preserveVolume === false). The Pose
+ * preview, the stage and Open in Blender all use it. */
+export const skinningMethod = model => (model.preserveVolume === false ? 'linear' : 'dual-quaternion');
+
 /** A point's weights as deformation uses them: real bones only, the four
  * strongest, adding up to 1 (limitTotal); null when none. */
 function cleanPairs(model, list, resolve = sideResolver(model)) {

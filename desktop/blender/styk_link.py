@@ -325,6 +325,8 @@ def build(doc, folder):
             obj.matrix_world = Y_TO_Z @ rows(p["matrix"]) @ Z_TO_Y
             mod = obj.modifiers.new("Armature", "ARMATURE")
             mod.object = arm_obj
+            # 3D Nowdz's Preserve Volume: dual-quaternion bending, as its Pose preview and stage.
+            mod.use_deform_preserve_volume = bool(doc.get("preserveVolume", True))
         if not p.get("visible", True):
             obj.hide_set(True)
 
@@ -636,8 +638,12 @@ def collect():
             src = None
         if src:
             sent.append({"key": key, "name": image.name, "src": src})
+    # Preserve Volume as the first Armature modifier on the skeleton has it (None: no such modifier).
+    preserve = next((bool(m.use_deform_preserve_volume) for o in candidates for m in o.modifiers
+                     if m.type == "ARMATURE" and arm_obj is not None and m.object == arm_obj), None)
     return {"format": LINK_FORMAT, "version": LINK_VERSION, "blender": bpy.app.version_string,
-            "name": scene.get("styk_name", "3D model"), "materials": materials, "textures": sent, "parts": parts, "bones": bones}
+            "name": scene.get("styk_name", "3D model"), "materials": materials, "textures": sent, "parts": parts, "bones": bones,
+            **({} if preserve is None else {"preserveVolume": preserve})}
 
 
 def send(*_):

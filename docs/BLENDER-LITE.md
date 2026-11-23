@@ -320,8 +320,10 @@ the computer and nothing is installed into Blender.
   become live Blender modifiers and come back as settings. Creases, line weights
   (`styk_line`) and custom normals (`styk_normal`) ride as attributes; bones
   become an armature with Strength and Reach as bone properties; every part
-  gets the weights the animation uses as vertex groups; reference images become
-  image empties where 3D Nowdz shows them.
+  gets the weights the animation uses as vertex groups, and its Armature
+  modifier takes the model's **Preserve volume** (`preserveVolume` in the
+  document; switched in Blender, it comes back); reference images become image
+  empties where 3D Nowdz shows them.
 - Coming back, objects and bones are matched by a key (new ones get their own),
   so a renamed bone keeps its id and the animations on it. An object Blender
   didn't change leaves its part exactly as it is in 3D Nowdz (edits made here
@@ -1077,11 +1079,26 @@ every bone and **Stop posing** (or leaving the Bones tab) ends it. A pose is
 only a preview: it isn't saved, isn't an undo step and never moves the bones'
 rest positions; G, R and S are blocked while posing.
 
+**Preserve volume** (Bones panel > Skeleton, on by default, as Blender's
+Armature modifier option) sets how a point between bones bends: on, the bones'
+motions are blended as dual quaternions, so a bent or twisted joint keeps its
+thickness; off, Blender's default linear blend, which pinches at bent elbows,
+knees and waists. The Pose preview, the stage and Open in Blender all follow it,
+so the preview bends exactly as the animation will. Stored as
+`model.preserveVolume = false` when off; the stage mesh gets `skinning:
+'linear'` (docs/SPATIAL-MESHES.md). Figures made before keep their meshes as
+they were.
+
 `src/modeler/pose.mjs`: a pose is a Map of bone id → quaternion about the
 bone's head in the rest frame; `poseFrames` composes parents first
-(`turn = parent.turn · own`, the head carried by the parent), `posedMesh` is
-linear blend skinning with `partWeights`, and `turnBone` turns a bone by a
-rotation given in the scene's frame.
+(`turn = parent.turn · own`, the head carried by the parent), `posedMesh`
+moves points with the stage's own skinning (`src/skinning.mjs`, `skinPoint`,
+each bone's frame as the stage keeps it: rotate by `turn`, then move by
+`at − turn·head`) by `skinningMethod(model)`, and `turnBone` turns a bone by a
+rotation given in the scene's frame. Before, the preview used a linear blend of
+its own while the stage used dual quaternions, so the two differed by up to
+about 0.02 model units at bent joints; `tests/skinning.test.mjs` checks they
+now agree to 0.00001 for both settings.
 
 ### Face sets
 

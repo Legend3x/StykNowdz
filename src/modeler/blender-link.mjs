@@ -85,11 +85,13 @@ export function startBlenderLink(model) {
   const references = (model.references ?? []).filter(r => r && /^data:image\/(png|jpeg|webp);base64,/.test(r.src ?? ''))
     .map(r => ({view: r.view === 'side' ? 'side' : 'front', src: r.src, opacity: r.opacity ?? .5, height: r.height ?? 2, offsetX: r.offsetX ?? 0, offsetY: r.offsetY ?? 0, flip: r.flip === true}));
   const textures = (model.textures ?? []).map(t => ({key: `tex-${t.id}`, name: t.name, src: t.src}));
-  const doc = {format: LINK_FORMAT, version: LINK_VERSION, name: model.name || '3D model', palette: model.palette.map(c => c.slice()), parts, bones, references, ...(textures.length ? {textures} : {})};
+  // Preserve Volume: Blender's Armature modifiers bend the same way as the Pose preview and the stage.
+  const doc = {format: LINK_FORMAT, version: LINK_VERSION, name: model.name || '3D model', palette: model.palette.map(c => c.slice()), parts, bones, references, preserveVolume: model.preserveVolume !== false, ...(textures.length ? {textures} : {})};
   const session = {
     parts: new Map(model.parts.map((part, i) => [parts[i].key, {id: part.id, last: {...parts[i], colors: parts[i].colors.map(c => model.palette[c] ?? [200, 200, 200])}}])),
     bones: new Map(bones.map((b, i) => [b.key, {id: ordered[i].id, last: b}])),
     textures: new Map(textures.map(t => [t.key, t.src])),
+    preserveVolume: doc.preserveVolume,
   };
   return {doc, session};
 }
@@ -226,6 +228,11 @@ export function setExtras(part, {solidify, clip, mirrorU}) {
 export function applyBlenderLink(model, rawReply, session) {
   const reply = readBlenderReply(rawReply);
   const report = {changed: 0, added: 0, removed: 0, kept: 0, baked: 0, painted: 0, textures: 0, bones: {changed: 0, added: 0, removed: 0}};
+
+  // Preserve Volume switched in Blender (on the skeleton's Armature modifiers) comes back; left as sent, the model keeps its own.
+  if (typeof rawReply.preserveVolume === 'boolean' && rawReply.preserveVolume !== session.preserveVolume) {
+    if (rawReply.preserveVolume) delete model.preserveVolume; else model.preserveVolume = false;
+  }
 
   // Textures: 3D Nowdz's own by key (a new picture replaces theirs); images Blender added become new ones.
   const textureId = new Map(), sentTextures = session.textures ?? new Map();

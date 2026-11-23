@@ -108,6 +108,8 @@ export default Object.freeze({
   "modeler.paintMaskClear": "Paint everywhere",
   "modeler.poseHint": "Pose turns bones so you can see how the model bends before you animate it. It changes nothing: Stop posing puts every bone back.",
   "modeler.poseStart": "Pose",
+  "modeler.preserveVolume": "Preserve volume",
+  "modeler.preserveVolumeHint": "Bent joints keep their thickness, as with Blender's Preserve Volume. Turn it off for Blender's default bending, which can pinch at elbows and knees. The Pose preview, your animation and Blender all follow this.",
   "modeler.poseStop": "Stop posing",
   "modeler.poseReset": "Reset pose",
   "modeler.poseStatus": "Posing: drag a bone to turn it (the bones below follow). Weight painting works on the bent model too.",

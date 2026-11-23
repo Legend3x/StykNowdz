@@ -102,6 +102,8 @@ export function readModel(value, {repaired = []} = {}) {
   // Vertex groups: one per bone (same id), any without a bone, locks; and the weight paint options.
   syncGroups(model);
   if (model.weightPaint !== undefined) { if (model.weightPaint?.autoNormalize === false) model.weightPaint = {autoNormalize: false}; else delete model.weightPaint; }
+  // Preserve Volume (Blender's Armature modifier option, src/skinning.mjs): on by default, stored only when off.
+  if (model.preserveVolume !== false) delete model.preserveVolume;
   // Layers (docs/BLENDER-LITE.md, "Layers"): folders of parts, each part in at most one
   // folder, folders inside folders; a locked part can't be picked in the view.
   const folders = Array.isArray(model.folders) ? model.folders.filter(f => f && Number.isInteger(f.id) && f.id > 0) : [];

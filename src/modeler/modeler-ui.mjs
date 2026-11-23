@@ -10,7 +10,7 @@ import {createUVEditor} from './uv-editor.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged} from './armature.mjs';
+import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged, skinningMethod} from './armature.mjs';
 import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
   originOf, setOrigin, connections, tracedLines, lineOf, otherEnd, swapChoiceOf, hiddenBySwap, showChoice, swapSetProblem, makeSwapSet, plainFolder, choiceKey, choicesOf} from './layers.mjs';
 import {starterFace, stickToFace, faceFrame, facePart} from './face-sets.mjs';
@@ -1230,6 +1230,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('p', {class: 'modeler-hint', text: model.bones.length ? t("modeler.boneCount", {count: model.bones.length}) : t("modeler.noBonesHint")}),
         model.bones.length ? null : actions([[t("modeler.humanoidSkeleton"), addHumanoid, t("modeler.humanoidSkeletonHint")], [t("modeler.addBone"), addSingleBone]]),
         model.bones.length ? el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.weights, onchange: e => { S.weights = e.target.checked; refresh(); }}), t("modeler.showWeights")]) : null,
+        // Preserve Volume (Blender's Armature modifier option): how joints bend in the Pose preview, on the stage and in Blender.
+        model.bones.length ? el('label', {class: 'modeler-check', title: t("modeler.preserveVolumeHint")}, [el('input', {type: 'checkbox', 'data-preserve-volume': '', checked: model.preserveVolume !== false,
+          onchange: e => commit(() => { if (e.target.checked) delete model.preserveVolume; else model.preserveVolume = false; })}), t("modeler.preserveVolume")]) : null,
         // Pose mode: turn bones to see the model bend, without changing the skeleton.
         model.bones.length ? el('p', {class: 'modeler-hint', text: t("modeler.poseHint")}) : null,
         model.bones.length ? actions([[S.posing ? t("modeler.poseStop") : t("modeler.poseStart"), () => setPosing(!S.posing), t("modeler.poseHint")],
@@ -1350,7 +1353,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         }
       }
       // Pose mode: the shape bent by its weights (the rest shape kept for the weight brush).
-      const frames = poseNow(), shown = frames ? posedMesh(mesh, skinOf(p, mesh), frames) : mesh;
+      const frames = poseNow(), shown = frames ? posedMesh(mesh, skinOf(p, mesh), frames, skinningMethod(model)) : mesh;
       items.push({mesh: shown, restMesh: mesh, palette: model.palette, partId: p.id, weights, flat: p.shadows === false, muted: Boolean(weights && paintingNow() && S.parts.size && !S.parts.has(p.id))});
       // The outline shell (not pickable), in the toon preview.
       const hull = S.toonPreview && !weights ? hullOf(p) : null;
