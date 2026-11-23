@@ -67,8 +67,8 @@ if (flag === '--expect-unchanged') {
   expect(Object.keys(part('Skirt')?.mesh.vdata?.crease ?? {}).length > 0, 'creases come back');
   expect(part('Skirt')?.solidify > 0, 'the skirt keeps its live Solidify');
   expect(bone('Sword')?.parent === bone('Hand.R')?.id, 'the new Sword bone hangs from Hand.R');
-  expect(bone('Jaw.Main') && !bone('Jaw'), 'a renamed bone is renamed, not replaced');
-  expect(state.model.bones.find(b => b.name === 'Jaw')?.id === bone('Jaw.Main')?.id, 'a renamed bone keeps its id');
+  expect(bone('Chest.Main') && !bone('Chest'), 'a renamed bone is renamed, not replaced');
+  expect(state.model.bones.find(b => b.name === 'Chest')?.id === bone('Chest.Main')?.id, 'a renamed bone keeps its id');
   expect(Math.abs((bone('Shoulder.L')?.strength ?? 1) - .3) < 1e-6, 'bone Strength set in Blender comes back');
   expect(Object.keys(part('Sword')?.mesh.vdata?.skin ?? {}).length > 0, "the sword keeps the weights painted in Blender");
   expect(merge.baked >= 6, 'Bevel/Boolean/Remesh/text/curve/array objects come back baked');

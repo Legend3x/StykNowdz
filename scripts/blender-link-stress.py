@@ -199,7 +199,7 @@ if mode == "detail":
     eb = arm.data.edit_bones.new("Sword")
     eb.head, eb.tail = (-.42, -.06, .4), (-.42, -.06, -.1)
     eb.parent = arm.data.edit_bones["Hand.R"]
-    arm.data.edit_bones["Jaw"].name = "Jaw.Main"
+    arm.data.edit_bones["Chest"].name = "Chest.Main"
     bpy.ops.object.mode_set(mode="OBJECT")
     for side in "LR":
         arm.data.bones["Shoulder.%s" % side]["Strength"] = .3
