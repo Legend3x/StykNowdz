@@ -13,6 +13,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - Weight painting has its own toolbar, like Photoshop: tools down the left of the view and their options along the top.
 - Weight painting is more precise: the brush paints only what you can see inside its circle, and a Constant falloff paints the circle evenly.
 - Save a 3D Nowdz skeleton to its own file and load it back, or onto another model.
+- Zero weights in black, in 3D Nowdz's Bones panel, shows exactly which points a bone doesn't move at all.
 - Turn off Preserve volume in 3D Nowdz's Bones panel to bend joints Blender's default way; the Pose preview, your animation and Blender follow it.
 - Unwrap in 3D Nowdz lays the selected faces, points or edges flat in one piece, the right way up. On a Mirror part both halves show as one face, each with its own side of the texture.
 - 3D Nowdz models can have textures: images painted onto their faces show in 3D Nowdz, on the stage, in playback and in exports. Turn them off under View > Textures.
@@ -77,6 +78,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 ### Fixed
 
 - 3D Nowdz's Pose preview now bends your model exactly as it will move in your animation.
+- Weight colours in 3D Nowdz now match Blender's and blend smoothly across faces instead of showing one flat colour per face.
 - Fixed weight painting in 3D Nowdz quietly changing other bones' weights where a point is moved by more than four bones. Every bone's weight is now kept, and models open with exactly the weights they were saved with.
 - Rigged .glb models from Blender come into 3D Nowdz cleaner: only the bones that move the model come in, a model built with Mirror gets both halves, and toon or unlit textures show.
 - Fixed 3D Nowdz foot bones moving nothing when the boots or shoes cover the ankles. The foot now moves the bottom of the boot and the shin moves the top.

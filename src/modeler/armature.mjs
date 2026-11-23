@@ -266,24 +266,59 @@ export function segmentDistance(p, a, b) {
 export function partWeights(model, mesh, part, options = {}) {
   const kept = part?.mesh?.vdata?.skin;
   if (!kept || !Object.keys(kept).length) return autoWeights(model, mesh, part, options);
-  const full = completeSkin(model, part, options), n = mesh.verts.length, resolve = sideResolver(model);
-  const out = {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
+  const n = mesh.verts.length, out = {bones: new Array(n * 4).fill(0), weights: new Array(n * 4).fill(0)};
   const write = (v, pairs) => pairs.forEach(([b, w], k) => { out.bones[v * 4 + k] = b; out.weights[v * 4 + k] = w; });
-  if (options.cage) { for (let v = 0; v < n; v++) { const pairs = full[v] && cleanPairs(model, full[v]); if (pairs) write(v, pairs); } return out; }
+  if (options.cage) { const full = completeSkin(model, part, options); for (let v = 0; v < n; v++) { const pairs = full[v] && cleanPairs(model, full[v]); if (pairs) write(v, pairs); } return out; }
+  const {auto, carried} = evaluatedSkin(model, mesh, part, options), resolve = sideResolver(model);
+  if (!carried) return auto;
+  for (let v = 0; v < n; v++) {
+    const from = carried(v), own = from ? cleanPairs(model, from.pairs, resolve) : null;
+    if (!own) { for (let k = 0; k < 4; k++) { out.bones[v * 4 + k] = auto.bones[v * 4 + k]; out.weights[v * 4 + k] = auto.weights[v * 4 + k]; } continue; }
+    const m = from.share, mix = own.map(([b, w]) => [b, w * m]);
+    for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] && auto.weights[v * 4 + k] > 0) mix.push([auto.bones[v * 4 + k], auto.weights[v * 4 + k] * (1 - m)]);
+    write(v, cleanPairs(model, mix, resolve) ?? []);
+  }
+  return out;
+}
+
+/** What an evaluated part's points carry before deformation picks four bones each: its
+ * automatic weights (`auto`, four slots a point) and, when the part's own points carry weights,
+ * `carried(v)`: the evaluated point's carried list (every group, untrimmed, ids as stored: a
+ * Mirror copy's are negated) and its share of the point (0–1), or null where it has none.
+ * `carried` is null when nothing is carried, or the mesh isn't this part's evaluated shape. */
+function evaluatedSkin(model, mesh, part, options = {}) {
+  const kept = part?.mesh?.vdata?.skin;
+  if (!kept || !Object.keys(kept).length) return {auto: autoWeights(model, mesh, part, options), carried: null};
+  const full = completeSkin(model, part, options), n = mesh.verts.length;
   // How much of each smoothed point comes from carried points: carried as a
   // point value (0 on carried points, as Smooth averages a missing value as 1).
   const share = Object.fromEntries(Object.keys(kept).map(v => [v, 0]));
   const shaped = evaluatePart({...part, mesh: {...part.mesh, vdata: {...part.mesh.vdata, skin: full, line: share}}});
   const auto = autoWeights(model, mesh, part, options);
   // Not this part's shape after all (some other evaluation): weights from its own surface.
-  if (shaped.verts.length !== n) return auto;
-  for (let v = 0; v < n; v++) {
+  if (shaped.verts.length !== n) return {auto, carried: null};
+  return {auto, carried: v => {
     const from = shaped.vdata?.line?.[v], m = from === undefined ? 0 : Math.max(0, Math.min(1, 1 - from));
-    const own = m > 1e-6 ? cleanPairs(model, shaped.vdata?.skin?.[v], resolve) : null;
-    if (!own) { for (let k = 0; k < 4; k++) { out.bones[v * 4 + k] = auto.bones[v * 4 + k]; out.weights[v * 4 + k] = auto.weights[v * 4 + k]; } continue; }
-    const mix = own.map(([b, w]) => [b, w * m]);
-    for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] && auto.weights[v * 4 + k] > 0) mix.push([auto.bones[v * 4 + k], auto.weights[v * 4 + k] * (1 - m)]);
-    write(v, cleanPairs(model, mix, resolve) ?? []);
+    return m > 1e-6 && shaped.vdata?.skin?.[v] ? {pairs: shaped.vdata.skin[v], share: m} : null;
+  }};
+}
+
+/** One vertex group's weight at every point of a part's evaluated `mesh`, as Weight Paint
+ * shows it (weight-display.mjs): the group's own value, every group kept (not cut to the four
+ * deformation uses), blended with the automatic weights where carried and automatic points
+ * meet, as partWeights blends them. A Float64Array, one weight a point. */
+export function groupWeights(model, mesh, part, group) {
+  const n = mesh.verts.length, out = new Float64Array(n), {auto, carried} = evaluatedSkin(model, mesh, part), resolve = sideResolver(model);
+  const bones = new Set(model.bones.map(b => b.id));
+  for (let v = 0; v < n; v++) {
+    let automatic = 0;
+    for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] === group) automatic += auto.weights[v * 4 + k];
+    const from = carried?.(v);
+    // A carried list with no bone in it leaves the point automatic, as partWeights does.
+    if (!from || !from.pairs.some(([g, w]) => w > 0 && bones.has(resolve(g)))) { out[v] = automatic; continue; }
+    let own = 0;
+    for (const [g, w] of from.pairs) if (w > 0 && resolve(g) === group) own += w;
+    out[v] = own * from.share + automatic * (1 - from.share);
   }
   return out;
 }

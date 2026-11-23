@@ -5,6 +5,7 @@ import {sub, dot, cross, normalize, add, scale, length, isOpenMesh} from './mesh
 import {about, rotationAxis, transformPoint} from './matrix.mjs';
 import {toonLight, toonThreshold, shadowColor, inkColor} from '../toon-shading.mjs';
 import {vertexBatch} from './depth-pass.mjs';
+import {weightRgb, weightUv, weightRampImage, fillWeightPolygon} from './weight-display.mjs';
 
 export const VIEW_COLORS = Object.freeze({
   background: '#e8eaee', grid: 'rgba(40,48,60,.10)', gridStrong: 'rgba(40,48,60,.22)', axisX: 'rgba(214,72,72,.75)', axisZ: 'rgba(60,110,214,.75)',
@@ -103,8 +104,11 @@ const css = rgb => `rgb(${rgb.join(',')})`;
 const WIRE_RGBA = (([r, g, b, a]) => [[+r, +g, +b], Math.round(+a * 255)])(VIEW_COLORS.wire.match(/[\d.]+/g));
 
 /**
- * Paint the scene. `items` are {mesh, palette, partId, highlight, weights?}
- * with world-space meshes. Returns the painted polygon list (front last) for picking.
+ * Paint the scene. `items` are {mesh, palette, partId, highlight, weights?,
+ * zeroBlack?} with world-space meshes; `weights` is one weight per point of the
+ * mesh (the selected bone's group, groupWeights), drawn as Blender's Weight
+ * Paint draws it (weight-display.mjs), with `zeroBlack` points at 0 in black.
+ * Returns the painted polygon list (front last) for picking.
  */
 // Area-weighted unit vertex normals (or custom ones), cached per (immutable) evaluated mesh.
 const normalCache = new WeakMap();
@@ -166,7 +170,7 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     }
   }
   if (showGrid) drawGrid(ctx, frame);
-  const light = normalize(add(add(scale(frame.back, .85), scale(frame.up, .45)), scale(frame.right, .25)));
+  const light3 = normalize(add(add(scale(frame.back, .85), scale(frame.up, .45)), scale(frame.right, .25)));
   // The stage's toon light is fixed to the viewer: x right, y down, z toward the viewer.
   const toonDir = toon?.shadows ? (([x, y, z]) => add(add(scale(frame.right, x), scale(frame.up, -y)), scale(frame.back, z)))(toonLight(toon.turn, toon.height)) : null;
   const cut = toon ? toonThreshold(toon.size) : 0;
@@ -205,13 +209,33 @@ export function paint(ctx, frame, items, {xray = false, wire = false, references
     const {item, face} = poly;
     let rgb = poly.image ? [255, 255, 255] : item.palette[face.c] ?? item.palette[0] ?? [200, 200, 200];
     if (face.ink !== undefined) rgb = inkColor(rgb, face.ink);
-    if (item.weights) rgb = weightColor(item.weights[poly.fi] ?? 0);
-    // Outside what the weight brush may paint: greyed.
+    // Weights: blended from point to point and coloured per pixel (below); a muted part
+    // (outside what the weight brush may paint) is one greyed colour, its points' average.
+    const blended = item.weights && !item.muted, corners = item.weights ? face.v.map(i => item.weights[i] ?? 0) : null;
+    if (item.weights) rgb = weightRgb(corners.reduce((s, w) => s + w, 0) / corners.length);
     if (item.muted) rgb = rgb.map(v => v * .35 + 120 * .65);
+    const light = .42 + .62 * Math.abs(dot(poly.n, light3));
+    if (blended) {
+      // Not brighter than the ramp itself, so the WebGL pass (a texture times its tint) and the canvas agree.
+      const lit = Math.min(1, light), black = item.zeroBlack ? corners.map(w => (w <= 0 ? 1 : 0)) : null, ramp = zbuffer && weightRampImage();
+      if (ramp) {
+        const batch = batchOf(ramp), tint = shadeRgb([255, 255, 255], lit), pts = poly.pts, uv = corners.map((w, k) => weightUv(w, black?.[k] === 1));
+        for (let i = 1; i + 1 < pts.length; i++) for (const k of [0, i, i + 1]) { const p = pts[k]; batch.push(sx(p.x), sy(p.y), p.d, tint, 255, uv[k][0], uv[k][1], p.w ?? 1); }
+        if (lines) poly.pts.forEach((p, i) => { const q = poly.pts[(i + 1) % poly.pts.length]; lines.push(sx(p.x), sy(p.y), p.d, WIRE_RGBA[0], WIRE_RGBA[1]); lines.push(sx(q.x), sy(q.y), q.d, WIRE_RGBA[0], WIRE_RGBA[1]); });
+        continue;
+      }
+      if (!zbuffer) {
+        ctx.globalAlpha = xray ? .55 : 1;
+        fillWeightPolygon(ctx, poly.pts, corners, lit, black);
+        if (wire) { ctx.beginPath(); poly.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.strokeStyle = VIEW_COLORS.wire; ctx.lineWidth = 1; ctx.stroke(); }
+        ctx.globalAlpha = 1;
+        continue;
+      }
+    }
     // Toon: flat lit colour, cut along the exact shadow line (as the stage does).
     const pieces = toon && !item.weights
       ? (toonDir && !item.flat && poly.side ? splitByShadow(poly.pts, poly.side) : [[poly.pts, true]]).map(([pts, lit]) => [pts, shadeRgb(lit ? rgb : shadowColor(rgb, toon.strength), 1)])
-      : [[poly.pts, shadeRgb(rgb, .42 + .62 * Math.abs(dot(poly.n, light)))]];
+      : [[poly.pts, shadeRgb(rgb, light)]];
     if (zbuffer) {
       const batch = poly.image ? batchOf(poly.image) : tris;
       for (const [pts, fill] of pieces) for (let i = 1; i + 1 < pts.length; i++) for (const p of [pts[0], pts[i], pts[i + 1]]) batch.push(sx(p.x), sy(p.y), p.d, fill, 255, p.uv?.[0] ?? 0, p.uv?.[1] ?? 0, p.w ?? 1);
@@ -280,12 +304,6 @@ export function openOf(mesh) {
   const open = isOpenMesh(mesh);
   openMeshes.set(mesh.faces, {corners, verts: mesh.verts.length, count: mesh.faces.length, open});
   return open;
-}
-
-/** Blue (0) → green → red (1), as in weight painting. */
-export function weightColor(w) {
-  const t = Math.max(0, Math.min(1, w));
-  return t < .5 ? [40, 80 + 340 * t, 255 - 300 * t] : [40 + 430 * (t - .5), 250 - 400 * (t - .5), 105 - 150 * (t - .5)].map(v => Math.max(0, Math.min(255, v)));
 }
 
 /** Grid spacing in world units for a flat view: the finest step at least

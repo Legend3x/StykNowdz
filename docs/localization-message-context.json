@@ -29678,7 +29678,7 @@
   },
   "modeler.addAPartFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3520"
+      "src/modeler/modeler-ui.mjs:3518"
     ],
     "context": "if (!model.parts.some(p => p.visible !== false && p.mesh.faces.length)) { toast(t(\"modeler.addAPartFirst\")); return; }"
   },
@@ -29698,7 +29698,7 @@
   },
   "modeler.addShape": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2341"
+      "src/modeler/modeler-ui.mjs:2339"
     ],
     "context": "const name = g.kind.startsWith('add-') ? t(\"modeler.addShape\", {shape: p.name}) : t(LAST_OP_NAMES[g.kind]);"
   },
@@ -29742,13 +29742,13 @@
     "locations": [
       "src/modeler/modeler-ui.mjs:391",
       "src/modeler/modeler-ui.mjs:1193",
-      "src/modeler/modeler-ui.mjs:2690"
+      "src/modeler/modeler-ui.mjs:2688"
     ],
     "context": "const shapes = [['baseCharacter', t(\"modeler.baseCharacter\")], ['cube', t(\"modeler.cube\")], ['sphere', t(\"modeler.sphere\")], ['capsule', t(\"modeler.capsule\")], "
   },
   "modeler.baseCharacterAdded": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2687"
+      "src/modeler/modeler-ui.mjs:2685"
     ],
     "context": "toast(t(\"modeler.baseCharacterAdded\"));"
   },
@@ -29760,33 +29760,33 @@
   },
   "modeler.bendStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1290"
+      "src/modeler/modeler-ui.mjs:1292"
     ],
     "context": "const text = m?.tweak ? t(S.mode !== 'bones' ? \"modeler.dragStatus\" : m.stretch ? \"modeler.stretchStatus\" : m.kind === 'rotate' ? \"modeler.bendStatus\" : \"modele"
   },
   "modeler.bevel": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1204",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "actions([[t(\"modeler.extrude\"), extrude, 'E'], [t(\"modeler.inset\"), startInset, 'I'], [t(\"modeler.bevel\"), () => startBevel(S.selectMode === 'vert' && !M.edgesF"
   },
   "modeler.bevelSegments": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328"
+      "src/modeler/modeler-ui.mjs:2326"
     ],
     "context": "bevel: () => [['width', t(\"modeler.bevelWidth\"), {step: .005, min: .0001, max: 100}], ['segments', t(\"modeler.bevelSegments\"), {step: 1, min: 1, max: 12, whole:"
   },
   "modeler.bevelStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1292"
+      "src/modeler/modeler-ui.mjs:1294"
     ],
     "context": ": m?.kind === 'inset' ? t(\"modeler.insetStatus\") : m?.kind === 'bevel' ? t(\"modeler.bevelStatus\", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind ="
   },
   "modeler.bevelWidth": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2328",
-      "src/modeler/modeler-ui.mjs:2329"
+      "src/modeler/modeler-ui.mjs:2326",
+      "src/modeler/modeler-ui.mjs:2327"
     ],
     "context": "bevel: () => [['width', t(\"modeler.bevelWidth\"), {step: .005, min: .0001, max: 100}], ['segments', t(\"modeler.bevelSegments\"), {step: 1, min: 1, max: 12, whole:"
   },
@@ -29798,45 +29798,45 @@
   },
   "modeler.blenderClosed": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2996"
+      "src/modeler/modeler-ui.mjs:2994"
     ],
     "context": "function blenderClosed() { toast(t(\"modeler.blenderClosed\")); }"
   },
   "modeler.blenderLinked": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2969"
+      "src/modeler/modeler-ui.mjs:2967"
     ],
     "context": "toast(t(\"modeler.blenderLinked\"));"
   },
   "modeler.blenderMerged": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2988"
+      "src/modeler/modeler-ui.mjs:2986"
     ],
     "context": "const said = touched ? t(\"modeler.blenderMerged\", {changed: report.changed, added: report.added, removed: report.removed, bones: report.bones.changed + report.b"
   },
   "modeler.blenderNoChanges": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2989"
+      "src/modeler/modeler-ui.mjs:2987"
     ],
     "context": ": t(\"modeler.blenderNoChanges\");"
   },
   "modeler.blenderOtherModel": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2982"
+      "src/modeler/modeler-ui.mjs:2980"
     ],
     "context": "if (model.parts.length && link.session.parts.size && ![...link.session.parts.values()].some(entry => ids.has(entry.id))) { toast(t(\"modeler.blenderOtherModel\"))"
   },
   "modeler.blenderTooDetailed": {
     "locations": [
       "src/modeler/modeler-ui.mjs:725",
-      "src/modeler/modeler-ui.mjs:2992"
+      "src/modeler/modeler-ui.mjs:2990"
     ],
     "context": "toast(points > MESH_LIMITS.vertices ? `${done} ${t(\"modeler.blenderTooDetailed\", {points: points.toLocaleString(), limit: MESH_LIMITS.vertices.toLocaleString()}"
   },
   "modeler.blenderTools": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1262",
-      "src/modeler/modeler-ui.mjs:1263"
+      "src/modeler/modeler-ui.mjs:1264",
+      "src/modeler/modeler-ui.mjs:1265"
     ],
     "context": "if (desktop()?.runBlenderEngine && S.mode === 'object') blocks.push(section(t(\"modeler.blenderTools\"), blenderTools(p)));"
   },
@@ -29854,7 +29854,7 @@
   },
   "modeler.bone": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1242"
+      "src/modeler/modeler-ui.mjs:1244"
     ],
     "context": "if (bone) blocks.push(section(t(\"modeler.bone\"), ["
   },
@@ -29866,19 +29866,19 @@
   },
   "modeler.bonePullHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1253"
+      "src/modeler/modeler-ui.mjs:1255"
     ],
     "context": "boneState(bone) === 'grouped' ? el('p', {class: 'modeler-hint', text: t(\"modeler.bonePullHint\")}) : null,"
   },
   "modeler.boneRange": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1252"
+      "src/modeler/modeler-ui.mjs:1254"
     ],
     "context": "boneState(bone) === 'grouped' ? liveSlider(t(\"modeler.boneRange\"), pullOf(bone).range, 0, 1, .01, {format: v => v > 0 ? fmt(v) : t(\"modeler.noLimit\"), preview: "
   },
   "modeler.boneRangeHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1252"
+      "src/modeler/modeler-ui.mjs:1254"
     ],
     "context": "boneState(bone) === 'grouped' ? liveSlider(t(\"modeler.boneRange\"), pullOf(bone).range, 0, 1, .01, {format: v => v > 0 ? fmt(v) : t(\"modeler.noLimit\"), preview: "
   },
@@ -29891,7 +29891,7 @@
   },
   "modeler.bonesHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1240"
+      "src/modeler/modeler-ui.mjs:1242"
     ],
     "context": "el('p', {class: 'modeler-hint', text: S.posing ? t(\"modeler.poseStatus\") : t(\"modeler.bonesHint\")})]));"
   },
@@ -29909,37 +29909,37 @@
   },
   "modeler.bonesStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1293"
+      "src/modeler/modeler-ui.mjs:1295"
     ],
     "context": ": S.mode === 'edit' ? t(\"modeler.editStatus\") : S.mode === 'bones' && S.posing && !paintingNow() ? t(\"modeler.poseStatus\") : paintingNow() ? t(\"modeler.paintSta"
   },
   "modeler.boneStrength": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1251"
+      "src/modeler/modeler-ui.mjs:1253"
     ],
     "context": "boneState(bone) === 'grouped' ? liveSlider(t(\"modeler.boneStrength\"), pullOf(bone).strength, 0, STRENGTH_MAX, .05, {preview: v => setPull(bone, {strength: v}), "
   },
   "modeler.boneStrengthHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1251"
+      "src/modeler/modeler-ui.mjs:1253"
     ],
     "context": "boneState(bone) === 'grouped' ? liveSlider(t(\"modeler.boneStrength\"), pullOf(bone).strength, 0, STRENGTH_MAX, .05, {preview: v => setPull(bone, {strength: v}), "
   },
   "modeler.boneToSelection": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1248"
+      "src/modeler/modeler-ui.mjs:1250"
     ],
     "context": "merged ? null : actions([[t(\"modeler.boneToSelection\"), boneToSelection, t(\"modeler.boneToSelectionHint\")]]),"
   },
   "modeler.boneToSelectionEmpty": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2778"
+      "src/modeler/modeler-ui.mjs:2776"
     ],
     "context": "if (!points.length) { toast(t(\"modeler.boneToSelectionEmpty\")); return; }"
   },
   "modeler.boneToSelectionHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1248"
+      "src/modeler/modeler-ui.mjs:1250"
     ],
     "context": "merged ? null : actions([[t(\"modeler.boneToSelection\"), boneToSelection, t(\"modeler.boneToSelectionHint\")]]),"
   },
@@ -29999,7 +29999,7 @@
   },
   "modeler.bridged": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2382"
+      "src/modeler/modeler-ui.mjs:2380"
     ],
     "context": "commit(() => { const made = M.bridge(p.mesh, S.verts, {color: paintColor(p), facing: localFacing(p)}); S.cache.delete(p.id); toast(t(\"modeler.bridged\", {count: "
   },
@@ -30090,14 +30090,14 @@
   "modeler.capsule": {
     "locations": [
       "src/modeler/modeler-ui.mjs:391",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2690"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2688"
     ],
     "context": "const shapes = [['baseCharacter', t(\"modeler.baseCharacter\")], ['cube', t(\"modeler.cube\")], ['sphere', t(\"modeler.sphere\")], ['capsule', t(\"modeler.capsule\")], "
   },
   "modeler.chooseAnObjFile": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3007"
+      "src/modeler/modeler-ui.mjs:3005"
     ],
     "context": "if (!objFile) { toast(t(\"modeler.chooseAnObjFile\")); return; }"
   },
@@ -30110,8 +30110,8 @@
   "modeler.circle": {
     "locations": [
       "src/modeler/modeler-ui.mjs:392",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2691"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2689"
     ],
     "context": "['cone', t(\"modeler.cone\")], ['torus', t(\"modeler.torus\")], ['plane', t(\"modeler.plane\")], ['circle', t(\"modeler.circle\")], ['point', t(\"modeler.singlePoint\")]]"
   },
@@ -30138,8 +30138,8 @@
   "modeler.close": {
     "locations": [
       "src/modeler/modeler-ui.mjs:228",
-      "src/modeler/modeler-ui.mjs:1420",
-      "src/modeler/modeler-ui.mjs:3192"
+      "src/modeler/modeler-ui.mjs:1418",
+      "src/modeler/modeler-ui.mjs:3190"
     ],
     "context": "button(t(\"modeler.close\"), requestClose),"
   },
@@ -30164,15 +30164,15 @@
   "modeler.cone": {
     "locations": [
       "src/modeler/modeler-ui.mjs:392",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2691"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2689"
     ],
     "context": "['cone', t(\"modeler.cone\")], ['torus', t(\"modeler.torus\")], ['plane', t(\"modeler.plane\")], ['circle', t(\"modeler.circle\")], ['point', t(\"modeler.singlePoint\")]]"
   },
   "modeler.connectCancelled": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3286",
-      "src/modeler/modeler-ui.mjs:3436"
+      "src/modeler/modeler-ui.mjs:3284",
+      "src/modeler/modeler-ui.mjs:3434"
     ],
     "context": "if (v !== null && v !== from) joinPoints(q, from, v); else { toast(t(\"modeler.connectCancelled\")); draw(); }"
   },
@@ -30209,68 +30209,68 @@
   },
   "modeler.controlsBones": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.controlsHide": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3201"
+      "src/modeler/modeler-ui.mjs:3199"
     ],
     "context": "el('div', {class: 'modeler-controls-foot'}, [el('label', {class: 'modeler-check'}, [hide, t(\"modeler.controlsHide\")]), ok])]);"
   },
   "modeler.controlsLede": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3195"
+      "src/modeler/modeler-ui.mjs:3193"
     ],
     "context": "el('p', {class: 'modeler-controls-lede', text: t(\"modeler.controlsLede\")}),"
   },
   "modeler.controlsLook": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.controlsOk": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3191"
+      "src/modeler/modeler-ui.mjs:3189"
     ],
     "context": "const ok = el('button', {type: 'button', class: 'modeler-button modeler-primary', onclick: closeControls}, t(\"modeler.controlsOk\"));"
   },
   "modeler.controlsSelect": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.controlsShape": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.controlsTitle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3193",
-      "src/modeler/modeler-ui.mjs:3194"
+      "src/modeler/modeler-ui.mjs:3191",
+      "src/modeler/modeler-ui.mjs:3192"
     ],
     "context": "const card = el('div', {class: 'modeler-controls-card', role: 'dialog', 'aria-label': t(\"modeler.controlsTitle\")}, ["
   },
   "modeler.couldNotAdd": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3522"
+      "src/modeler/modeler-ui.mjs:3520"
     ],
     "context": "catch (error) { toast(error.modelerMessage ? error.message : (error.message || t(\"modeler.couldNotAdd\"))); }"
   },
   "modeler.creaseNeedsSmooth": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1323"
+      "src/modeler/modeler-ui.mjs:1325"
     ],
     "context": "if (!p.smooth) toast(t(\"modeler.creaseNeedsSmooth\"));"
   },
   "modeler.ctrlClickFromOnePoint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2286"
+      "src/modeler/modeler-ui.mjs:2284"
     ],
     "context": "if (S.verts.size > 1) { toast(t(\"modeler.ctrlClickFromOnePoint\")); return; }"
   },
@@ -30278,16 +30278,16 @@
     "locations": [
       "src/modeler/modeler-ui.mjs:391",
       "src/modeler/modeler-ui.mjs:1193",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2690"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2688"
     ],
     "context": "const shapes = [['baseCharacter', t(\"modeler.baseCharacter\")], ['cube', t(\"modeler.cube\")], ['sphere', t(\"modeler.sphere\")], ['capsule', t(\"modeler.capsule\")], "
   },
   "modeler.cylinder": {
     "locations": [
       "src/modeler/modeler-ui.mjs:391",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2690"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2688"
     ],
     "context": "const shapes = [['baseCharacter', t(\"modeler.baseCharacter\")], ['cube', t(\"modeler.cube\")], ['sphere', t(\"modeler.sphere\")], ['capsule', t(\"modeler.capsule\")], "
   },
@@ -30352,7 +30352,7 @@
   "modeler.deleteSelected": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1208",
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "[t(\"modeler.deleteSelected\"), deleteSelection, 'X'], [t(\"modeler.dissolve\"), dissolve, 'Ctrl+X'], [t(\"modeler.duplicateSelected\"), duplicateSelected, 'Shift+D']"
   },
@@ -30394,7 +30394,7 @@
   },
   "modeler.dragStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1290"
+      "src/modeler/modeler-ui.mjs:1292"
     ],
     "context": "const text = m?.tweak ? t(S.mode !== 'bones' ? \"modeler.dragStatus\" : m.stretch ? \"modeler.stretchStatus\" : m.kind === 'rotate' ? \"modeler.bendStatus\" : \"modele"
   },
@@ -30425,7 +30425,7 @@
   },
   "modeler.edgeSlideStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1292"
+      "src/modeler/modeler-ui.mjs:1294"
     ],
     "context": ": m?.kind === 'inset' ? t(\"modeler.insetStatus\") : m?.kind === 'bevel' ? t(\"modeler.bevelStatus\", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind ="
   },
@@ -30469,7 +30469,7 @@
   },
   "modeler.editStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1293"
+      "src/modeler/modeler-ui.mjs:1295"
     ],
     "context": ": S.mode === 'edit' ? t(\"modeler.editStatus\") : S.mode === 'bones' && S.posing && !paintingNow() ? t(\"modeler.poseStatus\") : paintingNow() ? t(\"modeler.paintSta"
   },
@@ -30561,7 +30561,7 @@
   },
   "modeler.exampleOpened": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2676"
+      "src/modeler/modeler-ui.mjs:2674"
     ],
     "context": "refresh(); toast(t(\"modeler.exampleOpened\", {name: loaded.name}));"
   },
@@ -30586,32 +30586,32 @@
   "modeler.extrude": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1204",
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "actions([[t(\"modeler.extrude\"), extrude, 'E'], [t(\"modeler.inset\"), startInset, 'I'], [t(\"modeler.bevel\"), () => startBevel(S.selectMode === 'vert' && !M.edgesF"
   },
   "modeler.extrudeBone": {
     "locations": [
       "src/modeler/modeler-ui.mjs:479",
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "menuLine(), menuItem(t(\"modeler.extrudeBone\"), () => { S.bones = new Set([b.id]); if (S.mode !== 'bones') setMode('bones'); extrudeBone(); }, {title: 'E'}),"
   },
   "modeler.extrudeKept": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2225"
+      "src/modeler/modeler-ui.mjs:2223"
     ],
     "context": "if (m.keep && m.target) { resetTarget(m.target); confirmModal(); toast(t(\"modeler.extrudeKept\")); return; }"
   },
   "modeler.extrudeTowardYou": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2267"
+      "src/modeler/modeler-ui.mjs:2265"
     ],
     "context": "if (world && Math.abs(M.dot(world, frame.back)) > .97) toast(t(\"modeler.extrudeTowardYou\"));"
   },
   "modeler.face2d.across": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1701"
+      "src/modeler/modeler-ui.mjs:1699"
     ],
     "context": "liveSlider(t(\"modeler.face2d.across\"), f.x, 0, 1, .002, {preview: x => { f.x = x; S.faceCanvas = null; }}),"
   },
@@ -30624,7 +30624,7 @@
   },
   "modeler.face2d.added": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1598"
+      "src/modeler/modeler-ui.mjs:1596"
     ],
     "context": "lookAtFace(); toast(t(\"modeler.face2d.added\"));"
   },
@@ -30637,19 +30637,19 @@
   },
   "modeler.face2d.addState": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1693"
+      "src/modeler/modeler-ui.mjs:1691"
     ],
     "context": "button(t(\"modeler.face2d.addState\"), () => { if (states.length >= FACE_STATES) return; editFace(() => { src.states.splice(v.s + 1, 0, {...structuredClone(states"
   },
   "modeler.face2d.addStateHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1693"
+      "src/modeler/modeler-ui.mjs:1691"
     ],
     "context": "button(t(\"modeler.face2d.addState\"), () => { if (states.length >= FACE_STATES) return; editFace(() => { src.states.splice(v.s + 1, 0, {...structuredClone(states"
   },
   "modeler.face2d.angle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1704"
+      "src/modeler/modeler-ui.mjs:1702"
     ],
     "context": "liveSlider(t(\"modeler.face2d.angle\"), f.angle, -45, 45, 1, {format: x => `${Math.round(x)}°`, preview: a => { f.angle = a; S.faceCanvas = null; }}));"
   },
@@ -30661,19 +30661,19 @@
   },
   "modeler.face2d.blush": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1558"
+      "src/modeler/modeler-ui.mjs:1556"
     ],
     "context": "mouth: t(\"modeler.face2d.mouth\"), blush: t(\"modeler.face2d.blush\"), sweat: t(\"modeler.face2d.sweat\")});"
   },
   "modeler.face2d.browL": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1557"
+      "src/modeler/modeler-ui.mjs:1555"
     ],
     "context": "const FACE_NAMES = () => ({eyeL: t(\"modeler.face2d.eyeL\"), eyeR: t(\"modeler.face2d.eyeR\"), browL: t(\"modeler.face2d.browL\"), browR: t(\"modeler.face2d.browR\"),"
   },
   "modeler.face2d.browR": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1557"
+      "src/modeler/modeler-ui.mjs:1555"
     ],
     "context": "const FACE_NAMES = () => ({eyeL: t(\"modeler.face2d.eyeL\"), eyeR: t(\"modeler.face2d.eyeR\"), browL: t(\"modeler.face2d.browL\"), browR: t(\"modeler.face2d.browR\"),"
   },
@@ -30686,105 +30686,105 @@
   },
   "modeler.face2d.eyeL": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1557"
+      "src/modeler/modeler-ui.mjs:1555"
     ],
     "context": "const FACE_NAMES = () => ({eyeL: t(\"modeler.face2d.eyeL\"), eyeR: t(\"modeler.face2d.eyeR\"), browL: t(\"modeler.face2d.browL\"), browR: t(\"modeler.face2d.browR\"),"
   },
   "modeler.face2d.eyeR": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1557"
+      "src/modeler/modeler-ui.mjs:1555"
     ],
     "context": "const FACE_NAMES = () => ({eyeL: t(\"modeler.face2d.eyeL\"), eyeR: t(\"modeler.face2d.eyeR\"), browL: t(\"modeler.face2d.browL\"), browR: t(\"modeler.face2d.browR\"),"
   },
   "modeler.face2d.eyeWhite": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1630"
+      "src/modeler/modeler-ui.mjs:1628"
     ],
     "context": "? [{key: 'under', name: t(\"modeler.face2d.eyeWhite\"), src: state.under}, {key: 'over', name: t(\"modeler.face2d.lids\"), src: state.over}]"
   },
   "modeler.face2d.hint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1684"
+      "src/modeler/modeler-ui.mjs:1682"
     ],
     "context": "const out = [el('p', {class: 'modeler-hint', text: t(\"modeler.face2d.hint\")}), el('div', {class: 'modeler-face-list'}, rows),"
   },
   "modeler.face2d.lids": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1630"
+      "src/modeler/modeler-ui.mjs:1628"
     ],
     "context": "? [{key: 'under', name: t(\"modeler.face2d.eyeWhite\"), src: state.under}, {key: 'over', name: t(\"modeler.face2d.lids\"), src: state.over}]"
   },
   "modeler.face2d.lookX": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1696"
+      "src/modeler/modeler-ui.mjs:1694"
     ],
     "context": "if (f.kind === 'eye') out.push(liveSlider(t(\"modeler.face2d.lookX\"), v.x, -1, 1, .05, {preview: x => previewFace(f.id, {x})}), liveSlider(t(\"modeler.face2d.look"
   },
   "modeler.face2d.lookY": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1696"
+      "src/modeler/modeler-ui.mjs:1694"
     ],
     "context": "if (f.kind === 'eye') out.push(liveSlider(t(\"modeler.face2d.lookX\"), v.x, -1, 1, .05, {preview: x => previewFace(f.id, {x})}), liveSlider(t(\"modeler.face2d.look"
   },
   "modeler.face2d.mirrorOf": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1711"
+      "src/modeler/modeler-ui.mjs:1709"
     ],
     "context": "...pair.slice(0, 2).map(g => button(t(\"modeler.face2d.mirrorOf\", {name: g.name}), () => editFace(() => { f.mirrorOf = g.id; }), {title: t(\"modeler.face2d.mirror"
   },
   "modeler.face2d.mirrorOfHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1711"
+      "src/modeler/modeler-ui.mjs:1709"
     ],
     "context": "...pair.slice(0, 2).map(g => button(t(\"modeler.face2d.mirrorOf\", {name: g.name}), () => editFace(() => { f.mirrorOf = g.id; }), {title: t(\"modeler.face2d.mirror"
   },
   "modeler.face2d.mirrors": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1683"
+      "src/modeler/modeler-ui.mjs:1681"
     ],
     "context": "[el('span', {text: g.name}), el('small', {text: g.mirrorOf ? t(\"modeler.face2d.mirrors\", {name: faceFeatureOf(g.mirrorOf)?.name ?? ''}) : t(`modeler.face2d.kind"
   },
   "modeler.face2d.mouth": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1558"
+      "src/modeler/modeler-ui.mjs:1556"
     ],
     "context": "mouth: t(\"modeler.face2d.mouth\"), blush: t(\"modeler.face2d.blush\"), sweat: t(\"modeler.face2d.sweat\")});"
   },
   "modeler.face2d.newState": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1693"
+      "src/modeler/modeler-ui.mjs:1691"
     ],
     "context": "button(t(\"modeler.face2d.addState\"), () => { if (states.length >= FACE_STATES) return; editFace(() => { src.states.splice(v.s + 1, 0, {...structuredClone(states"
   },
   "modeler.face2d.noFront": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1585",
-      "src/modeler/modeler-ui.mjs:1590"
+      "src/modeler/modeler-ui.mjs:1583",
+      "src/modeler/modeler-ui.mjs:1588"
     ],
     "context": "if (!faceUnwrap(target)) throw Object.assign(new RangeError(t(\"modeler.face2d.noFront\")), {modelerMessage: true});"
   },
   "modeler.face2d.noHead": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1573",
-      "src/modeler/modeler-ui.mjs:1579"
+      "src/modeler/modeler-ui.mjs:1571",
+      "src/modeler/modeler-ui.mjs:1577"
     ],
     "context": "if (!p || !p.mesh.faces.length) { toast(t(\"modeler.face2d.noHead\")); return; }"
   },
   "modeler.face2d.ownDrawings": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1710"
+      "src/modeler/modeler-ui.mjs:1708"
     ],
     "context": "f.mirrorOf ? button(t(\"modeler.face2d.ownDrawings\"), () => editFace(() => { f.states = structuredClone(src.states); if (src.pupil) f.pupil = structuredClone(src"
   },
   "modeler.face2d.ownDrawingsHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1710"
+      "src/modeler/modeler-ui.mjs:1708"
     ],
     "context": "f.mirrorOf ? button(t(\"modeler.face2d.ownDrawings\"), () => editFace(() => { f.states = structuredClone(src.states); if (src.pupil) f.pupil = structuredClone(src"
   },
   "modeler.face2d.paintPupil": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1707"
+      "src/modeler/modeler-ui.mjs:1705"
     ],
     "context": "onPaintTexture ? actions([[t(\"modeler.face2d.paintPupil\"), () => paintPupil(f)]]) : null);"
   },
@@ -30802,109 +30802,109 @@
   },
   "modeler.face2d.paintState": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1692"
+      "src/modeler/modeler-ui.mjs:1690"
     ],
     "context": "onPaintTexture ? button(t(\"modeler.face2d.paintState\"), () => paintFaceState(f, v.s), {title: t(\"modeler.face2d.paintStateHint\")}) : null,"
   },
   "modeler.face2d.paintStateHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1692"
+      "src/modeler/modeler-ui.mjs:1690"
     ],
     "context": "onPaintTexture ? button(t(\"modeler.face2d.paintState\"), () => paintFaceState(f, v.s), {title: t(\"modeler.face2d.paintStateHint\")}) : null,"
   },
   "modeler.face2d.place": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1700"
+      "src/modeler/modeler-ui.mjs:1698"
     ],
     "context": "out.push(el('h4', {class: 'modeler-subhead', text: t(\"modeler.face2d.place\")}),"
   },
   "modeler.face2d.pupil": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1640"
+      "src/modeler/modeler-ui.mjs:1638"
     ],
     "context": "onPaintTexture({paint: {name: `${f.name} · ${t(\"modeler.face2d.pupil\")}`, width: 256, height: 256, layers: [{key: 'src', name: t(\"modeler.face2d.pupil\"), src: f"
   },
   "modeler.face2d.pupilSize": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1706"
+      "src/modeler/modeler-ui.mjs:1704"
     ],
     "context": "liveSlider(t(\"modeler.face2d.pupilSize\"), src.pupil.size, .1, 1, .01, {preview: x => { src.pupil.size = x; S.faceCanvas = null; }}),"
   },
   "modeler.face2d.raise": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1697"
+      "src/modeler/modeler-ui.mjs:1695"
     ],
     "context": "if (f.kind === 'brow') out.push(liveSlider(t(\"modeler.face2d.raise\"), v.r, -1, 1, .05, {preview: r => previewFace(f.id, {r})}), liveSlider(t(\"modeler.face2d.til"
   },
   "modeler.face2d.removeFace": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1714"
+      "src/modeler/modeler-ui.mjs:1712"
     ],
     "context": "button(t(\"modeler.face2d.removeFace\"), () => { editFace(() => { delete model.face; }); S.faceFeature = undefined; })]));"
   },
   "modeler.face2d.removeFeature": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1712"
+      "src/modeler/modeler-ui.mjs:1710"
     ],
     "context": "button(t(\"modeler.face2d.removeFeature\"), () => removeFaceFeature(f))].filter(Boolean)));"
   },
   "modeler.face2d.removeState": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1694"
+      "src/modeler/modeler-ui.mjs:1692"
     ],
     "context": "states.length > 1 ? button(t(\"modeler.face2d.removeState\"), () => { editFace(() => { src.states.splice(v.s, 1); }); previewFace(f.id, {s: Math.max(0, v.s - 1)})"
   },
   "modeler.face2d.renameState": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1719"
+      "src/modeler/modeler-ui.mjs:1717"
     ],
     "context": "const input = el('input', {type: 'text', class: 'modeler-rename', value: f.states[i].name, maxlength: '40', 'aria-label': t(\"modeler.face2d.renameState\")});"
   },
   "modeler.face2d.resetPreview": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1713"
+      "src/modeler/modeler-ui.mjs:1711"
     ],
     "context": "out.push(el('div', {class: 'modeler-actions'}, [button(t(\"modeler.face2d.resetPreview\"), () => { S.facePreview = {}; renderProps(); draw(); }),"
   },
   "modeler.face2d.show": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1698"
+      "src/modeler/modeler-ui.mjs:1696"
     ],
     "context": "if (f.kind === 'extra') out.push(liveSlider(t(\"modeler.face2d.show\"), v.o, 0, 1, .05, {format: x => `${Math.round(x * 100)}%`, preview: o => previewFace(f.id, {"
   },
   "modeler.face2d.size": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1703"
+      "src/modeler/modeler-ui.mjs:1701"
     ],
     "context": "liveSlider(t(\"modeler.face2d.size\"), 1, .25, 2.5, .01, {format: x => `${Math.round(x * 100)}%`, preview: (() => { const w0 = f.w, h0 = f.h; return k => { f.w = "
   },
   "modeler.face2d.stateHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1689"
+      "src/modeler/modeler-ui.mjs:1687"
     ],
     "context": "el('div', {class: 'modeler-face-states'}, states.map((st, i) => el('button', {type: 'button', class: 'modeler-chip', 'aria-pressed': String(i === v.s), title: t"
   },
   "modeler.face2d.states": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1688"
+      "src/modeler/modeler-ui.mjs:1686"
     ],
     "context": "out.push(el('h4', {class: 'modeler-subhead', text: t(\"modeler.face2d.states\")}),"
   },
   "modeler.face2d.sweat": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1558"
+      "src/modeler/modeler-ui.mjs:1556"
     ],
     "context": "mouth: t(\"modeler.face2d.mouth\"), blush: t(\"modeler.face2d.blush\"), sweat: t(\"modeler.face2d.sweat\")});"
   },
   "modeler.face2d.textureName": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1586"
+      "src/modeler/modeler-ui.mjs:1584"
     ],
     "context": "id = addTexture(model, {name: t(\"modeler.face2d.textureName\", {name: p.name}), ...bakeColours([target])}).id;"
   },
   "modeler.face2d.tilt": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1697"
+      "src/modeler/modeler-ui.mjs:1695"
     ],
     "context": "if (f.kind === 'brow') out.push(liveSlider(t(\"modeler.face2d.raise\"), v.r, -1, 1, .05, {preview: r => previewFace(f.id, {r})}), liveSlider(t(\"modeler.face2d.til"
   },
@@ -30916,25 +30916,25 @@
   },
   "modeler.face2d.tooMany": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1655"
+      "src/modeler/modeler-ui.mjs:1653"
     ],
     "context": "if (count >= FACE_FEATURES) { toast(t(\"modeler.face2d.tooMany\", {limit: FACE_FEATURES})); return; }"
   },
   "modeler.face2d.upDown": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1702"
+      "src/modeler/modeler-ui.mjs:1700"
     ],
     "context": "liveSlider(t(\"modeler.face2d.upDown\"), f.y, 0, 1, .002, {preview: y => { f.y = y; S.faceCanvas = null; }}),"
   },
   "modeler.faceBone": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1254"
+      "src/modeler/modeler-ui.mjs:1256"
     ],
     "context": "merged ? null : el('label', {class: 'modeler-check', title: t(\"modeler.faceBoneHint\")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e"
   },
   "modeler.faceBoneHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1254"
+      "src/modeler/modeler-ui.mjs:1256"
     ],
     "context": "merged ? null : el('label', {class: 'modeler-check', title: t(\"modeler.faceBoneHint\")}, [el('input', {type: 'checkbox', checked: Boolean(bone.face), onchange: e"
   },
@@ -30947,7 +30947,7 @@
   },
   "modeler.faceBonesAdded": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2763"
+      "src/modeler/modeler-ui.mjs:2761"
     ],
     "context": "const run = () => commit(() => { const meshes = evaluateModel(model, {smooth: false}).map(x => x.mesh); const added = newBones(() => faceSkeleton(model, meshes)"
   },
@@ -30960,25 +30960,25 @@
   },
   "modeler.faceCut": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1256"
+      "src/modeler/modeler-ui.mjs:1258"
     ],
     "context": "bone.face && !merged ? el('label', {class: 'modeler-field modeler-wide', title: t(\"modeler.faceCutHint\")}, [el('span', {text: t(\"modeler.faceCut\")}), el('select"
   },
   "modeler.faceCut.none": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1257"
+      "src/modeler/modeler-ui.mjs:1259"
     ],
     "context": "['', ...FACE_CUTS].map(c => el('option', {value: c, text: t(c ? `modeler.faceCut.${c}` : \"modeler.faceCut.none\"), selected: (bone.cut ?? '') === c})))]) : null,"
   },
   "modeler.faceCutHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1256"
+      "src/modeler/modeler-ui.mjs:1258"
     ],
     "context": "bone.face && !merged ? el('label', {class: 'modeler-field modeler-wide', title: t(\"modeler.faceCutHint\")}, [el('span', {text: t(\"modeler.faceCut\")}), el('select"
   },
   "modeler.faceReach": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1255"
+      "src/modeler/modeler-ui.mjs:1257"
     ],
     "context": "bone.face && !merged ? field(t(\"modeler.faceReach\"), bone.reach, v => commit(() => { setFace(bone, {...faceOf(bone), reach: v}); S.cache.clear(); }), {step: .01"
   },
@@ -30997,20 +30997,20 @@
   "modeler.fill": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1205",
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "[t(\"modeler.subdivide\"), subdivide, t(\"modeler.subdivideHint\")], [t(\"modeler.merge\") + ' ▾', e => merge(e?.currentTarget), 'M'], [t(\"modeler.fill\"), fill, 'F'],"
   },
   "modeler.fillFan": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2333"
+      "src/modeler/modeler-ui.mjs:2331"
     ],
     "context": "const FILL_CHOICES = () => [['ngon', t(\"modeler.fillNgon\")], ['fan', t(\"modeler.fillFan\")], ['none', t(\"modeler.fillNothing\")]];"
   },
   "modeler.fillHoles": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1205",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "[t(\"modeler.subdivide\"), subdivide, t(\"modeler.subdivideHint\")], [t(\"modeler.merge\") + ' ▾', e => merge(e?.currentTarget), 'M'], [t(\"modeler.fill\"), fill, 'F'],"
   },
@@ -31022,13 +31022,13 @@
   },
   "modeler.fillNgon": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2333"
+      "src/modeler/modeler-ui.mjs:2331"
     ],
     "context": "const FILL_CHOICES = () => [['ngon', t(\"modeler.fillNgon\")], ['fan', t(\"modeler.fillFan\")], ['none', t(\"modeler.fillNothing\")]];"
   },
   "modeler.fillNothing": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2333"
+      "src/modeler/modeler-ui.mjs:2331"
     ],
     "context": "const FILL_CHOICES = () => [['ngon', t(\"modeler.fillNgon\")], ['fan', t(\"modeler.fillFan\")], ['none', t(\"modeler.fillNothing\")]];"
   },
@@ -31061,7 +31061,7 @@
   },
   "modeler.flipImageHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3093"
+      "src/modeler/modeler-ui.mjs:3091"
     ],
     "context": "menuItem(ref.flip ? t(\"modeler.ref.unflip\") : t(\"modeler.ref.flip\"), () => flipRef(ref), {title: t(\"modeler.flipImageHint\")}),"
   },
@@ -31098,7 +31098,7 @@
   },
   "modeler.frameSelected": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
@@ -31122,14 +31122,14 @@
   },
   "modeler.grid": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1272"
+      "src/modeler/modeler-ui.mjs:1274"
     ],
     "context": "el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.grid, onchange: e => { S.grid = e.target.checked; refresh(); }}), t(\"modeler.gr"
   },
   "modeler.gridFill": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1205",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "[t(\"modeler.subdivide\"), subdivide, t(\"modeler.subdivideHint\")], [t(\"modeler.merge\") + ' ▾', e => merge(e?.currentTarget), 'M'], [t(\"modeler.fill\"), fill, 'F'],"
   },
@@ -31141,13 +31141,13 @@
   },
   "modeler.gridOffset": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2323"
+      "src/modeler/modeler-ui.mjs:2321"
     ],
     "context": "grid: g => [['span', t(\"modeler.gridSpan\"), {step: 1, min: 1, max: Math.max(1, g.sel.length / 2 - 1), whole: true}], ['offset', t(\"modeler.gridOffset\"), {step: "
   },
   "modeler.gridSpan": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2323"
+      "src/modeler/modeler-ui.mjs:2321"
     ],
     "context": "grid: g => [['span', t(\"modeler.gridSpan\"), {step: 1, min: 1, max: Math.max(1, g.sel.length / 2 - 1), whole: true}], ['offset', t(\"modeler.gridOffset\"), {step: "
   },
@@ -31190,7 +31190,7 @@
   },
   "modeler.head": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1247"
+      "src/modeler/modeler-ui.mjs:1249"
     ],
     "context": "merged ? null : vector(t(\"modeler.head\"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), merged ? null : vector(t(\"modeler.tail\"), bone.tail, (k, v)"
   },
@@ -31203,7 +31203,7 @@
   "modeler.hide": {
     "locations": [
       "src/modeler/modeler-ui.mjs:261",
-      "src/modeler/modeler-ui.mjs:3096"
+      "src/modeler/modeler-ui.mjs:3094"
     ],
     "context": "const eyeOf = (shown, toggle) => el('button', {type: 'button', class: 'modeler-eye', title: shown ? t(\"modeler.hide\") : t(\"modeler.show\"), 'aria-pressed': Strin"
   },
@@ -31215,7 +31215,7 @@
   },
   "modeler.holeSides": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2325"
+      "src/modeler/modeler-ui.mjs:2323"
     ],
     "context": "holes: () => [['sides', t(\"modeler.holeSides\"), {step: 1, min: 0, max: 1000, whole: true}]],"
   },
@@ -31237,19 +31237,19 @@
   },
   "modeler.importedGltf": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2952"
+      "src/modeler/modeler-ui.mjs:2950"
     ],
     "context": "toast(t(\"modeler.importedGltf\", {parts: result.parts.length, bones: result.bones.length}));"
   },
   "modeler.importedObj": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3016"
+      "src/modeler/modeler-ui.mjs:3014"
     ],
     "context": "if (added) { frameSelected(); toast(uncolored ? t(\"modeler.importedObjNoMtl\", {count: uncolored}) : t(\"modeler.importedObj\")); }"
   },
   "modeler.importedObjNoMtl": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3016"
+      "src/modeler/modeler-ui.mjs:3014"
     ],
     "context": "if (added) { frameSelected(); toast(uncolored ? t(\"modeler.importedObjNoMtl\", {count: uncolored}) : t(\"modeler.importedObj\")); }"
   },
@@ -31262,55 +31262,55 @@
   "modeler.inset": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1204",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "actions([[t(\"modeler.extrude\"), extrude, 'E'], [t(\"modeler.inset\"), startInset, 'I'], [t(\"modeler.bevel\"), () => startBevel(S.selectMode === 'vert' && !M.edgesF"
   },
   "modeler.insetAmount": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2327"
+      "src/modeler/modeler-ui.mjs:2325"
     ],
     "context": "inset: () => [['amount', t(\"modeler.insetAmount\"), {step: .02, min: .01, max: .99}]],"
   },
   "modeler.insetStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1292"
+      "src/modeler/modeler-ui.mjs:1294"
     ],
     "context": ": m?.kind === 'inset' ? t(\"modeler.insetStatus\") : m?.kind === 'bevel' ? t(\"modeler.bevelStatus\", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind ="
   },
   "modeler.joinedMirrored": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2732"
+      "src/modeler/modeler-ui.mjs:2730"
     ],
     "context": "toast(t(target.mirror ? \"modeler.joinedMirrored\" : \"modeler.joinedParts\", {name: target.name}));"
   },
   "modeler.joinedParts": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2732"
+      "src/modeler/modeler-ui.mjs:2730"
     ],
     "context": "toast(t(target.mirror ? \"modeler.joinedMirrored\" : \"modeler.joinedParts\", {name: target.name}));"
   },
   "modeler.joinedToMiddle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2824"
+      "src/modeler/modeler-ui.mjs:2822"
     ],
     "context": "toast(t(\"modeler.joinedToMiddle\", {count: S.verts.size}));"
   },
   "modeler.joinMirrorApply": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2712"
+      "src/modeler/modeler-ui.mjs:2710"
     ],
     "context": "{yesLabel: t(\"modeler.joinMirrorKeep\"), noLabel: t(\"modeler.joinMirrorApply\"), no: () => joinParts({mirrorChoice: 'apply'})});"
   },
   "modeler.joinMirrorAsk": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2711"
+      "src/modeler/modeler-ui.mjs:2709"
     ],
     "context": "askConfirm(t(\"modeler.joinMirrorAsk\", {name: target.name}), () => joinParts({mirrorChoice: 'keep'}),"
   },
   "modeler.joinMirrorKeep": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2712"
+      "src/modeler/modeler-ui.mjs:2710"
     ],
     "context": "{yesLabel: t(\"modeler.joinMirrorKeep\"), noLabel: t(\"modeler.joinMirrorApply\"), no: () => joinParts({mirrorChoice: 'apply'})});"
   },
@@ -31340,20 +31340,20 @@
   },
   "modeler.joinToMiddleSelect": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2818"
+      "src/modeler/modeler-ui.mjs:2816"
     ],
     "context": "if (!p || !S.verts.size) { toast(t(\"modeler.joinToMiddleSelect\")); return; }"
   },
   "modeler.keep": {
     "locations": [
       "src/modeler/modeler-ui.mjs:459",
-      "src/modeler/modeler-ui.mjs:3159"
+      "src/modeler/modeler-ui.mjs:3157"
     ],
     "context": "{yesLabel: t(\"modeler.delete\"), noLabel: t(\"modeler.keep\")}), {danger: true})]);"
   },
   "modeler.keepBothHalves": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2796"
+      "src/modeler/modeler-ui.mjs:2794"
     ],
     "context": "askConfirm(t(\"modeler.mirrorOffAsk\"), () => applyMirror(p), {yesLabel: t(\"modeler.keepBothHalves\"), noLabel: t(\"modeler.removeMirroredHalf\"),"
   },
@@ -31371,135 +31371,135 @@
   },
   "modeler.keepModeling": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2911",
-      "src/modeler/modeler-ui.mjs:2934",
-      "src/modeler/modeler-ui.mjs:3177"
+      "src/modeler/modeler-ui.mjs:2909",
+      "src/modeler/modeler-ui.mjs:2932",
+      "src/modeler/modeler-ui.mjs:3175"
     ],
     "context": "if (model.bones.length) askConfirm(t(\"modeler.replaceSkeleton\"), load, {yesLabel: t(\"modeler.loadSkeleton\"), noLabel: t(\"modeler.keepModeling\")}); else load();"
   },
   "modeler.keysAddPoint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysAxis": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysClick": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysClickKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysDrag": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysDragKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysEdgeSlide": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysLoopCut": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysLoopSelect": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysOrbit": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysOrbitKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysPan": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysPanKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysSelectMode": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysStretch": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysStretchKeys": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "group(t(\"modeler.controlsBones\"), [[t(\"modeler.keysDragKeys\"), t(\"modeler.keysDrag\")], [t(\"modeler.keysStretchKeys\"), t(\"modeler.keysStretch\")], ['E', t(\"modele"
   },
   "modeler.keysTab": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "group(t(\"modeler.controlsSelect\"), [[t(\"modeler.keysClickKeys\"), t(\"modeler.keysClick\")], ['Alt+click', t(\"modeler.keysLoopSelect\")], ['A', t(\"modeler.selectAll"
   },
   "modeler.keysTransform": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "group(t(\"modeler.controlsShape\"), [['G / R / S', t(\"modeler.keysTransform\")], ['G G', t(\"modeler.keysEdgeSlide\")], ['X Y Z', t(\"modeler.keysAxis\")], ['E', t(\"mo"
   },
   "modeler.keysViews": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysWheel": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
   "modeler.keysZoom": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3197"
+      "src/modeler/modeler-ui.mjs:3195"
     ],
     "context": "group(t(\"modeler.controlsLook\"), [[t(\"modeler.keysOrbitKeys\"), t(\"modeler.keysOrbit\")], [t(\"modeler.keysPanKeys\"), t(\"modeler.keysPan\")], [t(\"modeler.keysWheel\""
   },
@@ -31511,25 +31511,25 @@
   },
   "modeler.knifeClickEdge": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3267"
+      "src/modeler/modeler-ui.mjs:3265"
     ],
     "context": "if (hit) { S.modal.path.push(hit); setStatus(); draw(); } else toast(t(\"modeler.knifeClickEdge\"));"
   },
   "modeler.knifeNeedsFaces": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2430"
+      "src/modeler/modeler-ui.mjs:2428"
     ],
     "context": "if (!p.mesh.faces.length) { toast(t(\"modeler.knifeNeedsFaces\")); return; }"
   },
   "modeler.knifeNeedsTwo": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2467"
+      "src/modeler/modeler-ui.mjs:2465"
     ],
     "context": "if (m.path.length < 2) { restore(m.before); toast(t(\"modeler.knifeNeedsTwo\")); return; }"
   },
   "modeler.knifeStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1292"
+      "src/modeler/modeler-ui.mjs:1294"
     ],
     "context": ": m?.kind === 'inset' ? t(\"modeler.insetStatus\") : m?.kind === 'bevel' ? t(\"modeler.bevelStatus\", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind ="
   },
@@ -31602,7 +31602,7 @@
   "modeler.loadSkeleton": {
     "locations": [
       "src/modeler/modeler-ui.mjs:220",
-      "src/modeler/modeler-ui.mjs:2911"
+      "src/modeler/modeler-ui.mjs:2909"
     ],
     "context": "el('button', {type: 'button', class: 'modeler-menu-item', title: t(\"modeler.loadSkeletonHint\"), onclick: () => { closePopover(); loadSkeletonFile(); }}, t(\"mode"
   },
@@ -31614,8 +31614,8 @@
   },
   "modeler.lockedTo": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1288",
-      "src/modeler/modeler-ui.mjs:1291"
+      "src/modeler/modeler-ui.mjs:1290",
+      "src/modeler/modeler-ui.mjs:1293"
     ],
     "context": "if (S.refModal) { const m = S.refModal; status.textContent = m.edgeOn ? t(\"modeler.ref.edgeOn\") : t(m.kind === 'move' ? \"modeler.ref.moveStatus\" : \"modeler.ref."
   },
@@ -31646,13 +31646,13 @@
   },
   "modeler.loopCutStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1292"
+      "src/modeler/modeler-ui.mjs:1294"
     ],
     "context": ": m?.kind === 'inset' ? t(\"modeler.insetStatus\") : m?.kind === 'bevel' ? t(\"modeler.bevelStatus\", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind ="
   },
   "modeler.loopSlideStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1292"
+      "src/modeler/modeler-ui.mjs:1294"
     ],
     "context": ": m?.kind === 'inset' ? t(\"modeler.insetStatus\") : m?.kind === 'bevel' ? t(\"modeler.bevelStatus\", {width: m.width.toFixed(3), segments: m.segments}) : m?.kind ="
   },
@@ -31695,50 +31695,50 @@
   "modeler.merge": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1205",
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "[t(\"modeler.subdivide\"), subdivide, t(\"modeler.subdivideHint\")], [t(\"modeler.merge\") + ' ▾', e => merge(e?.currentTarget), 'M'], [t(\"modeler.fill\"), fill, 'F'],"
   },
   "modeler.mergeAtCenter": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2552"
+      "src/modeler/modeler-ui.mjs:2550"
     ],
     "context": "item(t(\"modeler.mergeAtCenter\"), () => mergeAt('center')), item(t(\"modeler.mergeAtFirst\"), () => mergeAt('first')), item(t(\"modeler.mergeAtLast\"), () => mergeAt"
   },
   "modeler.mergeAtFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2552"
+      "src/modeler/modeler-ui.mjs:2550"
     ],
     "context": "item(t(\"modeler.mergeAtCenter\"), () => mergeAt('center')), item(t(\"modeler.mergeAtFirst\"), () => mergeAt('first')), item(t(\"modeler.mergeAtLast\"), () => mergeAt"
   },
   "modeler.mergeAtLast": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2552"
+      "src/modeler/modeler-ui.mjs:2550"
     ],
     "context": "item(t(\"modeler.mergeAtCenter\"), () => mergeAt('center')), item(t(\"modeler.mergeAtFirst\"), () => mergeAt('first')), item(t(\"modeler.mergeAtLast\"), () => mergeAt"
   },
   "modeler.mergeByDistance": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1223",
-      "src/modeler/modeler-ui.mjs:2553"
+      "src/modeler/modeler-ui.mjs:2551"
     ],
     "context": "[t(\"modeler.mergeByDistance\"), () => mergeAt('distance')]]),"
   },
   "modeler.mergeClosedPieces": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2564"
+      "src/modeler/modeler-ui.mjs:2562"
     ],
     "context": "if (error instanceof TopologyError && error.result.errors.some(e => e.rule === 'H5')) throw Object.assign(new RangeError(t(\"modeler.mergeClosedPieces\")), {model"
   },
   "modeler.mergeCollapse": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2553"
+      "src/modeler/modeler-ui.mjs:2551"
     ],
     "context": "item(t(\"modeler.mergeCollapse\"), () => mergeAt('collapse')), item(t(\"modeler.mergeByDistance\"), () => mergeAt('distance'))]);"
   },
   "modeler.mergedCount": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2557"
+      "src/modeler/modeler-ui.mjs:2555"
     ],
     "context": "if (how === 'distance') { commit(() => { const n = M.mergeByDistance(p.mesh, .001, S.verts.size > 1 ? S.verts : null); S.verts = new Set(); S.cache.delete(p.id)"
   },
@@ -31774,13 +31774,13 @@
   },
   "modeler.mirrorAllMiddle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2804"
+      "src/modeler/modeler-ui.mjs:2802"
     ],
     "context": "else if (!plus && !minus && p.mesh.verts.length) toast(t(\"modeler.mirrorAllMiddle\"));"
   },
   "modeler.mirrorApplied": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2812"
+      "src/modeler/modeler-ui.mjs:2810"
     ],
     "context": "toast(t(\"modeler.mirrorApplied\"));"
   },
@@ -31798,7 +31798,7 @@
   },
   "modeler.mirrorBothSides": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2803"
+      "src/modeler/modeler-ui.mjs:2801"
     ],
     "context": "if (plus && minus) toast(t(\"modeler.mirrorBothSides\"));"
   },
@@ -31811,13 +31811,13 @@
   },
   "modeler.mirrorNotJoined": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2805"
+      "src/modeler/modeler-ui.mjs:2803"
     ],
     "context": "else if (p.mesh.verts.length && sidesOf(p).plus + sidesOf(p).minus === p.mesh.verts.length) toast(t(\"modeler.mirrorNotJoined\"));"
   },
   "modeler.mirrorOffAsk": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2796"
+      "src/modeler/modeler-ui.mjs:2794"
     ],
     "context": "askConfirm(t(\"modeler.mirrorOffAsk\"), () => applyMirror(p), {yesLabel: t(\"modeler.keepBothHalves\"), noLabel: t(\"modeler.removeMirroredHalf\"),"
   },
@@ -31855,19 +31855,19 @@
   },
   "modeler.modelFileOpened": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2932"
+      "src/modeler/modeler-ui.mjs:2930"
     ],
     "context": "refresh(); frameSelected(); toast(repaired.length ? t(\"modeler.partsRepaired\", {parts: repaired.join(', ')}) : t(\"modeler.modelFileOpened\", {name}));"
   },
   "modeler.modelFileSaved": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2883"
+      "src/modeler/modeler-ui.mjs:2881"
     ],
     "context": "if (desktop()?.saveFile) { const saved = await desktop().saveFile({data: text, encoding: 'utf8', defaultPath: `${name}.nowdz`, filters: [{name: t(\"modeler.model"
   },
   "modeler.modelFileType": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2883"
+      "src/modeler/modeler-ui.mjs:2881"
     ],
     "context": "if (desktop()?.saveFile) { const saved = await desktop().saveFile({data: text, encoding: 'utf8', defaultPath: `${name}.nowdz`, filters: [{name: t(\"modeler.model"
   },
@@ -31898,13 +31898,13 @@
   "modeler.name": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1174",
-      "src/modeler/modeler-ui.mjs:1244"
+      "src/modeler/modeler-ui.mjs:1246"
     ],
     "context": "el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t(\"modeler.name\")}), el('input', {type: 'text', value: p.name, maxlength: '120', onchange:"
   },
   "modeler.newBonesLoose": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2754"
+      "src/modeler/modeler-ui.mjs:2752"
     ],
     "context": "const noteLoose = () => { if (S.looseNote && !S.looseNoted) { S.looseNoted = true; toast(t(\"modeler.newBonesLoose\")); } };"
   },
@@ -31941,13 +31941,13 @@
   },
   "modeler.noLimit": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1252"
+      "src/modeler/modeler-ui.mjs:1254"
     ],
     "context": "boneState(bone) === 'grouped' ? liveSlider(t(\"modeler.boneRange\"), pullOf(bone).range, 0, 1, .01, {format: v => v > 0 ? fmt(v) : t(\"modeler.noLimit\"), preview: "
   },
   "modeler.none": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1246"
+      "src/modeler/modeler-ui.mjs:1248"
     ],
     "context": "[el('option', {value: '0', text: t(\"modeler.none\")}), ...model.bones.filter(b => b.id !== bone.id).map(b => el('option', {value: String(b.id), text: b.name, sel"
   },
@@ -31959,7 +31959,7 @@
   },
   "modeler.normal": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2259"
+      "src/modeler/modeler-ui.mjs:2257"
     ],
     "context": "startTransform('grab', {axis: world, axisName: world ? t(\"modeler.normal\") : ''});"
   },
@@ -32025,7 +32025,7 @@
   },
   "modeler.noSkeleton": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2889"
+      "src/modeler/modeler-ui.mjs:2887"
     ],
     "context": "if (!model.bones.length) { toast(t(\"modeler.noSkeleton\")); return; }"
   },
@@ -32037,35 +32037,35 @@
   },
   "modeler.notAModelFile": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2924",
-      "src/modeler/modeler-ui.mjs:2926"
+      "src/modeler/modeler-ui.mjs:2922",
+      "src/modeler/modeler-ui.mjs:2924"
     ],
     "context": "if (data?.format !== MODEL_FILE_FORMAT || !data.model) throw new Error(t(\"modeler.notAModelFile\"));"
   },
   "modeler.notASkeletonFile": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2904"
+      "src/modeler/modeler-ui.mjs:2902"
     ],
     "context": "try { loaded = readSkeletonFile(JSON.parse(text)); } catch { toast(t(\"modeler.notASkeletonFile\")); return; }"
   },
   "modeler.nothingToExport": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2867",
-      "src/modeler/modeler-ui.mjs:2873",
-      "src/modeler/modeler-ui.mjs:2958"
+      "src/modeler/modeler-ui.mjs:2865",
+      "src/modeler/modeler-ui.mjs:2871",
+      "src/modeler/modeler-ui.mjs:2956"
     ],
     "context": "if (!model.parts.length) { toast(t(\"modeler.nothingToExport\")); return; }"
   },
   "modeler.nothingToSave": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2880",
-      "src/modeler/modeler-ui.mjs:3508"
+      "src/modeler/modeler-ui.mjs:2878",
+      "src/modeler/modeler-ui.mjs:3506"
     ],
     "context": "if (!hasWork()) { toast(t(\"modeler.nothingToSave\")); return; }"
   },
   "modeler.nothingToSlideAlong": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2512"
+      "src/modeler/modeler-ui.mjs:2510"
     ],
     "context": "if (![...neighbours.values()].some(list => list.length)) { toast(t(\"modeler.nothingToSlideAlong\")); applyTransform(); return; }"
   },
@@ -32083,7 +32083,7 @@
   },
   "modeler.objectStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1293"
+      "src/modeler/modeler-ui.mjs:1295"
     ],
     "context": ": S.mode === 'edit' ? t(\"modeler.editStatus\") : S.mode === 'bones' && S.posing && !paintingNow() ? t(\"modeler.poseStatus\") : paintingNow() ? t(\"modeler.paintSta"
   },
@@ -32091,8 +32091,8 @@
     "locations": [
       "src/modeler/modeler-ui.mjs:325",
       "src/modeler/modeler-ui.mjs:326",
-      "src/modeler/modeler-ui.mjs:3086",
-      "src/modeler/modeler-ui.mjs:3087"
+      "src/modeler/modeler-ui.mjs:3084",
+      "src/modeler/modeler-ui.mjs:3085"
     ],
     "context": "if (S.ref === ref.id) rows.push(el('label', {class: 'modeler-ref-opacity', title: t(\"modeler.opacity\")}, [el('span', {text: t(\"modeler.opacity\")}),"
   },
@@ -32110,14 +32110,14 @@
   },
   "modeler.openingBlender": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2962"
+      "src/modeler/modeler-ui.mjs:2960"
     ],
     "context": "toast(t(\"modeler.openingBlender\"));"
   },
   "modeler.openModelFile": {
     "locations": [
       "src/modeler/modeler-ui.mjs:218",
-      "src/modeler/modeler-ui.mjs:2934"
+      "src/modeler/modeler-ui.mjs:2932"
     ],
     "context": "el('button', {type: 'button', class: 'modeler-menu-item', title: t(\"modeler.openModelFileHint\"), onclick: () => { closePopover(); openModelFile(); }}, t(\"modele"
   },
@@ -32263,7 +32263,7 @@
   "modeler.paint.hint": {
     "locations": [
       "src/modeler/modeler-ui.mjs:430",
-      "src/modeler/modeler-ui.mjs:1418"
+      "src/modeler/modeler-ui.mjs:1416"
     ],
     "context": "onPaintTexture && q.mesh.faces.some(f => f.t !== undefined && f.uv) ? menuItem(t(\"modeler.paint.button\"), () => { S.active = q.id; paintTexture(q.mesh.faces.fin"
   },
@@ -32282,7 +32282,7 @@
   },
   "modeler.paint.short": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1418"
+      "src/modeler/modeler-ui.mjs:1416"
     ],
     "context": "onPaintTexture ? el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t(\"modeler.paint.hint\"), onclick: () => paintTexture()}, t(\"modeler"
   },
@@ -32300,7 +32300,7 @@
   },
   "modeler.paint.unwrapFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1547"
+      "src/modeler/modeler-ui.mjs:1545"
     ],
     "context": "if (!tex) { toast(t(\"modeler.paint.unwrapFirst\")); return; }"
   },
@@ -32390,7 +32390,7 @@
   },
   "modeler.paintStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1293"
+      "src/modeler/modeler-ui.mjs:1295"
     ],
     "context": ": S.mode === 'edit' ? t(\"modeler.editStatus\") : S.mode === 'bones' && S.posing && !paintingNow() ? t(\"modeler.poseStatus\") : paintingNow() ? t(\"modeler.paintSta"
   },
@@ -32408,7 +32408,7 @@
   },
   "modeler.parent": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1245"
+      "src/modeler/modeler-ui.mjs:1247"
     ],
     "context": "el('label', {class: 'modeler-field modeler-wide'}, [el('span', {text: t(\"modeler.parent\")}), el('select', {onchange: e => commit(() => { bone.parent = Number(e."
   },
@@ -32420,7 +32420,7 @@
   },
   "modeler.partLocked": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2035"
+      "src/modeler/modeler-ui.mjs:2033"
     ],
     "context": "const parts = [...S.parts].map(part).filter(q => q && !q.locked); if (!parts.length) { if (S.parts.size) toast(t(\"modeler.partLocked\")); return null; }"
   },
@@ -32450,8 +32450,8 @@
   },
   "modeler.partsRepaired": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2932",
-      "src/modeler/modeler-ui.mjs:3550"
+      "src/modeler/modeler-ui.mjs:2930",
+      "src/modeler/modeler-ui.mjs:3548"
     ],
     "context": "refresh(); frameSelected(); toast(repaired.length ? t(\"modeler.partsRepaired\", {parts: repaired.join(', ')}) : t(\"modeler.modelFileOpened\", {name}));"
   },
@@ -32470,8 +32470,8 @@
   "modeler.plane": {
     "locations": [
       "src/modeler/modeler-ui.mjs:392",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2691"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2689"
     ],
     "context": "['cone', t(\"modeler.cone\")], ['torus', t(\"modeler.torus\")], ['plane', t(\"modeler.plane\")], ['circle', t(\"modeler.circle\")], ['point', t(\"modeler.singlePoint\")]]"
   },
@@ -32495,39 +32495,39 @@
   },
   "modeler.poseHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1237",
-      "src/modeler/modeler-ui.mjs:1238"
+      "src/modeler/modeler-ui.mjs:1239",
+      "src/modeler/modeler-ui.mjs:1240"
     ],
     "context": "model.bones.length ? el('p', {class: 'modeler-hint', text: t(\"modeler.poseHint\")}) : null,"
   },
   "modeler.poseLeaveToEdit": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2067"
+      "src/modeler/modeler-ui.mjs:2065"
     ],
     "context": "if (S.mode === 'bones' && S.posing) { toast(t(\"modeler.poseLeaveToEdit\")); return; }"
   },
   "modeler.poseReset": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1239"
+      "src/modeler/modeler-ui.mjs:1241"
     ],
     "context": "...(S.posing && isPosed(S.pose) ? [[t(\"modeler.poseReset\"), resetPose]] : [])]) : null,"
   },
   "modeler.poseStart": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1238"
+      "src/modeler/modeler-ui.mjs:1240"
     ],
     "context": "model.bones.length ? actions([[S.posing ? t(\"modeler.poseStop\") : t(\"modeler.poseStart\"), () => setPosing(!S.posing), t(\"modeler.poseHint\")],"
   },
   "modeler.poseStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1240",
-      "src/modeler/modeler-ui.mjs:1293"
+      "src/modeler/modeler-ui.mjs:1242",
+      "src/modeler/modeler-ui.mjs:1295"
     ],
     "context": "el('p', {class: 'modeler-hint', text: S.posing ? t(\"modeler.poseStatus\") : t(\"modeler.bonesHint\")})]));"
   },
   "modeler.poseStop": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1238"
+      "src/modeler/modeler-ui.mjs:1240"
     ],
     "context": "model.bones.length ? actions([[S.posing ? t(\"modeler.poseStop\") : t(\"modeler.poseStart\"), () => setPosing(!S.posing), t(\"modeler.poseHint\")],"
   },
@@ -32539,19 +32539,19 @@
   },
   "modeler.preserveVolume": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1235"
+      "src/modeler/modeler-ui.mjs:1237"
     ],
     "context": "onchange: e => commit(() => { if (e.target.checked) delete model.preserveVolume; else model.preserveVolume = false; })}), t(\"modeler.preserveVolume\")]) : null,"
   },
   "modeler.preserveVolumeHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1234"
+      "src/modeler/modeler-ui.mjs:1236"
     ],
     "context": "model.bones.length ? el('label', {class: 'modeler-check', title: t(\"modeler.preserveVolumeHint\")}, [el('input', {type: 'checkbox', 'data-preserve-volume': '', c"
   },
   "modeler.progressSaved": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3510"
+      "src/modeler/modeler-ui.mjs:3508"
     ],
     "context": "Promise.resolve(onSave?.(draftNow())).then(saved => { if (saved && !finished) toast(t(\"modeler.progressSaved\")); });"
   },
@@ -32569,13 +32569,13 @@
   },
   "modeler.quadFaceAngle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2324"
     ],
     "context": "quads: () => [['faceAngle', t(\"modeler.quadFaceAngle\"), {step: 5, min: 0, max: 180}], ['shapeAngle', t(\"modeler.quadShapeAngle\"), {step: 5, min: 0, max: 180}]],"
   },
   "modeler.quadShapeAngle": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2326"
+      "src/modeler/modeler-ui.mjs:2324"
     ],
     "context": "quads: () => [['faceAngle', t(\"modeler.quadFaceAngle\"), {step: 5, min: 0, max: 180}], ['shapeAngle', t(\"modeler.quadShapeAngle\"), {step: 5, min: 0, max: 180}]],"
   },
@@ -32587,159 +32587,159 @@
   },
   "modeler.ref.axisNot": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3073"
+      "src/modeler/modeler-ui.mjs:3071"
     ],
     "context": "if (axis !== 'Y' && axis !== across) { toast(t(\"modeler.ref.axisNot\", {axis, axes: `${across}, Y`})); return; }"
   },
   "modeler.ref.edgeOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1288"
+      "src/modeler/modeler-ui.mjs:1290"
     ],
     "context": "if (S.refModal) { const m = S.refModal; status.textContent = m.edgeOn ? t(\"modeler.ref.edgeOn\") : t(m.kind === 'move' ? \"modeler.ref.moveStatus\" : \"modeler.ref."
   },
   "modeler.ref.flip": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3093"
+      "src/modeler/modeler-ui.mjs:3091"
     ],
     "context": "menuItem(ref.flip ? t(\"modeler.ref.unflip\") : t(\"modeler.ref.flip\"), () => flipRef(ref), {title: t(\"modeler.flipImageHint\")}),"
   },
   "modeler.ref.front": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1274",
-      "src/modeler/modeler-ui.mjs:3025",
-      "src/modeler/modeler-ui.mjs:3103"
+      "src/modeler/modeler-ui.mjs:1276",
+      "src/modeler/modeler-ui.mjs:3023",
+      "src/modeler/modeler-ui.mjs:3101"
     ],
     "context": "el('div', {class: 'modeler-actions'}, ['front', 'side'].map(view => button(model.references.some(r => r.view === view) ? t(\"modeler.ref.replaceView\", {view: vie"
   },
   "modeler.ref.loaded": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3119"
+      "src/modeler/modeler-ui.mjs:3117"
     ],
     "context": "setView(view === 'front' ? 'front' : 'right'); refresh(); toast(t(\"modeler.ref.loaded\"));"
   },
   "modeler.ref.loadView": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1274",
-      "src/modeler/modeler-ui.mjs:3103"
+      "src/modeler/modeler-ui.mjs:1276",
+      "src/modeler/modeler-ui.mjs:3101"
     ],
     "context": "el('div', {class: 'modeler-actions'}, ['front', 'side'].map(view => button(model.references.some(r => r.view === view) ? t(\"modeler.ref.replaceView\", {view: vie"
   },
   "modeler.ref.lock": {
     "locations": [
       "src/modeler/modeler-ui.mjs:322",
-      "src/modeler/modeler-ui.mjs:3095"
+      "src/modeler/modeler-ui.mjs:3093"
     ],
     "context": "lock: el('button', {type: 'button', class: `modeler-lock${ref.locked ? ' modeler-lock-on' : ''}`, title: ref.locked ? t(\"modeler.ref.unlock\") : t(\"modeler.ref.l"
   },
   "modeler.ref.lockedHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3038"
+      "src/modeler/modeler-ui.mjs:3036"
     ],
     "context": "if (ref.locked) { toast(t(\"modeler.ref.lockedHint\")); return false; }"
   },
   "modeler.ref.lookAt": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3097"
+      "src/modeler/modeler-ui.mjs:3095"
     ],
     "context": "menuItem(t(\"modeler.ref.lookAt\"), () => setView(ref.view === 'side' ? 'right' : 'front')),"
   },
   "modeler.ref.move": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3091"
+      "src/modeler/modeler-ui.mjs:3089"
     ],
     "context": "menuItem(t(\"modeler.ref.move\"), () => startRefModal('move'), {title: t(\"modeler.ref.moveHint\")}),"
   },
   "modeler.ref.moveHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3091"
+      "src/modeler/modeler-ui.mjs:3089"
     ],
     "context": "menuItem(t(\"modeler.ref.move\"), () => startRefModal('move'), {title: t(\"modeler.ref.moveHint\")}),"
   },
   "modeler.ref.moveStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1288"
+      "src/modeler/modeler-ui.mjs:1290"
     ],
     "context": "if (S.refModal) { const m = S.refModal; status.textContent = m.edgeOn ? t(\"modeler.ref.edgeOn\") : t(m.kind === 'move' ? \"modeler.ref.moveStatus\" : \"modeler.ref."
   },
   "modeler.ref.replaceView": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1274",
-      "src/modeler/modeler-ui.mjs:3103"
+      "src/modeler/modeler-ui.mjs:1276",
+      "src/modeler/modeler-ui.mjs:3101"
     ],
     "context": "el('div', {class: 'modeler-actions'}, ['front', 'side'].map(view => button(model.references.some(r => r.view === view) ? t(\"modeler.ref.replaceView\", {view: vie"
   },
   "modeler.ref.reset": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3098"
+      "src/modeler/modeler-ui.mjs:3096"
     ],
     "context": "menuItem(t(\"modeler.ref.reset\"), () => resetRef(ref), {title: t(\"modeler.ref.resetHint\")}),"
   },
   "modeler.ref.resetHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3098"
+      "src/modeler/modeler-ui.mjs:3096"
     ],
     "context": "menuItem(t(\"modeler.ref.reset\"), () => resetRef(ref), {title: t(\"modeler.ref.resetHint\")}),"
   },
   "modeler.ref.scale": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3092"
+      "src/modeler/modeler-ui.mjs:3090"
     ],
     "context": "menuItem(t(\"modeler.ref.scale\"), () => startRefModal('scale'), {title: t(\"modeler.ref.scaleHint\")}),"
   },
   "modeler.ref.scaleHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3092"
+      "src/modeler/modeler-ui.mjs:3090"
     ],
     "context": "menuItem(t(\"modeler.ref.scale\"), () => startRefModal('scale'), {title: t(\"modeler.ref.scaleHint\")}),"
   },
   "modeler.ref.scaleStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1288"
+      "src/modeler/modeler-ui.mjs:1290"
     ],
     "context": "if (S.refModal) { const m = S.refModal; status.textContent = m.edgeOn ? t(\"modeler.ref.edgeOn\") : t(m.kind === 'move' ? \"modeler.ref.moveStatus\" : \"modeler.ref."
   },
   "modeler.ref.selected": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3027"
+      "src/modeler/modeler-ui.mjs:3025"
     ],
     "context": "function selectRef(id) { S.ref = id; if (S.mode === 'object') { S.parts = new Set(); } refresh(); toast(t(\"modeler.ref.selected\")); }"
   },
   "modeler.ref.selectFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3037"
+      "src/modeler/modeler-ui.mjs:3035"
     ],
     "context": "if (!ref) { toast(t(\"modeler.ref.selectFirst\")); return false; }"
   },
   "modeler.ref.side": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1274",
-      "src/modeler/modeler-ui.mjs:3025",
-      "src/modeler/modeler-ui.mjs:3103"
+      "src/modeler/modeler-ui.mjs:1276",
+      "src/modeler/modeler-ui.mjs:3023",
+      "src/modeler/modeler-ui.mjs:3101"
     ],
     "context": "el('div', {class: 'modeler-actions'}, ['front', 'side'].map(view => button(model.references.some(r => r.view === view) ? t(\"modeler.ref.replaceView\", {view: vie"
   },
   "modeler.ref.unflip": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3093"
+      "src/modeler/modeler-ui.mjs:3091"
     ],
     "context": "menuItem(ref.flip ? t(\"modeler.ref.unflip\") : t(\"modeler.ref.flip\"), () => flipRef(ref), {title: t(\"modeler.flipImageHint\")}),"
   },
   "modeler.ref.unlock": {
     "locations": [
       "src/modeler/modeler-ui.mjs:322",
-      "src/modeler/modeler-ui.mjs:3095"
+      "src/modeler/modeler-ui.mjs:3093"
     ],
     "context": "lock: el('button', {type: 'button', class: `modeler-lock${ref.locked ? ' modeler-lock-on' : ''}`, title: ref.locked ? t(\"modeler.ref.unlock\") : t(\"modeler.ref.l"
   },
   "modeler.references": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1273"
+      "src/modeler/modeler-ui.mjs:1275"
     ],
     "context": "blocks.push(section(t(\"modeler.references\"), [el('p', {class: 'modeler-hint', text: t(\"modeler.referencesHint\")}),"
   },
   "modeler.referencesHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1273"
+      "src/modeler/modeler-ui.mjs:1275"
     ],
     "context": "blocks.push(section(t(\"modeler.references\"), [el('p', {class: 'modeler-hint', text: t(\"modeler.referencesHint\")}),"
   },
@@ -32763,13 +32763,13 @@
   },
   "modeler.remove": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3100"
+      "src/modeler/modeler-ui.mjs:3098"
     ],
     "context": "menuItem(t(\"modeler.remove\"), () => removeRef(ref), {danger: true})]);"
   },
   "modeler.removeMirroredHalf": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2796"
+      "src/modeler/modeler-ui.mjs:2794"
     ],
     "context": "askConfirm(t(\"modeler.mirrorOffAsk\"), () => applyMirror(p), {yesLabel: t(\"modeler.keepBothHalves\"), noLabel: t(\"modeler.removeMirroredHalf\"),"
   },
@@ -32789,33 +32789,33 @@
   },
   "modeler.replace": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3099",
-      "src/modeler/modeler-ui.mjs:3159"
+      "src/modeler/modeler-ui.mjs:3097",
+      "src/modeler/modeler-ui.mjs:3157"
     ],
     "context": "menuItem(t(\"modeler.replace\"), () => loadReference(ref.view)), menuLine(),"
   },
   "modeler.replaceFaceBones": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2764"
+      "src/modeler/modeler-ui.mjs:2762"
     ],
     "context": "if (model.bones.some(b => b.face)) { askConfirm(t(\"modeler.replaceFaceBones\"), run); return; }"
   },
   "modeler.replaceSkeleton": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2758",
-      "src/modeler/modeler-ui.mjs:2911"
+      "src/modeler/modeler-ui.mjs:2756",
+      "src/modeler/modeler-ui.mjs:2909"
     ],
     "context": "if (model.bones.length) { askConfirm(t(\"modeler.replaceSkeleton\"), run); return; }"
   },
   "modeler.replaceWithExample": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2678"
+      "src/modeler/modeler-ui.mjs:2676"
     ],
     "context": "if (model.parts.length) askConfirm(t(\"modeler.replaceWithExample\"), open); else open();"
   },
   "modeler.replaceWithFile": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2934"
+      "src/modeler/modeler-ui.mjs:2932"
     ],
     "context": "if (hasWork()) askConfirm(t(\"modeler.replaceWithFile\"), open, {yesLabel: t(\"modeler.openModelFile\"), noLabel: t(\"modeler.keepModeling\")}); else open();"
   },
@@ -32839,7 +32839,7 @@
   },
   "modeler.ripHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2604"
+      "src/modeler/modeler-ui.mjs:2602"
     ],
     "context": "if (!edges.length) { toast(t(\"modeler.ripHint\")); return; }"
   },
@@ -32911,37 +32911,37 @@
   },
   "modeler.secondBack": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1381"
+      "src/modeler/modeler-ui.mjs:1379"
     ],
     "context": "const SECOND = {side: ['right', 'modeler.secondSide'], front: ['front', 'modeler.secondFront'], back: ['back', 'modeler.secondBack'], top: ['top', 'modeler.seco"
   },
   "modeler.secondFront": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1381"
+      "src/modeler/modeler-ui.mjs:1379"
     ],
     "context": "const SECOND = {side: ['right', 'modeler.secondSide'], front: ['front', 'modeler.secondFront'], back: ['back', 'modeler.secondBack'], top: ['top', 'modeler.seco"
   },
   "modeler.secondLeft": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1381"
+      "src/modeler/modeler-ui.mjs:1379"
     ],
     "context": "const SECOND = {side: ['right', 'modeler.secondSide'], front: ['front', 'modeler.secondFront'], back: ['back', 'modeler.secondBack'], top: ['top', 'modeler.seco"
   },
   "modeler.secondOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1404"
+      "src/modeler/modeler-ui.mjs:1402"
     ],
     "context": "S.second ? el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); S.second = null; draw(); }}, t(\"modeler.secondOff\")) : nul"
   },
   "modeler.secondSide": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1381"
+      "src/modeler/modeler-ui.mjs:1379"
     ],
     "context": "const SECOND = {side: ['right', 'modeler.secondSide'], front: ['front', 'modeler.secondFront'], back: ['back', 'modeler.secondBack'], top: ['top', 'modeler.seco"
   },
   "modeler.secondTop": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1381"
+      "src/modeler/modeler-ui.mjs:1379"
     ],
     "context": "const SECOND = {side: ['right', 'modeler.secondSide'], front: ['front', 'modeler.secondFront'], back: ['back', 'modeler.secondBack'], top: ['top', 'modeler.seco"
   },
@@ -32959,66 +32959,66 @@
   },
   "modeler.selectABoneFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2071",
-      "src/modeler/modeler-ui.mjs:2772",
-      "src/modeler/modeler-ui.mjs:2841"
+      "src/modeler/modeler-ui.mjs:2069",
+      "src/modeler/modeler-ui.mjs:2770",
+      "src/modeler/modeler-ui.mjs:2839"
     ],
     "context": "if (!target) { if (S.refused) return; toast(S.mode === 'edit' ? t(\"modeler.selectSomethingFirst\") : S.mode === 'bones' ? t(\"modeler.selectABoneFirst\") : t(\"mode"
   },
   "modeler.selectAll": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1218",
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "actions([[t(\"modeler.selectAll\"), selectAll, 'A'], [t(\"modeler.selectLinked\"), () => { S.verts = M.linkedVerts(mesh, S.verts); refresh(); }, 'Ctrl+L'],"
   },
   "modeler.selectAPartFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2071",
-      "src/modeler/modeler-ui.mjs:2639",
-      "src/modeler/modeler-ui.mjs:2696"
+      "src/modeler/modeler-ui.mjs:2069",
+      "src/modeler/modeler-ui.mjs:2637",
+      "src/modeler/modeler-ui.mjs:2694"
     ],
     "context": "if (!target) { if (S.refused) return; toast(S.mode === 'edit' ? t(\"modeler.selectSomethingFirst\") : S.mode === 'bones' ? t(\"modeler.selectABoneFirst\") : t(\"mode"
   },
   "modeler.selectAPartToEdit": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1468",
-      "src/modeler/modeler-ui.mjs:1914",
-      "src/modeler/modeler-ui.mjs:2234"
+      "src/modeler/modeler-ui.mjs:1466",
+      "src/modeler/modeler-ui.mjs:1912",
+      "src/modeler/modeler-ui.mjs:2232"
     ],
     "context": "if (!targets.length) { toast(t(\"modeler.selectAPartToEdit\")); return; }"
   },
   "modeler.selectEdgesToBevel": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2405",
-      "src/modeler/modeler-ui.mjs:2407"
+      "src/modeler/modeler-ui.mjs:2403",
+      "src/modeler/modeler-ui.mjs:2405"
     ],
     "context": "if (!S.verts.size) { toast(t(points ? \"modeler.selectPointsToBevel\" : \"modeler.selectEdgesToBevel\")); return; }"
   },
   "modeler.selectEdgesToCrease": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1321"
+      "src/modeler/modeler-ui.mjs:1323"
     ],
     "context": "if (!edges.length) { toast(t(\"modeler.selectEdgesToCrease\")); return; }"
   },
   "modeler.selectFacesFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2386",
-      "src/modeler/modeler-ui.mjs:2544",
-      "src/modeler/modeler-ui.mjs:2595",
-      "src/modeler/modeler-ui.mjs:2616"
+      "src/modeler/modeler-ui.mjs:2384",
+      "src/modeler/modeler-ui.mjs:2542",
+      "src/modeler/modeler-ui.mjs:2593",
+      "src/modeler/modeler-ui.mjs:2614"
     ],
     "context": "const faces = selectedFaces(p); if (!faces.size) { toast(t(\"modeler.selectFacesFirst\")); return; }"
   },
   "modeler.selectFacesOrEdgesToExtrude": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2254"
+      "src/modeler/modeler-ui.mjs:2252"
     ],
     "context": "} else { toast(t(\"modeler.selectFacesOrEdgesToExtrude\")); return; }"
   },
   "modeler.selectFacesToColor": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2636"
+      "src/modeler/modeler-ui.mjs:2634"
     ],
     "context": "if (!faces.size) { toast(t(\"modeler.selectFacesToColor\")); return; }"
   },
@@ -33044,43 +33044,43 @@
   "modeler.selectLinked": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1218",
-      "src/modeler/modeler-ui.mjs:3198"
+      "src/modeler/modeler-ui.mjs:3196"
     ],
     "context": "actions([[t(\"modeler.selectAll\"), selectAll, 'A'], [t(\"modeler.selectLinked\"), () => { S.verts = M.linkedVerts(mesh, S.verts); refresh(); }, 'Ctrl+L'],"
   },
   "modeler.selectPointsToBevel": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2405"
+      "src/modeler/modeler-ui.mjs:2403"
     ],
     "context": "if (!S.verts.size) { toast(t(points ? \"modeler.selectPointsToBevel\" : \"modeler.selectEdgesToBevel\")); return; }"
   },
   "modeler.selectSomethingFirst": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2071"
+      "src/modeler/modeler-ui.mjs:2069"
     ],
     "context": "if (!target) { if (S.refused) return; toast(S.mode === 'edit' ? t(\"modeler.selectSomethingFirst\") : S.mode === 'bones' ? t(\"modeler.selectABoneFirst\") : t(\"mode"
   },
   "modeler.selectSomethingToDissolve": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2578"
+      "src/modeler/modeler-ui.mjs:2576"
     ],
     "context": "if (!S.verts.size) { toast(t(\"modeler.selectSomethingToDissolve\")); return; }"
   },
   "modeler.selectSomethingToHide": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1310"
+      "src/modeler/modeler-ui.mjs:1312"
     ],
     "context": "if (!pick.length) { toast(t(\"modeler.selectSomethingToHide\")); return; }"
   },
   "modeler.selectTwoOrMorePoints": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2589"
+      "src/modeler/modeler-ui.mjs:2587"
     ],
     "context": "if (S.verts.size < 2) { toast(t(\"modeler.selectTwoOrMorePoints\")); return; }"
   },
   "modeler.selectTwoOrMoreVertices": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2558"
+      "src/modeler/modeler-ui.mjs:2556"
     ],
     "context": "if (S.verts.size < 2) { toast(t(\"modeler.selectTwoOrMoreVertices\")); return; }"
   },
@@ -33092,7 +33092,7 @@
   },
   "modeler.separatedInto": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2621"
+      "src/modeler/modeler-ui.mjs:2619"
     ],
     "context": "S.verts = new Set(); S.cache.clear(); toast(t(\"modeler.separatedInto\", {name: created.name}));"
   },
@@ -33134,7 +33134,7 @@
   },
   "modeler.shearEditOnly": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2078"
+      "src/modeler/modeler-ui.mjs:2076"
     ],
     "context": "if (S.mode !== 'edit') { toast(t(\"modeler.shearEditOnly\")); return; }"
   },
@@ -33146,20 +33146,20 @@
   },
   "modeler.shearStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1291"
+      "src/modeler/modeler-ui.mjs:1293"
     ],
     "context": ": TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? \"modeler.shearStatus\" : \"modeler.transformStatus\") + (m.axisName ? ` · ${t(\"modeler.lockedTo\", {axis: m."
   },
   "modeler.show": {
     "locations": [
       "src/modeler/modeler-ui.mjs:261",
-      "src/modeler/modeler-ui.mjs:3096"
+      "src/modeler/modeler-ui.mjs:3094"
     ],
     "context": "const eyeOf = (shown, toggle) => el('button', {type: 'button', class: 'modeler-eye', title: shown ? t(\"modeler.hide\") : t(\"modeler.show\"), 'aria-pressed': Strin"
   },
   "modeler.showBones": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1271"
+      "src/modeler/modeler-ui.mjs:1273"
     ],
     "context": "el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.showBones, onchange: e => { S.showBones = e.target.checked; refresh(); }}), t(\""
   },
@@ -33179,13 +33179,13 @@
   },
   "modeler.showTextures": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1268"
+      "src/modeler/modeler-ui.mjs:1270"
     ],
     "context": "...(model.textures?.length ? [el('label', {class: 'modeler-check', title: t(\"modeler.showTexturesHint\")}, [el('input', {type: 'checkbox', checked: S.showTexture"
   },
   "modeler.showTexturesHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1268"
+      "src/modeler/modeler-ui.mjs:1270"
     ],
     "context": "...(model.textures?.length ? [el('label', {class: 'modeler-check', title: t(\"modeler.showTexturesHint\")}, [el('input', {type: 'checkbox', checked: S.showTexture"
   },
@@ -33198,7 +33198,7 @@
   "modeler.shrinkwrap": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1207",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "[t(\"modeler.poke\"), pokeSelected, t(\"modeler.pokeHint\")], [t(\"modeler.shrinkwrap\"), shrinkwrapSelected, t(\"modeler.shrinkwrapHint\")],"
   },
@@ -33222,21 +33222,21 @@
   },
   "modeler.sideNamesHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1258"
+      "src/modeler/modeler-ui.mjs:1260"
     ],
     "context": "el('p', {class: 'modeler-hint', text: t(\"modeler.sideNamesHint\")})]));"
   },
   "modeler.singlePoint": {
     "locations": [
       "src/modeler/modeler-ui.mjs:392",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2691"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2689"
     ],
     "context": "['cone', t(\"modeler.cone\")], ['torus', t(\"modeler.torus\")], ['plane', t(\"modeler.plane\")], ['circle', t(\"modeler.circle\")], ['point', t(\"modeler.singlePoint\")]]"
   },
   "modeler.singlePointAdded": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2656"
+      "src/modeler/modeler-ui.mjs:2654"
     ],
     "context": "if (kind === 'point') toast(t(\"modeler.singlePointAdded\"));"
   },
@@ -33254,7 +33254,7 @@
   },
   "modeler.skeletonFileType": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2892"
+      "src/modeler/modeler-ui.mjs:2890"
     ],
     "context": "if (desktop()?.saveFile) { const saved = await desktop().saveFile({data: text, encoding: 'utf8', defaultPath: `${name}.nowdzskel`, filters: [{name: t(\"modeler.s"
   },
@@ -33266,13 +33266,13 @@
   },
   "modeler.skeletonLoaded": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2909"
+      "src/modeler/modeler-ui.mjs:2907"
     ],
     "context": "toast(t(\"modeler.skeletonLoaded\", {count: model.bones.length, kept: result.kept.length}));"
   },
   "modeler.skeletonSaved": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2892"
+      "src/modeler/modeler-ui.mjs:2890"
     ],
     "context": "if (desktop()?.saveFile) { const saved = await desktop().saveFile({data: text, encoding: 'utf8', defaultPath: `${name}.nowdzskel`, filters: [{name: t(\"modeler.s"
   },
@@ -33291,7 +33291,7 @@
   },
   "modeler.smoothFactor": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2324"
+      "src/modeler/modeler-ui.mjs:2322"
     ],
     "context": "smooth: () => [['factor', t(\"modeler.smoothFactor\"), {step: .05, min: -1, max: 1}], ['repeat', t(\"modeler.smoothRepeat\"), {step: 1, min: 1, max: 100, whole: tru"
   },
@@ -33304,7 +33304,7 @@
   "modeler.smoothRepeat": {
     "locations": [
       "src/modeler/modeler-ui.mjs:758",
-      "src/modeler/modeler-ui.mjs:2324"
+      "src/modeler/modeler-ui.mjs:2322"
     ],
     "context": ": [slider(t(\"modeler.smoothStrength\"), E.factor, 0, 1, .05, v => { E.factor = v; }), field(t(\"modeler.smoothRepeat\"), E.iterations, v => { E.iterations = Math.m"
   },
@@ -33317,7 +33317,7 @@
   "modeler.smoothVerts": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1206",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "[t(\"modeler.smoothVerts\"), smoothSelected, t(\"modeler.smoothVertsHint\")], [t(\"modeler.triangulate\"), triangulateSelected, 'Ctrl+T'], [t(\"modeler.trisToQuads\"), "
   },
@@ -33341,13 +33341,13 @@
   },
   "modeler.softConnectedOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3456"
+      "src/modeler/modeler-ui.mjs:3454"
     ],
     "context": "else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? \"mo"
   },
   "modeler.softConnectedOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3456"
+      "src/modeler/modeler-ui.mjs:3454"
     ],
     "context": "else if ((key === 'o' || e.code === 'KeyO') && e.altKey && S.mode === 'edit') { S.soft = true; S.softConnected = !S.softConnected; toast(t(S.softConnected ? \"mo"
   },
@@ -33371,13 +33371,13 @@
   },
   "modeler.softOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3457"
+      "src/modeler/modeler-ui.mjs:3455"
     ],
     "context": "else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? \"modeler.softOn\" : \"modeler.softOff\")); renderProps(); }"
   },
   "modeler.softOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3457"
+      "src/modeler/modeler-ui.mjs:3455"
     ],
     "context": "else if (key === 'o' && S.mode === 'edit') { S.soft = !S.soft; toast(t(S.soft ? \"modeler.softOn\" : \"modeler.softOff\")); renderProps(); }"
   },
@@ -33390,13 +33390,13 @@
   "modeler.softSelect": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1213",
-      "src/modeler/modeler-ui.mjs:3199"
+      "src/modeler/modeler-ui.mjs:3197"
     ],
     "context": "el('label', {class: 'modeler-check', title: t(\"modeler.softHint\")}, [el('input', {type: 'checkbox', checked: S.soft, onchange: e => { S.soft = e.target.checked;"
   },
   "modeler.softStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1295"
+      "src/modeler/modeler-ui.mjs:1297"
     ],
     "context": "status.textContent = m?.target?.soft ? `${text} · ${t(\"modeler.softStatus\", {radius: fmt(S.softRadius)})}` : text;"
   },
@@ -33416,8 +33416,8 @@
     "locations": [
       "src/modeler/modeler-ui.mjs:391",
       "src/modeler/modeler-ui.mjs:1193",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2690"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2688"
     ],
     "context": "const shapes = [['baseCharacter', t(\"modeler.baseCharacter\")], ['cube', t(\"modeler.cube\")], ['sphere', t(\"modeler.sphere\")], ['capsule', t(\"modeler.capsule\")], "
   },
@@ -33472,13 +33472,13 @@
   "modeler.startOver": {
     "locations": [
       "src/modeler/modeler-ui.mjs:222",
-      "src/modeler/modeler-ui.mjs:3177"
+      "src/modeler/modeler-ui.mjs:3175"
     ],
     "context": "editing ? null : el('button', {type: 'button', class: 'modeler-menu-item', onclick: () => { closePopover(); startOver(); }}, t(\"modeler.startOver\")),"
   },
   "modeler.startOverAsk": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3176"
+      "src/modeler/modeler-ui.mjs:3174"
     ],
     "context": "askConfirm(t(\"modeler.startOverAsk\"), () => { setMode('object'); commit(() => { model.parts = []; model.bones = []; model.references = []; S.parts = new Set(); "
   },
@@ -33504,7 +33504,7 @@
   },
   "modeler.stretchStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1290"
+      "src/modeler/modeler-ui.mjs:1292"
     ],
     "context": "const text = m?.tweak ? t(S.mode !== 'bones' ? \"modeler.dragStatus\" : m.stretch ? \"modeler.stretchStatus\" : m.kind === 'rotate' ? \"modeler.bendStatus\" : \"modele"
   },
@@ -33552,13 +33552,13 @@
   },
   "modeler.symmetrizedFromNegative": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2833"
+      "src/modeler/modeler-ui.mjs:2831"
     ],
     "context": "toast(t(keepPositive ? \"modeler.symmetrizedFromPositive\" : \"modeler.symmetrizedFromNegative\"));"
   },
   "modeler.symmetrizedFromPositive": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2833"
+      "src/modeler/modeler-ui.mjs:2831"
     ],
     "context": "toast(t(keepPositive ? \"modeler.symmetrizedFromPositive\" : \"modeler.symmetrizedFromNegative\"));"
   },
@@ -33570,13 +33570,13 @@
   },
   "modeler.symmetrizeNothing": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2830"
+      "src/modeler/modeler-ui.mjs:2828"
     ],
     "context": "if (!chosen.plus && !chosen.minus) { toast(t(\"modeler.symmetrizeNothing\")); return; }"
   },
   "modeler.tail": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1247"
+      "src/modeler/modeler-ui.mjs:1249"
     ],
     "context": "merged ? null : vector(t(\"modeler.head\"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), merged ? null : vector(t(\"modeler.tail\"), bone.tail, (k, v)"
   },
@@ -33656,7 +33656,7 @@
   },
   "modeler.toonLook": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1264"
+      "src/modeler/modeler-ui.mjs:1266"
     ],
     "context": "if (S.mode === 'object') blocks.push(section(t(\"modeler.toonLook\"), toonLook()));"
   },
@@ -33674,7 +33674,7 @@
   },
   "modeler.toonPreview": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1266"
+      "src/modeler/modeler-ui.mjs:1268"
     ],
     "context": "el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.toonPreview, onchange: e => { S.toonPreview = e.target.checked; refresh(); }}),"
   },
@@ -33699,8 +33699,8 @@
   "modeler.torus": {
     "locations": [
       "src/modeler/modeler-ui.mjs:392",
-      "src/modeler/modeler-ui.mjs:2649",
-      "src/modeler/modeler-ui.mjs:2691"
+      "src/modeler/modeler-ui.mjs:2647",
+      "src/modeler/modeler-ui.mjs:2689"
     ],
     "context": "['cone', t(\"modeler.cone\")], ['torus', t(\"modeler.torus\")], ['plane', t(\"modeler.plane\")], ['circle', t(\"modeler.circle\")], ['point', t(\"modeler.singlePoint\")]]"
   },
@@ -33712,7 +33712,7 @@
   },
   "modeler.transformStatus": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1291"
+      "src/modeler/modeler-ui.mjs:1293"
     ],
     "context": ": TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? \"modeler.shearStatus\" : \"modeler.transformStatus\") + (m.axisName ? ` · ${t(\"modeler.lockedTo\", {axis: m."
   },
@@ -33725,7 +33725,7 @@
   "modeler.trisToQuads": {
     "locations": [
       "src/modeler/modeler-ui.mjs:1206",
-      "src/modeler/modeler-ui.mjs:2338"
+      "src/modeler/modeler-ui.mjs:2336"
     ],
     "context": "[t(\"modeler.smoothVerts\"), smoothSelected, t(\"modeler.smoothVertsHint\")], [t(\"modeler.triangulate\"), triangulateSelected, 'Ctrl+T'], [t(\"modeler.trisToQuads\"), "
   },
@@ -33761,14 +33761,14 @@
   },
   "modeler.typedValue": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1291"
+      "src/modeler/modeler-ui.mjs:1293"
     ],
     "context": ": TRANSFORMS.includes(m?.kind) ? t(m.kind === 'shear' ? \"modeler.shearStatus\" : \"modeler.transformStatus\") + (m.axisName ? ` · ${t(\"modeler.lockedTo\", {axis: m."
   },
   "modeler.undo": {
     "locations": [
       "src/modeler/modeler-ui.mjs:206",
-      "src/modeler/modeler-ui.mjs:3200"
+      "src/modeler/modeler-ui.mjs:3198"
     ],
     "context": "iconButton('undo', `${t(\"modeler.undo\")} (Ctrl+Z)`, undo), iconButton('redo', `${t(\"modeler.redo\")} (Ctrl+Shift+Z)`, redo),"
   },
@@ -33812,19 +33812,19 @@
   },
   "modeler.uv.badImage": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1518"
+      "src/modeler/modeler-ui.mjs:1516"
     ],
     "context": "if (!entry) { toast(t(\"modeler.uv.badImage\")); return; }"
   },
   "modeler.uv.cube": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1459"
+      "src/modeler/modeler-ui.mjs:1457"
     ],
     "context": "menuItem(t(\"modeler.uv.cube\"), () => unwrap('cube'), {title: t(\"modeler.uv.cubeHint\")}),"
   },
   "modeler.uv.cubeHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1459"
+      "src/modeler/modeler-ui.mjs:1457"
     ],
     "context": "menuItem(t(\"modeler.uv.cube\"), () => unwrap('cube'), {title: t(\"modeler.uv.cubeHint\")}),"
   },
@@ -33842,118 +33842,118 @@
   },
   "modeler.uv.new": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1415"
+      "src/modeler/modeler-ui.mjs:1413"
     ],
     "context": "el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t(\"modeler.uv.newHint\"), onclick: () => newTexture()}, t(\"modeler.uv.new\")),"
   },
   "modeler.uv.newHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1415"
+      "src/modeler/modeler-ui.mjs:1413"
     ],
     "context": "el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t(\"modeler.uv.newHint\"), onclick: () => newTexture()}, t(\"modeler.uv.new\")),"
   },
   "modeler.uv.noTexture": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1436"
+      "src/modeler/modeler-ui.mjs:1434"
     ],
     "context": "uvPick.replaceChildren(el('option', {value: '0'}, t(\"modeler.uv.noTexture\")), ...(model.textures ?? []).map(tex => el('option', {value: String(tex.id)}, tex.nam"
   },
   "modeler.uv.open": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1416"
+      "src/modeler/modeler-ui.mjs:1414"
     ],
     "context": "el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t(\"modeler.uv.openHint\"), onclick: () => uvFile.click()}, t(\"modeler.uv.open\")),"
   },
   "modeler.uv.openHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1416"
+      "src/modeler/modeler-ui.mjs:1414"
     ],
     "context": "el('button', {type: 'button', class: 'modeler-button modeler-quiet', title: t(\"modeler.uv.openHint\"), onclick: () => uvFile.click()}, t(\"modeler.uv.open\")),"
   },
   "modeler.uv.reset": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1461"
+      "src/modeler/modeler-ui.mjs:1459"
     ],
     "context": "menuItem(t(\"modeler.uv.reset\"), () => unwrap('reset'), {title: t(\"modeler.uv.resetHint\")})]);"
   },
   "modeler.uv.resetHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1461"
+      "src/modeler/modeler-ui.mjs:1459"
     ],
     "context": "menuItem(t(\"modeler.uv.reset\"), () => unwrap('reset'), {title: t(\"modeler.uv.resetHint\")})]);"
   },
   "modeler.uv.smart": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1458"
+      "src/modeler/modeler-ui.mjs:1456"
     ],
     "context": "menuItem(t(\"modeler.uv.smart\"), () => unwrap('smart'), {title: t(\"modeler.uv.smartHint\")}),"
   },
   "modeler.uv.smartHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1458"
+      "src/modeler/modeler-ui.mjs:1456"
     ],
     "context": "menuItem(t(\"modeler.uv.smart\"), () => unwrap('smart'), {title: t(\"modeler.uv.smartHint\")}),"
   },
   "modeler.uv.texture": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1408"
+      "src/modeler/modeler-ui.mjs:1406"
     ],
     "context": "const uvPick = el('select', {class: 'modeler-uv-select', 'aria-label': t(\"modeler.uv.texture\"), title: t(\"modeler.uv.textureHint\"), onchange: e => useTexture(Nu"
   },
   "modeler.uv.textureHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1408"
+      "src/modeler/modeler-ui.mjs:1406"
     ],
     "context": "const uvPick = el('select', {class: 'modeler-uv-select', 'aria-label': t(\"modeler.uv.texture\"), title: t(\"modeler.uv.textureHint\"), onchange: e => useTexture(Nu"
   },
   "modeler.uv.textureName": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1476",
-      "src/modeler/modeler-ui.mjs:1511",
-      "src/modeler/modeler-ui.mjs:1517"
+      "src/modeler/modeler-ui.mjs:1474",
+      "src/modeler/modeler-ui.mjs:1509",
+      "src/modeler/modeler-ui.mjs:1515"
     ],
     "context": "id = addTexture(model, {name: t(\"modeler.uv.textureName\", {n: (model.textures?.length ?? 0) + 1}), ...bakeColours(targets)}).id;"
   },
   "modeler.uv.tooMany": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1475",
-      "src/modeler/modeler-ui.mjs:1510",
-      "src/modeler/modeler-ui.mjs:1521",
-      "src/modeler/modeler-ui.mjs:1584"
+      "src/modeler/modeler-ui.mjs:1473",
+      "src/modeler/modeler-ui.mjs:1508",
+      "src/modeler/modeler-ui.mjs:1519",
+      "src/modeler/modeler-ui.mjs:1582"
     ],
     "context": "if ((model.textures?.length ?? 0) >= TEXTURE_LIMIT) throw Object.assign(new RangeError(t(\"modeler.uv.tooMany\", {limit: TEXTURE_LIMIT})), {modelerMessage: true})"
   },
   "modeler.uv.unwrap": {
     "locations": [
       "src/modeler/modeler-ui.mjs:431",
-      "src/modeler/modeler-ui.mjs:1417",
-      "src/modeler/modeler-ui.mjs:1457"
+      "src/modeler/modeler-ui.mjs:1415",
+      "src/modeler/modeler-ui.mjs:1455"
     ],
     "context": "menuItem(t(\"modeler.uv.unwrap\"), () => { S.parts = new Set(ids); S.active = q.id; unwrapMenu(pointAnchor(e)); }, {title: t(\"modeler.uv.unwrapHint\")}),"
   },
   "modeler.uv.unwrapHint": {
     "locations": [
       "src/modeler/modeler-ui.mjs:431",
-      "src/modeler/modeler-ui.mjs:1417",
-      "src/modeler/modeler-ui.mjs:1457"
+      "src/modeler/modeler-ui.mjs:1415",
+      "src/modeler/modeler-ui.mjs:1455"
     ],
     "context": "menuItem(t(\"modeler.uv.unwrap\"), () => { S.parts = new Set(ids); S.active = q.id; unwrapMenu(pointAnchor(e)); }, {title: t(\"modeler.uv.unwrapHint\")}),"
   },
   "modeler.uv.unwrapped": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1483"
+      "src/modeler/modeler-ui.mjs:1481"
     ],
     "context": "toast(t(\"modeler.uv.unwrapped\", {faces: targets.reduce((s, x) => s + x.faces.size, 0)}));"
   },
   "modeler.uv.view": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1460"
+      "src/modeler/modeler-ui.mjs:1458"
     ],
     "context": "menuItem(t(\"modeler.uv.view\"), () => unwrap('view'), {title: t(\"modeler.uv.viewHint\")}),"
   },
   "modeler.uv.viewHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1460"
+      "src/modeler/modeler-ui.mjs:1458"
     ],
     "context": "menuItem(t(\"modeler.uv.view\"), () => unwrap('view'), {title: t(\"modeler.uv.viewHint\")}),"
   },
@@ -33965,7 +33965,7 @@
   },
   "modeler.view": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1265"
+      "src/modeler/modeler-ui.mjs:1267"
     ],
     "context": "blocks.push(section(t(\"modeler.view\"), ["
   },
@@ -34020,7 +34020,7 @@
   },
   "modeler.weightPaint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1259"
+      "src/modeler/modeler-ui.mjs:1261"
     ],
     "context": "if (bone) blocks.push(section(t(\"modeler.weightPaint\"), weightPaintTools(bone)));"
   },
@@ -34051,57 +34051,69 @@
   },
   "modeler.wireframe": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1269"
+      "src/modeler/modeler-ui.mjs:1271"
     ],
     "context": "el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.wire, onchange: e => { S.wire = e.target.checked; refresh(); }}), t(\"modeler.wi"
   },
   "modeler.wrapMode": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2330"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "wrap: () => [['offset', t(\"modeler.wrapOffset\"), {step: .005, min: -1, max: 1}], ['project', t(\"modeler.wrapMode\"), {choices: [['nearest', t(\"modeler.wrapNeares"
   },
   "modeler.wrapNearest": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2330"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "wrap: () => [['offset', t(\"modeler.wrapOffset\"), {step: .005, min: -1, max: 1}], ['project', t(\"modeler.wrapMode\"), {choices: [['nearest', t(\"modeler.wrapNeares"
   },
   "modeler.wrapOffset": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2330"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "wrap: () => [['offset', t(\"modeler.wrapOffset\"), {step: .005, min: -1, max: 1}], ['project', t(\"modeler.wrapMode\"), {choices: [['nearest', t(\"modeler.wrapNeares"
   },
   "modeler.wrapView": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:2330"
+      "src/modeler/modeler-ui.mjs:2328"
     ],
     "context": "wrap: () => [['offset', t(\"modeler.wrapOffset\"), {step: .005, min: -1, max: 1}], ['project', t(\"modeler.wrapMode\"), {choices: [['nearest', t(\"modeler.wrapNeares"
   },
   "modeler.xray": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1270"
+      "src/modeler/modeler-ui.mjs:1272"
     ],
     "context": "el('label', {class: 'modeler-check', title: t(\"modeler.xrayHint\")}, [el('input', {type: 'checkbox', checked: S.xray, onchange: e => { S.xray = e.target.checked;"
   },
   "modeler.xrayHint": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:1270"
+      "src/modeler/modeler-ui.mjs:1272"
     ],
     "context": "el('label', {class: 'modeler-check', title: t(\"modeler.xrayHint\")}, [el('input', {type: 'checkbox', checked: S.xray, onchange: e => { S.xray = e.target.checked;"
   },
   "modeler.xrayOff": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3433"
+      "src/modeler/modeler-ui.mjs:3431"
     ],
     "context": "else if (e.altKey && !ctrl && (key === 'z' || e.code === 'KeyZ')) { S.xray = !S.xray; toast(t(S.xray ? \"modeler.xrayOn\" : \"modeler.xrayOff\")); refresh(); }"
   },
   "modeler.xrayOn": {
     "locations": [
-      "src/modeler/modeler-ui.mjs:3433"
+      "src/modeler/modeler-ui.mjs:3431"
     ],
     "context": "else if (e.altKey && !ctrl && (key === 'z' || e.code === 'KeyZ')) { S.xray = !S.xray; toast(t(S.xray ? \"modeler.xrayOn\" : \"modeler.xrayOff\")); refresh(); }"
+  },
+  "modeler.zeroWeights": {
+    "locations": [
+      "src/modeler/modeler-ui.mjs:1234"
+    ],
+    "context": "model.bones.length ? el('label', {class: 'modeler-check', title: t(\"modeler.zeroWeightsHint\")}, [el('input', {type: 'checkbox', 'data-zero-weights': '', checked"
+  },
+  "modeler.zeroWeightsHint": {
+    "locations": [
+      "src/modeler/modeler-ui.mjs:1234"
+    ],
+    "context": "model.bones.length ? el('label', {class: 'modeler-check', title: t(\"modeler.zeroWeightsHint\")}, [el('input', {type: 'checkbox', 'data-zero-weights': '', checked"
   },
   "modifierDock.add": {
     "locations": [

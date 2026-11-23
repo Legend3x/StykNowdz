@@ -40,7 +40,8 @@ docs/SPATIAL-MESHES.md and docs/RIG-CONSTRAINTS.md).
 - **Bones**: Humanoid skeleton (fitted to the model's hands, crotch, ankles and toes; see Automatic weights), Add bone, Extrude
   bone (E), Delete, Mirror .L to .R; click a bone to select it and drag its
   joints (see Dragging). With one bone selected the model shows what it moves,
-  blue (nothing) to red (fully). Bones mode sets the skeleton's rest shape: the
+  dark blue (nothing) through cyan, green and yellow to red (fully), blended
+  smoothly from point to point (see Weight colours). Bones mode sets the skeleton's rest shape: the
   mesh doesn't follow, as in Blender. Posing happens on the Animate stage, or
   as a preview with Pose (see Pose mode). New bones start loose (see Layers).
 
@@ -933,6 +934,41 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   Until a point is picked the brush paints everywhere. Picks are kept by part,
   point and half (`part:point:0|1`, 1 for a Mirror part's mirrored half), for
   the session only.
+
+### Weight colours
+
+With one bone selected in Bones mode (**Show what the selected bone moves**, and
+while painting) every point shows the bone's weight as Blender's Weight Paint
+mode shows it (`src/modeler/weight-display.mjs`):
+
+- The weight is blended across each face from its points, and only then turned
+  into a colour, pixel by pixel. So halfway between a point at 0 and one at 1 is
+  green, and a face runs through every colour in between, as in Blender. Before,
+  each face took the average of its points as one flat colour.
+- The colours are Blender's ramp (its `weight_to_rgb`, as recalled: values
+  checked against the documented blue, cyan, green, yellow, red at 0, ¼, ½, ¾
+  and 1, each brighter as the weight rises; recheck against Blender's source
+  before relying on exact values). Shown as display colours; Blender blends
+  them in its scene-linear space, so in-between shades can differ slightly.
+- The value is the bone's own group weight (`groupWeights` in armature.mjs):
+  every group the point has, not cut to the four deformation uses, blended with
+  automatic weights where carried and automatic points meet exactly as
+  `partWeights` blends them. Where a point has four bones or fewer it is the
+  same number deformation uses.
+- **Zero weights in black** (Bones panel > Skeleton, off by default; Blender's
+  Overlays > Zero Weights > Active): points the bone doesn't move at all show
+  black, fading into the colours around them, so a little weight stands out
+  from none.
+- WebGL (the usual view): the weight is a texture coordinate into a 256×2 ramp
+  image (`weightRampImage`: black row, colour row), so the GPU blends weight and
+  zero flag per pixel through the depth pass's existing textured batches.
+  X-ray and no WebGL: each triangle is a canvas linear gradient along the
+  direction its weight changes fastest (`gradientLine`), through the ramp every
+  1/16 (within half a step of 0–255 of the curve), plus a black fade gradient
+  for zero weights; even faces are one flat fill. In X-ray with weights shown a
+  redraw costs about 10% more than with flat faces (Juniper, software
+  rendering: about 115 → 128 ms); WebGL is unchanged.
+- A part outside what the weight brush may paint stays one greyed colour.
 
 ### Vertex groups and stored weights
 

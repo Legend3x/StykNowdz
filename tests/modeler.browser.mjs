@@ -218,6 +218,29 @@ try {
     });
     assert.deepEqual(result, {on: [true, 'dual-quaternion'], off: [false, false, 1, 'linear'], moved: true, back: [true, undefined]});
   });
+  await step('Weight colours: blended per pixel with Blender\'s ramp, the same in WebGL and on the canvas, zero weights black', async () => {
+    const result = await page.evaluate(async () => {
+      const {paint, cameraFrame} = await import('/src/modeler/viewport.mjs'), {createDepthPass} = await import('/src/modeler/depth-pass.mjs');
+      // A square facing a flat front camera: weight 0 down its left side, 1 down its right.
+      const mesh = {verts: [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]], faces: [{v: [0, 1, 2, 3], c: 0}]};
+      const frame = cameraFrame({yaw: 0, pitch: 0, dist: 4, target: [0, 0, 0], ortho: true, fov: .7}, 200, 200);
+      const draw = (depth, zeroBlack = false) => {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 200;
+        const ctx = canvas.getContext('2d', {willReadFrequently: true});
+        paint(ctx, frame, [{mesh, palette: [[200, 200, 200]], partId: 1, weights: Float64Array.from([0, 1, 1, 0]), zeroBlack}], {showGrid: false, depth});
+        const at = (x, y) => [...ctx.getImageData(x, y, 1, 1).data.slice(0, 3)];
+        const q = frame.project([-1, 0, 0]), r = frame.project([1, 0, 0]), x = t => Math.round(q.x + (r.x - q.x) * t);
+        return {left: at(x(.04), 100), quarter: at(x(.25), 100), middle: at(x(.5), 100), right: at(x(.96), 100)};
+      };
+      const depth = createDepthPass(), gl = draw(depth), flat = draw(null), black = draw(depth, true);
+      const hue = ([r, g, b]) => (g > r + 60 && b > r + 60 && Math.abs(g - b) < 50 ? 'cyan' : b > g && b > r ? 'blue' : g > r && g > b ? 'green' : r > g && r > b ? 'red' : 'other');
+      const close = (a, b) => a.every((v, k) => Math.abs(v - b[k]) <= 12);
+      return {webgl: !depth.unavailable, gl: ['left', 'quarter', 'middle', 'right'].map(k => hue(gl[k])), flat: ['left', 'quarter', 'middle', 'right'].map(k => hue(flat[k])),
+        same: ['left', 'quarter', 'middle', 'right'].every(k => close(gl[k], flat[k])), cyanQuarter: gl.quarter[1] > 100 && gl.quarter[2] > 100 && gl.quarter[0] < 40,
+        blackLeft: black.left.every(v => v < 30), blackMiddle: hue(black.middle)};
+    });
+    assert.deepEqual(result, {webgl: true, gl: ['blue', 'cyan', 'green', 'red'], flat: ['blue', 'cyan', 'green', 'red'], same: true, cyanQuarter: true, blackLeft: true, blackMiddle: 'green'});
+  });
   await step('Add Cylinder: Vertices, Radius, Depth and Cap fill type change it afterwards; one undo removes it; the next edit ends it', async () => {
     const result = await page.evaluate(async () => {
       if (m.state.posing) button('Stop posing')?.click();

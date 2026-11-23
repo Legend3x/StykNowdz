@@ -10,7 +10,7 @@ import {createUVEditor} from './uv-editor.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged, skinningMethod} from './armature.mjs';
+import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged, skinningMethod, groupWeights} from './armature.mjs';
 import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
   originOf, setOrigin, connections, tracedLines, lineOf, otherEnd, swapChoiceOf, hiddenBySwap, showChoice, swapSetProblem, makeSwapSet, plainFolder, choiceKey, choicesOf} from './layers.mjs';
 import {starterFace, stickToFace, faceFrame, facePart} from './face-sets.mjs';
@@ -1230,6 +1230,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('p', {class: 'modeler-hint', text: model.bones.length ? t("modeler.boneCount", {count: model.bones.length}) : t("modeler.noBonesHint")}),
         model.bones.length ? null : actions([[t("modeler.humanoidSkeleton"), addHumanoid, t("modeler.humanoidSkeletonHint")], [t("modeler.addBone"), addSingleBone]]),
         model.bones.length ? el('label', {class: 'modeler-check'}, [el('input', {type: 'checkbox', checked: S.weights, onchange: e => { S.weights = e.target.checked; refresh(); }}), t("modeler.showWeights")]) : null,
+        // Blender's Overlays > Zero Weights (Active): points with no weight in the bone's group show black.
+        model.bones.length ? el('label', {class: 'modeler-check', title: t("modeler.zeroWeightsHint")}, [el('input', {type: 'checkbox', 'data-zero-weights': '', checked: Boolean(S.zeroWeights), onchange: e => { S.zeroWeights = e.target.checked; refresh(); }}), t("modeler.zeroWeights")]) : null,
         // Preserve Volume (Blender's Armature modifier option): how joints bend in the Pose preview, on the stage and in Blender.
         model.bones.length ? el('label', {class: 'modeler-check', title: t("modeler.preserveVolumeHint")}, [el('input', {type: 'checkbox', 'data-preserve-volume': '', checked: model.preserveVolume !== false,
           onchange: e => commit(() => { if (e.target.checked) delete model.preserveVolume; else model.preserveVolume = false; })}), t("modeler.preserveVolume")]) : null,
@@ -1345,16 +1347,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       if (showWeights) {
         const key = `w${p.id}:${bone}`;
         weights = S.cache.get(key);
-        if (!weights) {
-          const skin = partWeights(model, mesh, p);
-          const vw = mesh.verts.map((_, v) => { let w = 0; for (let k = 0; k < 4; k++) if (skin.bones[v * 4 + k] === bone) w += skin.weights[v * 4 + k]; return w; });
-          weights = mesh.faces.map(f => f.v.reduce((s, v) => s + vw[v], 0) / f.v.length);
-          S.cache.set(key, weights);
-        }
+        // The bone's group weight at every point, as Blender's Weight Paint shows it (weight-display.mjs).
+        if (!weights) { weights = groupWeights(model, mesh, p, bone); S.cache.set(key, weights); }
       }
       // Pose mode: the shape bent by its weights (the rest shape kept for the weight brush).
       const frames = poseNow(), shown = frames ? posedMesh(mesh, skinOf(p, mesh), frames, skinningMethod(model)) : mesh;
-      items.push({mesh: shown, restMesh: mesh, palette: model.palette, partId: p.id, weights, flat: p.shadows === false, muted: Boolean(weights && paintingNow() && S.parts.size && !S.parts.has(p.id))});
+      items.push({mesh: shown, restMesh: mesh, palette: model.palette, partId: p.id, weights, zeroBlack: Boolean(weights && S.zeroWeights), flat: p.shadows === false, muted: Boolean(weights && paintingNow() && S.parts.size && !S.parts.has(p.id))});
       // The outline shell (not pickable), in the toon preview.
       const hull = S.toonPreview && !weights ? hullOf(p) : null;
       if (hull) items.push({mesh: hull, palette: model.palette, partId: p.id, hull: true, flat: true, twoSided: false});
