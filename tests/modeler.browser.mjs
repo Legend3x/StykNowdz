@@ -218,6 +218,58 @@ try {
     });
     assert.deepEqual(result, {on: [true, 'dual-quaternion'], off: [false, false, 1, 'linear'], moved: true, back: [true, undefined]});
   });
+  await step('Weight options: Lock weights, Auto Normalize, Multi-Paint with Shift+click, Lock relative, Normalize all', async () => {
+    const spot = await page.evaluate(async () => {
+      if (m.state.posing) { button('Stop posing').click(); await wait(50); }
+      m.setMode('bones'); m.state.parts = new Set();
+      const bone = n => m.model.bones.find(b => b.name === n), chest = bone('Chest'), spine = bone('Spine');
+      m.state.bones = new Set([chest.id]); m.refresh(); await wait(50);
+      // Lock weights (Bone panel): one undo step, and painting the locked bone is off.
+      const undo = m.state.undo.length;
+      document.querySelector('[data-lock-weights]').click(); await wait(50);
+      const locked = [m.model.groups.find(g => g.id === chest.id)?.lock === true, m.state.undo.length - undo];
+      // Locked: the panel says so instead of offering Paint weights.
+      const refused = !button('Paint weights') && /weights locked/.test(document.querySelector('.modeler-props, .modeler').textContent);
+      document.querySelector('[data-lock-weights]').click(); await wait(50);
+      if (!m.state.brush?.on) { button('Paint weights').click(); await wait(50); }
+      const bar = () => [...document.querySelectorAll('.modeler-paint-bar .modeler-paint-toggle')];
+      const toggle = label => bar().find(b => b.getAttribute('aria-label') === label);
+      // Auto Normalize: saved with the model when off, one undo step.
+      toggle('Auto Normalize').click(); await wait(50);
+      const normalizeOff = [m.model.weightPaint?.autoNormalize, toggle('Auto Normalize').getAttribute('aria-pressed')];
+      toggle('Auto Normalize').click(); await wait(50);
+      // Multi-Paint: Shift+click on a bone adds it; the bar names both.
+      toggle('Multi-Paint').click(); await wait(50);
+      // Where the Spine bone shows, for a real Shift+click.
+      m.setView('front'); m.state.camera.target = [0, 1.1, 0]; m.state.camera.dist = 1.6; m.refresh(); await wait(100);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), q = f.project(spine.head.map((v, k) => (v + spine.tail[k]) / 2));
+      window.weightOptions = {locked, refused, normalizeOff};
+      return [box.left + q.x, box.top + q.y];
+    });
+    await page.keyboard.down('Shift'); await page.mouse.click(...spot); await page.keyboard.up('Shift');
+    const result = await page.evaluate(async () => {
+      await wait(50);
+      const bone = n => m.model.bones.find(b => b.name === n), chest = bone('Chest'), spine = bone('Spine');
+      const bar = () => [...document.querySelectorAll('.modeler-paint-bar .modeler-paint-toggle')];
+      const toggle = label => bar().find(b => b.getAttribute('aria-label') === label);
+      const both = [m.state.brush.on && document.querySelector('.modeler-paint-bone').textContent];
+      // Lock relative changes only the colours.
+      const before = JSON.stringify(m.model);
+      toggle('Lock relative').click(); await wait(50);
+      const sameModel = JSON.stringify(m.model) === before;
+      toggle('Lock relative').click(); toggle('Multi-Paint').click(); await wait(50);
+      // Normalize all: one undo step, every painted point adds up to 1.
+      const torso = m.model.parts.find(p => p.name === 'Torso');
+      const {setStoredWeights} = await import('/src/modeler/weight-manager.mjs');
+      setStoredWeights(torso.mesh, 0, [[chest.id, .3], [spine.id, .3]]);
+      const steps = m.state.undo.length;
+      button('Normalize all').click(); await wait(50);
+      const sum = torso.mesh.vdata.skin[0].reduce((t, [, w]) => t + w, 0);
+      return {...weightOptions, both, sameModel, normalized: [Math.abs(sum - 1) < 1e-9, m.state.undo.length - steps]};
+    });
+    assert.deepEqual(result, {locked: [true, 1], refused: true, normalizeOff: [false, 'false'], both: ['Spine + Chest'], sameModel: true, normalized: [true, 1]});
+  });
   await step('Weight colours: blended per pixel with Blender\'s ramp, the same in WebGL and on the canvas, zero weights black', async () => {
     const result = await page.evaluate(async () => {
       const {paint, cameraFrame} = await import('/src/modeler/viewport.mjs'), {createDepthPass} = await import('/src/modeler/depth-pass.mjs');

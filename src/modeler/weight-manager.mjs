@@ -86,6 +86,27 @@ export function readStoredWeights(raw, count, isGroup) {
   return out;
 }
 
+/** Blender's Weights > Normalize All on a mesh's stored weights: at every point, the weights in
+ * `deform` groups that aren't `locked` are scaled so the deform weights add up to 1, locked ones
+ * kept as they are (when they alone reach 1 or more, the others go to 0). Groups outside `deform`
+ * (weights that move nothing) are left alone, as is a point with nothing unlocked to scale.
+ * Points without stored weights are automatic, and add up to 1 already. Returns how many
+ * points changed. */
+export function normalizeStoredWeights(mesh, {deform, locked = new Set()}) {
+  const kept = mesh.vdata?.skin; if (!kept) return 0;
+  let changed = 0;
+  for (const [v, pairs] of Object.entries(kept)) {
+    const free = ([id]) => deform.has(id) && !locked.has(id);
+    const fixed = pairs.filter(([id]) => deform.has(id) && locked.has(id)).reduce((t, [, w]) => t + w, 0), loose = pairs.filter(free).reduce((t, [, w]) => t + w, 0);
+    if (loose <= 0) continue;
+    const scale = Math.max(0, 1 - fixed) / loose;
+    if (Math.abs(scale - 1) < 1e-9) continue;
+    setStoredWeights(mesh, Number(v), pairs.map(([id, w]) => [id, free([id]) ? w * scale : w]));
+    changed++;
+  }
+  return changed;
+}
+
 /** Weights scaled to add up to 1 (all of them kept); [] when they add up to nothing. */
 export function normalizedWeights(pairs) {
   const total = pairs.reduce((t, [, w]) => t + w, 0);

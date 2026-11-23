@@ -935,6 +935,48 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   point and half (`part:point:0|1`, 1 for a Mirror part's mirrored half), for
   the session only.
 
+### Weight paint options
+
+Blender's Weight Paint options, as its manual describes them, with the same
+names (`src/modeler/weight-paint.mjs`; paint bar, Bone panel and Weight painting
+panel):
+
+- **Auto Normalize** (paint bar; saved as `weightPaint.autoNormalize = false`
+  when off, on by default): on, painting keeps a point's bones adding up to 1,
+  as 3D Nowdz always has. Off, only the painted bone's weight changes, anywhere
+  from 0 to 1, nothing else is rescaled, and the animation divides by the total
+  (as Blender's Armature modifier). Weights painted that way are kept as they
+  are when saved and opened.
+- **Lock weights** (Bone panel; the bone's vertex group `lock`): a locked bone
+  can't be painted (the panel says so), and painting other bones never changes
+  its weights, as a Merged bone's. Normalize All keeps them too.
+- **Multi-Paint** (paint bar): Shift+click bones on the model to add or remove
+  them; they are painted as one, each keeping its share: their sum with Auto
+  Normalize (the other free bones share the rest), their average without (the
+  others untouched). As in Blender, a point where they have no weight can't be
+  painted, and they never go all the way to zero (`MULTI_PAINT_MIN`, 0.001
+  together). The colours show the same sum or average.
+- **Lock relative** (paint bar; only the colours): weights shown as if the
+  locked bones were deleted and the rest re-normalized (a bone's weight ÷ what
+  the locked ones leave). A locked bone itself shows as it is.
+- **Normalize all** (Weight painting panel; one undo step): every painted point
+  of the highlighted parts (or every part) gets its bones scaled to add up to 1,
+  locked bones kept; when locked ones alone reach 1 the others go to 0; groups
+  that move nothing are left alone (`normalizeStoredWeights` in
+  weight-manager.mjs). **Keep this bone** is Blender's Lock Active: the painted
+  bone keeps its weight too. Automatic points add up to 1 already.
+- **Hand off to nearby bones** (Weight painting panel; saved as
+  `weightPaint.handOff = false` when off, on by default): not in Blender. On,
+  where a bone moves a point on its own, painting it down gives the rest to the
+  bones automatic weighting would choose there (or its parent), as 3D Nowdz
+  always has. Off, as Blender with Auto Normalize: the bone keeps the point
+  until another bone has weight there.
+- A stroke that can't change a point (nothing free to take the weight) leaves
+  it exactly as it was and counts as no change.
+
+With every option at its default, painting gives the same numbers as before
+these options existed (`tests/modeler-weight-golden.test.mjs`).
+
 ### Weight colours
 
 With one bone selected in Bones mode (**Show what the selected bone moves**, and
@@ -984,8 +1026,8 @@ group, any number of groups per point, each weight 0–1, and a lock per group.
   `model.nextId`, so it never matches a bone); `lock: true` on a locked group.
   Opening a model (`readModel`) and `syncGroups` make a group for every bone and
   drop the groups of bones that are gone (their weights stopped counting
-  already). There is no group list in the panel yet, and painting doesn't use
-  locks yet.
+  already). There is no group list in the panel yet; a bone's lock is in the
+  Bone panel (Lock weights).
 - Stored weights (`mesh.vdata.skin`, `{point: [[group, weight], …]}`) are read
   and written through the Weight Manager (`setStoredWeights`,
   `clearStoredWeights`, `remapStoredWeights`, `readStoredWeights`). They are kept
@@ -1001,11 +1043,10 @@ group, any number of groups per point, each weight 0–1, and a lock per group.
   saving, opening, the Smooth modifier, glTF import and Blender's weights coming
   back don't trim. Before, every one of those cut a point to its four strongest
   bones and rescaled the rest, so painting one bone quietly changed others.
-- **Auto Normalize** (Blender's weight paint option) is stored with the model
-  as `weightPaint: {autoNormalize: false}` when off and is on by default. There
-  is no switch for it yet: painting always shares a point's bone weights out to
-  1, as before. While it is on, painting reads a point's stored bone weights as
-  shares of 1 (`completeSkin`).
+- **Auto Normalize** (see Weight paint options) is stored with the model as
+  `weightPaint: {autoNormalize: false}` when off and is on by default. While it
+  is on, painting reads a point's stored bone weights as shares of 1
+  (`completeSkin`); off, as they are.
 - Weights in a group with no bone are left alone by painting, applying a
   skeleton and deformation; a point storing only such weights keeps automatic
   bones beside them.

@@ -21,8 +21,9 @@ import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
-import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES} from './weight-paint.mjs';
-import {remapStoredWeights} from './weight-manager.mjs';
+import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES, handOffOn, groupWeightIn} from './weight-paint.mjs';
+import {remapStoredWeights, normalizeStoredWeights} from './weight-manager.mjs';
+import {autoNormalizeOn, isGroupLocked, setGroupLock} from './vertex-groups.mjs';
 import {poseFrames, posedBy, posedMesh, turnBone, axisAngle, isPosed} from './pose.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf, referenceCorners} from './viewport.mjs';
 import {createDepthPass} from './depth-pass.mjs';
@@ -800,17 +801,47 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   // ---------- weight painting ----------
   const brush = () => S.brush ??= {on: false, mode: 'add', radius: 60, strength: .5, value: 1, falloff: 'smooth', seen: true};
   /** Paint what the selected bone moves, in the colours of "Show what the selected bone moves". */
+  /** The bones being painted: the selected one, or with Multi-Paint every selected bone (by id). */
+  const paintBones = () => { const ids = model.bones.filter(b => S.bones.has(b.id)).map(b => b.id); return brush().multi && ids.length > 1 ? ids : ids[0]; };
+  /** The locked groups (vertex-groups.mjs), for painting and Lock relative. */
+  const lockedGroups = () => new Set(model.bones.filter(b => isGroupLocked(model, b.id)).map(b => b.id));
+  /** A weight paint option stored with the model (weightPaint: only what differs from the default, on). */
+  function setPaintOption(key, on) {
+    commit(() => {
+      const options = {...model.weightPaint};
+      if (on) delete options[key]; else options[key] = false;
+      if (Object.keys(options).length) model.weightPaint = options; else delete model.weightPaint;
+      S.cache.clear();
+    });
+    renderPaintTools();
+  }
+  /** Blender's Weights > Normalize All: the highlighted parts', else every part's, stored weights add up to 1,
+   * locked bones kept (and the painted bones too, with Keep this bone: Blender's Lock Active). */
+  function normalizeAll() {
+    const locked = lockedGroups();
+    if (S.normalizeKeep) for (const id of [].concat(paintBones() ?? [])) locked.add(id);
+    let n = 0;
+    commit(() => { for (const q of model.parts) if (!S.parts.size || S.parts.has(q.id)) n += normalizeStoredWeights(q.mesh, {deform: new Set(model.bones.map(b => b.id)), locked}); S.cache.clear(); });
+    toast(t("modeler.normalizedAll", {count: n}));
+  }
   function weightPaintTools(bone) {
     const B = brush(), painted = model.parts.reduce((n, q) => n + paintedCount(q), 0);
     if (isMerged(bone)) return [el('p', {class: 'modeler-hint', text: t("modeler.mergedNoPaint", {bone: bone.name})})];
+    const lockedNow = model.bones.filter(b => S.bones.has(b.id) && isGroupLocked(model, b.id));
+    if (lockedNow.length) return [el('p', {class: 'modeler-hint', text: t("modeler.lockedNoPaint", {bone: lockedNow.map(b => b.name).join(', ')})})];
     return [
-      el('p', {class: 'modeler-hint', text: t("modeler.weightPaintHint", {bone: bone.name})}),
+      el('p', {class: 'modeler-hint', text: t("modeler.weightPaintHint", {bone: [].concat(paintBones() ?? bone.id).map(id => boneById(id)?.name).join(' + ')})}),
       el('button', {type: 'button', class: 'modeler-button modeler-toggle', 'aria-pressed': String(B.on), onclick: () => setPainting(!B.on)}, B.on ? t("modeler.weightPaintStop") : t("modeler.weightPaintStart")),
       B.on ? el('p', {class: 'modeler-hint', text: t("modeler.paintToolsWhere")}) : null,
       el('p', {class: 'modeler-hint', text: S.parts.size ? t("modeler.paintMaskOn", {count: S.parts.size}) : t("modeler.paintMaskOff")}),
       S.parts.size ? actions([[t("modeler.paintMaskClear"), () => { S.parts = new Set(); S.active = null; refresh(); }]]) : null,
       actions([[t("modeler.paintedBackToAuto"), () => commit(() => { const n = model.parts.reduce((c, q) => c + clearPainted(q), 0); S.cache.clear(); toast(t("modeler.paintedCleared", {count: n})); }), t("modeler.paintedBackToAutoHint")]]),
       painted ? el('p', {class: 'modeler-hint', text: t("modeler.paintedCount", {count: painted})}) : null,
+      // Normalize All (Blender's Weights menu) and its Lock Active, here Keep this bone.
+      actions([[t("modeler.normalizeAll"), normalizeAll, t("modeler.normalizeAllHint")]]),
+      el('label', {class: 'modeler-check', title: t("modeler.normalizeKeepHint")}, [el('input', {type: 'checkbox', checked: Boolean(S.normalizeKeep), onchange: e => { S.normalizeKeep = e.target.checked; }}), t("modeler.normalizeKeep")]),
+      // Hand off: not in Blender, so it is an option (on, as 3D Nowdz has always painted).
+      el('label', {class: 'modeler-check', title: t("modeler.handOffHint")}, [el('input', {type: 'checkbox', 'data-hand-off': '', checked: handOffOn(model), onchange: e => setPaintOption('handOff', e.target.checked)}), t("modeler.handOff")]),
     ].filter(Boolean);
   }
   /** The painting tools: brushes (Add, Remove, Smooth, Set), then Gradient, Fill, Sample and Select points. */
@@ -840,10 +871,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('input', {type: 'range', min: String(min), max: String(max), step: String(step), value: String(v), oninput: e => { set(Number(e.target.value)); shown.textContent = format(Number(e.target.value)); draw(); }}), shown]);
     };
     const toggle = (name, label, pressed, onclick, title) => { const b = iconButton(name, title ?? label, onclick, 'modeler-paint-toggle'); b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(Boolean(pressed))); b.append(el('span', {text: label})); return b; };
-    const bone = boneById([...S.bones][0]), brushTool = ['add', 'remove', 'smooth', 'set'].includes(B.mode), amount = ['set', 'gradient', 'fill'].includes(B.mode);
+    const painting = [].concat(paintBones() ?? []).map(boneById).filter(Boolean), brushTool = ['add', 'remove', 'smooth', 'set'].includes(B.mode), amount = ['set', 'gradient', 'fill'].includes(B.mode);
     const gap = () => el('span', {class: 'modeler-paint-divider', 'aria-hidden': 'true'});
     paintBar.replaceChildren(...[
-      el('span', {class: 'modeler-paint-bone', title: t("modeler.paintBoneHint")}, [glyph('joints'), el('span', {text: bone?.name ?? ''})]),
+      el('span', {class: 'modeler-paint-bone', title: B.multi ? t("modeler.multiPaintBonesHint") : t("modeler.paintBoneHint")}, [glyph('joints'), el('span', {text: painting.map(b => b.name).join(' + ')})]),
       gap(),
       el('span', {class: 'modeler-paint-tool-name', text: t(`modeler.brush.${B.mode}`)}),
       amount ? value(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
@@ -857,6 +888,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       B.mode === 'fill' ? button(t("modeler.weightFillNow"), () => fillWeights(null), {title: t("modeler.weightFillHint")}) : null,
       gap(),
       toggle('flip', t("modeler.mirrorPaint"), B.mirror, () => { B.mirror = !B.mirror; renderPaintTools(); }, t("modeler.mirrorPaintHint")),
+      // Blender's Weight Paint options: Auto Normalize (saved with the model), Multi-Paint and Lock-Relative.
+      toggle('level', t("modeler.autoNormalize"), autoNormalizeOn(model), () => setPaintOption('autoNormalize', !autoNormalizeOn(model)), t("modeler.autoNormalizeHint")),
+      toggle('joints', t("modeler.multiPaint"), B.multi, () => { B.multi = !B.multi; if (!B.multi && S.bones.size > 1) S.bones = new Set([[...S.bones][0]]); renderProps(); renderPaintTools(); setStatus(); draw(); }, t("modeler.multiPaintHint")),
+      toggle('lock', t("modeler.lockRelative"), S.lockRelative, () => { S.lockRelative = !S.lockRelative; renderPaintTools(); draw(); }, t("modeler.lockRelativeHint")),
       toggle('select-points', t("modeler.paintPointsShort"), B.points, () => { B.points = !B.points; if (!B.points) S.paintPoints = new Set(); renderPaintTools(); setStatus(); draw(); }, t("modeler.paintPointsHint")),
       el('span', {class: 'modeler-spacer'}),
       button(t("modeler.weightPaintStop"), () => setPainting(false)),
@@ -868,7 +903,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (on) S.weights = true;
     renderProps(); renderPaintTools(); setStatus(); draw();
   }
-  const paintingNow = () => S.mode === 'bones' && brush().on && S.bones.size === 1 && !isMerged(boneById([...S.bones][0]));
+  const paintingNow = () => S.mode === 'bones' && brush().on && (S.bones.size === 1 || (brush().multi && S.bones.size > 1))
+    && model.bones.every(b => !S.bones.has(b.id) || (!isMerged(b) && !isGroupLocked(model, b.id)));
   /** The surface point under the pointer (on the shown, smoothed shape), or null; `hitPart`
    * learns which part it is on. */
   function surfaceAt(x, y, hitPart = null) {
@@ -895,7 +931,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
    * the other side's bone (for models whose two sides are separate points). */
   function paintDab(stroke, x, y, invert) {
     const B = brush(), hit = surfaceAt(x, y); if (!hit) return false;
-    const reach = B.radius * frame.unitsPerPixel(hit), bone = [...S.bones][0], mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
+    const reach = B.radius * frame.unitsPerPixel(hit), bone = paintBones(), mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
     let changed = dabAt(stroke, hit, reach, bone, mode, false, {x, y});
     const other = mirrorBone(model, bone);
     if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, mode, true) || changed;
@@ -978,7 +1014,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
   /** Set weights exactly (Gradient, Fill): `amountAt(spot)` gives each spot's value, or null to leave it. */
   function setWeights(spots, amountAt) {
-    const before = snapshot(), states = new Map(), touched = new Set(), bone = [...S.bones][0];
+    const before = snapshot(), states = new Map(), touched = new Set(), bone = paintBones();
     const only = pointMask();
     for (const spot of spots) {
       if (only && !spot[4] && !only.has(spotKey(spot))) continue;
@@ -1000,7 +1036,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** A test for the chosen spots and, with Mirror painting, their mirror images (found by position)
    * for the other side's bone. Mirror painting's own extra spots are never chosen themselves. */
   function withMirror(spots, chosen) {
-    const bone = [...S.bones][0], other = mirrorBone(model, bone);
+    const bone = paintBones(), other = mirrorBone(model, bone);
     if (!brush().mirror || other === bone) return chosen;
     const picked = spots.filter(chosen), keys = new Set();
     for (const sp of picked) {
@@ -1011,7 +1047,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
   /** The keys of the points lying where the given points' mirror images are. */
   function mirroredKeys(keys) {
-    const spots = paintSpots([...S.bones][0], {mirror: false}), out = new Set();
+    const spots = paintSpots(paintBones(), {mirror: false}), out = new Set();
     for (const sp of spots.filter(o => keys.has(spotKey(o)))) {
       const f = [-sp[2][0], sp[2][1], sp[2][2]], size = M.bounds(sp[0].mesh.verts), eps = Math.max(1e-4, 1e-3 * Math.hypot(...M.sub(size.max, size.min)));
       for (const o of spots) if (Math.hypot(f[0] - o[2][0], f[1] - o[2][1], f[2] - o[2][2]) <= eps) out.add(spotKey(o));
@@ -1021,7 +1057,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** The point (spot) nearest a click: within 12 pixels on screen, the one nearest the surface under the
    * pointer (so a point behind the model isn't picked), else the nearest on screen. */
   function pointNear(p) {
-    const spots = paintSpots([...S.bones][0], {mirror: false}), hit = surfaceAt(p.x, p.y);
+    const spots = paintSpots(paintBones(), {mirror: false}), hit = surfaceAt(p.x, p.y);
     let best = null, score = Infinity;
     for (const sp of spots) {
       const q = frame.project(sp[2]); if (!q.ok) continue;
@@ -1041,7 +1077,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function boxPaintPoints(a, b, {add, remove}) {
     const lo = {x: Math.min(a.x, b.x), y: Math.min(a.y, b.y)}, hi = {x: Math.max(a.x, b.x), y: Math.max(a.y, b.y)};
     const depthOf = q => (S.camera.ortho ? -q.z : q.w), inside = [];
-    for (const sp of paintSpots([...S.bones][0], {mirror: false})) {
+    for (const sp of paintSpots(paintBones(), {mirror: false})) {
       const q = frame.project(sp[2]); if (!q.ok || q.x < lo.x || q.x > hi.x || q.y < lo.y || q.y > hi.y) continue;
       // Seen: nothing of the model in front of it there (a little slack for smoothed parts, whose points lie off the surface).
       const hit = surfaceAt(q.x, q.y);
@@ -1054,7 +1090,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     renderProps(); setStatus(); draw();
   }
   function selectAllPaintPoints(all) {
-    S.paintPoints = all ? new Set(paintSpots([...S.bones][0], {mirror: false}).map(spotKey)) : new Set();
+    S.paintPoints = all ? new Set(paintSpots(paintBones(), {mirror: false}).map(spotKey)) : new Set();
     renderProps(); setStatus(); draw();
   }
   /** The points of the point mask: picked ones orange, the rest small and dark. */
@@ -1062,7 +1098,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (!brush().points) return;
     const picked = S.paintPoints ?? new Set();
     ctx.save();
-    for (const sp of paintSpots([...S.bones][0], {mirror: false})) {
+    for (const sp of paintSpots(paintBones(), {mirror: false})) {
       const q = frame.project(sp[2]); if (!q.ok) continue;
       const on = picked.has(spotKey(sp));
       ctx.fillStyle = on ? '#ff8a00' : 'rgba(20,20,20,.8)'; ctx.beginPath(); ctx.arc(q.x, q.y, on ? 4 : 2.2, 0, Math.PI * 2); ctx.fill();
@@ -1088,7 +1124,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   function applyGradient(a, b) {
     const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy, B = brush();
     if (len2 < 16) return;
-    const spots = paintSpots([...S.bones][0]), inside = pieceAt(spots, a) ?? pieceAt(spots, b);
+    const spots = paintSpots(paintBones()), inside = pieceAt(spots, a) ?? pieceAt(spots, b);
     if (!inside) { toast(t("modeler.weightGradientWhere")); return; }
     // Mirror painting: the mirror image's points follow the mirrored line.
     const n = setWeights(spots, sp => {
@@ -1101,7 +1137,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Fill (Blender's Set Weight, Ctrl+X): Amount on the highlighted parts, or else on the piece
    * under the pointer, with its mirror image on the other side. */
   function fillWeights(pointer) {
-    const spots = paintSpots([...S.bones][0]);
+    const spots = paintSpots(paintBones());
     if (pointMask()) { toast(t("modeler.weightFilled", {count: setWeights(spots, sp => withMirror(spots, sp => !sp[4] && pointMask().has(spotKey(sp)))(sp) ? brush().value : null)})); return; }
     const inside = pieceAt(spots, pointer);
     if (!inside) { toast(t("modeler.weightFillWhere")); return; }
@@ -1110,10 +1146,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** Sample (Blender's Sample Weight, Shift+X): Amount becomes the bone's weight at the point under the pointer. */
   function sampleWeight(pointer) {
     const on = {}, hit = pointer ? surfaceAt(pointer.x, pointer.y, on) : null; if (!hit) return;
-    const bone = [...S.bones][0], near = paintSpots(bone, {mirror: false}).filter(sp => sp[0].id === on.id).reduce((best, sp) => { const d = Math.hypot(sp[2][0] - hit[0], sp[2][1] - hit[1], sp[2][2] - hit[2]); return d < best[1] ? [sp, d] : best; }, [null, Infinity])[0];
+    const bone = paintBones(), near = paintSpots(bone, {mirror: false}).filter(sp => sp[0].id === on.id).reduce((best, sp) => { const d = Math.hypot(sp[2][0] - hit[0], sp[2][1] - hit[1], sp[2][2] - hit[2]); return d < best[1] ? [sp, d] : best; }, [null, Infinity])[0];
     if (!near) return;
     const [q, v, , which] = near, state = startStroke(model, q, bone);
-    brush().value = Math.round((state.skin[v]?.find(([b]) => b === which)?.[1] ?? 0) * 100) / 100;
+    brush().value = Math.round(Math.min(1, groupWeightIn(state.skin[v], which, !autoNormalizeOn(model))) * 100) / 100;
     toast(t("modeler.weightSampled", {value: brush().value.toFixed(2)})); renderProps();
   }
   /** F / Shift+F: size or strength follows the pointer's distance from the circle's middle; a click or
@@ -1248,6 +1284,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           [el('option', {value: '0', text: t("modeler.none")}), ...model.bones.filter(b => b.id !== bone.id).map(b => el('option', {value: String(b.id), text: b.name, selected: bone.parent === b.id}))])]),
         merged ? null : vector(t("modeler.head"), bone.head, (k, v) => commit(() => { bone.head[k] = v; })), merged ? null : vector(t("modeler.tail"), bone.tail, (k, v) => commit(() => { bone.tail[k] = v; })),
         merged ? null : actions([[t("modeler.boneToSelection"), boneToSelection, t("modeler.boneToSelectionHint")]]),
+        // Its vertex group's lock (Blender's lock icon in Vertex Groups): painting can't change its weights.
+        el('label', {class: 'modeler-check', title: t("modeler.lockWeightsHint")}, [el('input', {type: 'checkbox', 'data-lock-weights': '', checked: isGroupLocked(model, bone.id),
+          onchange: e => { commit(() => { setGroupLock(model, bone.id, e.target.checked); S.cache.clear(); }); renderPaintTools(); }}), t("modeler.lockWeights")]),
         // How hard the bone pulls the skin: weaker, or only within a distance, so it stops tugging what is merely close to it.
         // Only a grouped bone takes the skin by itself, so only it has these.
         boneState(bone) === 'grouped' ? liveSlider(t("modeler.boneStrength"), pullOf(bone).strength, 0, STRENGTH_MAX, .05, {preview: v => setPull(bone, {strength: v}), title: t("modeler.boneStrengthHint")}) : null,
@@ -1258,7 +1297,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         bone.face && !merged ? el('label', {class: 'modeler-field modeler-wide', title: t("modeler.faceCutHint")}, [el('span', {text: t("modeler.faceCut")}), el('select', {onchange: e => commit(() => { setFace(bone, {...faceOf(bone), cut: e.target.value}); S.cache.clear(); })},
           ['', ...FACE_CUTS].map(c => el('option', {value: c, text: t(c ? `modeler.faceCut.${c}` : "modeler.faceCut.none"), selected: (bone.cut ?? '') === c})))]) : null,
         el('p', {class: 'modeler-hint', text: t("modeler.sideNamesHint")})]));
-      if (bone) blocks.push(section(t("modeler.weightPaint"), weightPaintTools(bone)));
+      const multi = !bone && brush().multi && S.bones.size > 1 ? model.bones.find(b => S.bones.has(b.id)) : null;
+      if (bone || multi) blocks.push(section(t("modeler.weightPaint"), weightPaintTools(bone ?? multi)));
     }
     // Blender tools, where the desktop app can run Blender's engine.
     if (desktop()?.runBlenderEngine && S.mode === 'object') blocks.push(section(t("modeler.blenderTools"), blenderTools(p)));
@@ -1338,17 +1378,18 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     frame = cameraFrame(S.camera, w, h);
     const items = [];
-    const showWeights = S.mode === 'bones' && (S.weights || paintingNow()) && S.bones.size === 1 && model.bones.length;
-    const bone = showWeights ? [...S.bones][0] : 0;
+    const showWeights = S.mode === 'bones' && (S.weights || paintingNow()) && (S.bones.size === 1 || (brush().multi && S.bones.size > 1)) && model.bones.length;
+    // Multi-Paint shows the bones' sum (their average without Auto Normalize); Lock relative leaves out locked bones.
+    const bone = showWeights ? paintBones() : 0, shownAs = {average: Array.isArray(bone) && !autoNormalizeOn(model), relative: S.lockRelative ? lockedGroups() : null};
     for (const p of model.parts) {
       if (p.visible === false || !p.mesh.faces.length || hiddenBySwap(model, p)) continue;
       const mesh = evaluated(p);
       let weights = null;
       if (showWeights) {
-        const key = `w${p.id}:${bone}`;
+        const key = `w${p.id}:${bone}:${shownAs.average ? 'avg' : ''}:${shownAs.relative ? [...shownAs.relative].join(',') : ''}`;
         weights = S.cache.get(key);
         // The bone's group weight at every point, as Blender's Weight Paint shows it (weight-display.mjs).
-        if (!weights) { weights = groupWeights(model, mesh, p, bone); S.cache.set(key, weights); }
+        if (!weights) { weights = groupWeights(model, mesh, p, bone, shownAs); S.cache.set(key, weights); }
       }
       // Pose mode: the shape bent by its weights (the rest shape kept for the weight brush).
       const frames = poseNow(), shown = frames ? posedMesh(mesh, skinOf(p, mesh), frames, skinningMethod(model)) : mesh;
@@ -3292,7 +3333,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // (Shift adds, Ctrl takes away).
     if (e.button === 0 && paintingNow() && brush().mode === 'select') { drag = {kind: 'pointbox', start: p, end: null, add: e.shiftKey, remove: e.ctrlKey || e.metaKey}; return; }
     // With Paint only selected points, a Shift+click on a point adds or drops it instead.
-    if (e.button === 0 && paintingNow() && e.shiftKey) { if (brush().points && pointNear(p)) { pickPaintPoint(p, true); return; } const h = pick(p.x, p.y); if (h?.bone) { S.bones = new Set([h.bone]); renderProps(); setStatus(); draw(); } return; }
+    if (e.button === 0 && paintingNow() && e.shiftKey) { if (brush().points && pointNear(p)) { pickPaintPoint(p, true); return; } const h = pick(p.x, p.y); if (h?.bone) { if (brush().multi) { if (!S.bones.has(h.bone)) S.bones.add(h.bone); else if (S.bones.size > 1) S.bones.delete(h.bone); } else S.bones = new Set([h.bone]); renderProps(); renderPaintTools(); setStatus(); draw(); } return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'fill') { fillWeights(p); return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'sample') { sampleWeight(p); setPaintTool(brush().back ?? 'set'); return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'gradient') { drag = {kind: 'gradient', start: p, end: null}; return; }

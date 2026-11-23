@@ -101,7 +101,11 @@ export function readModel(value, {repaired = []} = {}) {
   }
   // Vertex groups: one per bone (same id), any without a bone, locks; and the weight paint options.
   syncGroups(model);
-  if (model.weightPaint !== undefined) { if (model.weightPaint?.autoNormalize === false) model.weightPaint = {autoNormalize: false}; else delete model.weightPaint; }
+  // Weight paint options (weight-paint.mjs), stored only when off: Auto Normalize and Hand off.
+  if (model.weightPaint !== undefined) {
+    const options = Object.fromEntries(['autoNormalize', 'handOff'].filter(k => model.weightPaint?.[k] === false).map(k => [k, false]));
+    if (Object.keys(options).length) model.weightPaint = options; else delete model.weightPaint;
+  }
   // Preserve Volume (Blender's Armature modifier option, src/skinning.mjs): on by default, stored only when off.
   if (model.preserveVolume !== false) delete model.preserveVolume;
   // Layers (docs/BLENDER-LITE.md, "Layers"): folders of parts, each part in at most one

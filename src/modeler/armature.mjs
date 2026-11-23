@@ -306,19 +306,31 @@ function evaluatedSkin(model, mesh, part, options = {}) {
 /** One vertex group's weight at every point of a part's evaluated `mesh`, as Weight Paint
  * shows it (weight-display.mjs): the group's own value, every group kept (not cut to the four
  * deformation uses), blended with the automatic weights where carried and automatic points
- * meet, as partWeights blends them. A Float64Array, one weight a point. */
-export function groupWeights(model, mesh, part, group) {
+ * meet, as partWeights blends them. A Float64Array, one weight a point.
+ * - `group` may be several groups (Multi-Paint): their sum, or with `average` their average.
+ * - `relative` (Blender's Lock-Relative): a Set of locked groups; the weights show as if those
+ *   were deleted and the rest re-normalized (a group's weight ÷ (1 − the locked ones')). Groups
+ *   that are themselves locked show as they are. */
+export function groupWeights(model, mesh, part, group, {average = false, relative = null} = {}) {
   const n = mesh.verts.length, out = new Float64Array(n), {auto, carried} = evaluatedSkin(model, mesh, part), resolve = sideResolver(model);
-  const bones = new Set(model.bones.map(b => b.id));
-  for (let v = 0; v < n; v++) {
+  const bones = new Set(model.bones.map(b => b.id)), wanted = new Set(Array.isArray(group) || group instanceof Set ? group : [group]);
+  const locked = relative && [...wanted].some(g => !relative.has(g)) ? relative : null, shown = locked ? new Set([...wanted].filter(g => !locked.has(g))) : wanted;
+  // The point's total weight in a set of groups: automatic, carried, or the two blended.
+  const sumAt = (v, set, from) => {
     let automatic = 0;
-    for (let k = 0; k < 4; k++) if (auto.bones[v * 4 + k] === group) automatic += auto.weights[v * 4 + k];
+    for (let k = 0; k < 4; k++) if (set.has(auto.bones[v * 4 + k])) automatic += auto.weights[v * 4 + k];
+    if (!from) return automatic;
+    let own = 0;
+    for (const [g, w] of from.pairs) if (w > 0 && set.has(resolve(g))) own += w;
+    return own * from.share + automatic * (1 - from.share);
+  };
+  for (let v = 0; v < n; v++) {
     const from = carried?.(v);
     // A carried list with no bone in it leaves the point automatic, as partWeights does.
-    if (!from || !from.pairs.some(([g, w]) => w > 0 && bones.has(resolve(g)))) { out[v] = automatic; continue; }
-    let own = 0;
-    for (const [g, w] of from.pairs) if (w > 0 && resolve(g) === group) own += w;
-    out[v] = own * from.share + automatic * (1 - from.share);
+    const own = from && from.pairs.some(([g, w]) => w > 0 && bones.has(resolve(g))) ? from : null;
+    let w = sumAt(v, shown, own);
+    if (locked) { const room = 1 - sumAt(v, locked, own); w = room > 1e-6 ? Math.min(1, w / room) : 0; }
+    out[v] = average ? w / wanted.size : w;
   }
   return out;
 }
