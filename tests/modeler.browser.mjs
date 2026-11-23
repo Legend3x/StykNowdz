@@ -105,6 +105,35 @@ try {
     assert.deepEqual({...result, steps: result.steps - setup.undo}, {painted: true, onTorso: true, steps: 1, undone: true});
     assert.equal(setup.sliders, 2);
   });
+  await step('Brush strokes: the same stroke paints the same at 4 or 60 pointer moves; its undo step holds only the points it changed', async () => {
+    const setup = await page.evaluate(async () => {
+      m.setMode('bones'); m.setView('front'); m.state.camera.target = [0, 1.2, 0]; m.state.camera.dist = 1.6; m.state.parts = new Set();
+      const chest = m.model.bones.find(b => b.name === 'Chest'); m.state.bones = new Set([chest.id]); m.refresh(); await wait(100);
+      if (!m.state.brush?.on) button('Paint weights').click();
+      await wait(50); tool('add').click(); await wait(50);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
+      window.strokeWeights = () => JSON.stringify(m.model.parts.map(p => [p.id, p.mesh.vdata?.skin ?? {}]));
+      window.strokeStart = {weights: strokeWeights(), undo: m.state.undo.length};
+      return {from: at([-.12, 1.18, .13]), to: at([.12, 1.24, .13])};
+    });
+    const stroke = async steps => { await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to, {steps}); await page.mouse.up(); };
+    await stroke(4);
+    const first = await page.evaluate(async () => {
+      await wait(50);
+      const entry = m.state.undo.at(-1), whole = JSON.stringify({model: m.model}).length, weights = strokeWeights();
+      press('z', {ctrlKey: true}); await wait(50);
+      const undone = strokeWeights() === strokeStart.weights;
+      press('z', {ctrlKey: true, shiftKey: true}); await wait(50);
+      const redone = strokeWeights() === weights;
+      press('z', {ctrlKey: true}); await wait(50);
+      return {weights, painted: weights !== strokeStart.weights, steps: m.state.undo.length - strokeStart.undo, small: entry.startsWith('{"weights":') && entry.length * 20 < whole, undone, redone};
+    });
+    await stroke(60);
+    const second = await page.evaluate(async () => { await wait(50); const w = strokeWeights(); press('z', {ctrlKey: true}); await wait(50); return w; });
+    assert.deepEqual({...first, weights: undefined}, {weights: undefined, painted: true, steps: 0, small: true, undone: true, redone: true});
+    assert.equal(second, first.weights, 'the same stroke drawn with 60 pointer moves instead of 4 paints the same weights');
+  });
   await step('Weights: Gradient fades a bone along one piece, Ctrl+X fills the piece under the pointer, Shift+X samples, F sizes the brush', async () => {
     const setup = await page.evaluate(async () => {
       const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); m.state.bones = new Set([fore.id]); m.state.parts = new Set(); m.refresh(); await wait(100);

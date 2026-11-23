@@ -22,7 +22,8 @@ import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
 import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES, handOffOn, groupWeightIn} from './weight-paint.mjs';
-import {remapStoredWeights, normalizeStoredWeights} from './weight-manager.mjs';
+import {remapStoredWeights, normalizeStoredWeights, setStoredWeights, clearStoredWeights, storedWeights} from './weight-manager.mjs';
+import {pointerSample, spacedDabs, facesViewer} from './paint-stroke.mjs';
 import {autoNormalizeOn, isGroupLocked, setGroupLock} from './vertex-groups.mjs';
 import {poseFrames, posedBy, posedMesh, turnBone, axisAngle, isPosed} from './pose.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf, referenceCorners} from './viewport.mjs';
@@ -134,8 +135,26 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (error instanceof TopologyError || error instanceof RangeError || error?.modelerMessage) { toast(error.message); return; }
     throw error;
   }
-  const undo = () => { if (!S.undo.length) return; S.lastOp = null; S.redo.push(snapshot()); restore(S.undo.pop()); };
-  const redo = () => { if (!S.redo.length) return; S.lastOp = null; S.undo.push(snapshot()); restore(S.redo.pop()); };
+  // A brush stroke's undo step holds only the points it changed ({"weights": …}, with the selection), not
+  // the whole model: [part id, [[point, stored weights or null], …]] each. Undoing one stores the same
+  // points as they are now for redo. A step for a whole model is a snapshot, as before.
+  const where = () => ({parts: [...S.parts], active: S.active, verts: [...S.verts], bones: [...S.bones], mode: S.mode});
+  const isWeightStep = entry => entry.startsWith('{"weights":');
+  const weightStep = (points, at) => JSON.stringify({weights: points, ...at});
+  function strokeUndo(d) {
+    return weightStep([...d.parts].map(([id, state]) => [id, [...state.before]]).filter(([, list]) => list.length), d.where);
+  }
+  function weightStepNow(entry) {
+    const v = JSON.parse(entry);
+    return weightStep(v.weights.map(([id, list]) => { const q = model.parts.find(p => p.id === id); return [id, list.map(([i]) => [i, storedWeights(q.mesh, i)?.map(pair => pair.slice()) ?? null])]; }), where());
+  }
+  function restoreWeights(entry) {
+    const v = JSON.parse(entry);
+    for (const [id, list] of v.weights) { const q = model.parts.find(p => p.id === id); if (!q) continue; for (const [i, pairs] of list) { if (pairs) setStoredWeights(q.mesh, i, pairs); else clearStoredWeights(q.mesh, [i]); } }
+    S.parts = new Set(v.parts); S.active = v.active; S.verts = new Set(v.verts); S.bones = new Set(v.bones); S.mode = v.mode; S.cache.clear(); syncRefs(); refresh();
+  }
+  const undo = () => { if (!S.undo.length) return; S.lastOp = null; const entry = S.undo.pop(); if (isWeightStep(entry)) { S.redo.push(weightStepNow(entry)); restoreWeights(entry); } else { S.redo.push(snapshot()); restore(entry); } };
+  const redo = () => { if (!S.redo.length) return; S.lastOp = null; const entry = S.redo.pop(); if (isWeightStep(entry)) { S.undo.push(weightStepNow(entry)); restoreWeights(entry); } else { S.undo.push(snapshot()); restore(entry); } };
   const touch = (partId = null) => { if (partId) S.cache.delete(partId); else S.cache.clear(); refresh(); };
   let finished = false;
 
@@ -883,6 +902,11 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       brushTool ? el('label', {class: 'modeler-paint-field', title: t("modeler.brushFalloffHint")}, [el('span', {text: t("modeler.brushFalloff")}),
         el('select', {class: 'modeler-paint-select', onchange: e => { B.falloff = e.target.value; draw(); }}, ['smooth', 'sharp', 'constant'].map(f => el('option', {value: f, selected: (B.falloff ?? 'smooth') === f}, t(`modeler.falloff.${f}`))))]) : null,
       brushTool ? toggle('eye', t("modeler.brushSeen"), B.seen !== false, () => { B.seen = B.seen === false; renderPaintTools(); }, t("modeler.brushSeenHint")) : null,
+      // Blender's stroke options (paint-stroke.mjs): Front Faces Only, Accumulate, and a pen's pressure for Strength and size.
+      brushTool ? toggle('square', t("modeler.frontFaces"), Boolean(B.front), () => { B.front = !B.front; renderPaintTools(); }, t("modeler.frontFacesHint")) : null,
+      brushTool && B.mode !== 'smooth' ? toggle('plus', t("modeler.accumulate"), Boolean(B.accumulate), () => { B.accumulate = !B.accumulate; renderPaintTools(); }, t("modeler.accumulateHint")) : null,
+      brushTool ? toggle('brush', t("modeler.penStrength"), B.penStrength !== false, () => { B.penStrength = B.penStrength === false; renderPaintTools(); }, t("modeler.penStrengthHint")) : null,
+      brushTool ? toggle('circle', t("modeler.penSize"), Boolean(B.penSize), () => { B.penSize = !B.penSize; renderPaintTools(); }, t("modeler.penSizeHint")) : null,
       B.mode === 'select' ? el('span', {class: 'modeler-paint-note', text: S.paintPoints?.size ? t("modeler.paintPointsPicked", {count: S.paintPoints.size}) : t("modeler.paintPointsNone")}) : null,
       B.mode === 'select' && S.paintPoints?.size ? button(t("modeler.paintPointsClear"), () => selectAllPaintPoints(false)) : null,
       B.mode === 'fill' ? button(t("modeler.weightFillNow"), () => fillWeights(null), {title: t("modeler.weightFillHint")}) : null,
@@ -929,12 +953,14 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** One dab of the brush at a screen point: a sphere around the surface point, as
    * Blender's brush. Mirror painting dabs the same spot on the other side too, with
    * the other side's bone (for models whose two sides are separate points). */
-  function paintDab(stroke, x, y, invert) {
+  function paintDab(stroke, x, y, invert, pressure = 1) {
     const B = brush(), hit = surfaceAt(x, y); if (!hit) return false;
-    const reach = B.radius * frame.unitsPerPixel(hit), bone = paintBones(), mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
-    let changed = dabAt(stroke, hit, reach, bone, mode, false, {x, y});
+    // A pen's pressure: Strength (Pen strength, on) and the brush's size (Pen size, off), as Blender's pressure buttons.
+    const press = B.penStrength === false ? 1 : pressure, radius = B.radius * (B.penSize ? Math.max(.05, pressure) : 1);
+    const reach = radius * frame.unitsPerPixel(hit), bone = paintBones(), mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
+    let changed = dabAt(stroke, hit, reach, bone, mode, false, {x, y, radius, press});
     const other = mirrorBone(model, bone);
-    if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, mode, true) || changed;
+    if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, mode, true, null, press) || changed;
     if (changed) for (const id of stroke.touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
     return changed;
   }
@@ -956,8 +982,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   /** One dab. With Seen only (the default), the brush is the circle on screen and paints only the points
    * the view shows there, so it doesn't reach round to the back or into a piece behind; otherwise it is a
    * ball as wide as the circle, around the surface point under it. */
-  function dabAt(stroke, hit, reach, bone, mode, mirrorDab, at2d = null) {
-    const B = brush(), mask = paintMask(), picked = pointMask(), falloff = FALLOFF[B.falloff] ?? FALLOFF.smooth, flat = B.seen !== false && at2d && !mirrorDab;
+  function dabAt(stroke, hit, reach, bone, mode, mirrorDab, at2d = null, pressed = at2d?.press ?? 1) {
+    const B = brush(), mask = paintMask(), picked = pointMask(), falloff = FALLOFF[B.falloff] ?? FALLOFF.smooth, flat = B.seen !== false && at2d && !mirrorDab, radius = at2d?.radius ?? B.radius;
     // The mirrored dab of Mirror painting paints the mirror images of the picked points.
     const only = picked && mirrorDab ? (stroke.mirrorPicked ??= mirroredKeys(picked)) : picked;
     let changed = false;
@@ -977,22 +1003,32 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           let t0;
           if (flat) {
             const s2 = frame.project(at); if (!s2.ok) continue;
-            t0 = Math.hypot(s2.x - at2d.x, s2.y - at2d.y) / B.radius; if (t0 > 1) continue;
+            t0 = Math.hypot(s2.x - at2d.x, s2.y - at2d.y) / radius; if (t0 > 1) continue;
             if (!seenInView(stroke, `${q.id}:${v}:${k}`, at, q)) continue;
           } else { t0 = Math.hypot(at[0] - hit[0], at[1] - hit[1], at[2] - hit[2]) / reach; if (t0 > 1) continue; }
-          if (!state) { state = startStroke(model, q, bone); stroke.parts.set(q.id, state); }
+          // Front Faces Only: the point's surface must face the viewer.
+          if (B.front && !facesViewer(normalAt(stroke, q, v, k === 1), frame.toEye(at))) continue;
+          if (!state) { state = startStroke(model, q, bone, {accumulate: Boolean(B.accumulate)}); stroke.parts.set(q.id, state); }
           const fall = falloff(t0);
-          if (paintPoint(state, v, mode, B.strength * fall * .5, {bone: which, value: B.value})) { changed = true; stroke.touched.add(q.id); }
+          // Strength as set (Blender's: no hidden factor), by the falloff and a pen's pressure.
+          if (paintPoint(state, v, mode, B.strength * fall * pressed, {bone: which, value: B.value})) { changed = true; stroke.touched.add(q.id); }
         }
       }
     }
     return changed;
   }
-  function paintTo(stroke, p, invert) {
-    // Dabs along the way, a quarter of the brush apart, so a quick stroke leaves no gaps.
-    const from = stroke.last ?? p, steps = Math.max(1, Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) / Math.max(2, brush().radius / 4)));
-    for (let i = 1; i <= steps; i++) paintDab(stroke, from.x + (p.x - from.x) * i / steps, from.y + (p.y - from.y) * i / steps, invert);
-    stroke.last = p; draw();
+  /** A point's surface normal in the scene (its mirror image's, for a Mirror part's other half), kept for the stroke. */
+  function normalAt(stroke, q, v, mirrored) {
+    stroke.normals ??= new Map();
+    if (!stroke.normals.has(q.id)) { const to = M.objectTransform(q); stroke.normals.set(q.id, M.vertexNormals({verts: q.mesh.verts.map(to), faces: q.mesh.faces})); }
+    const n = stroke.normals.get(q.id)[v];
+    return n && mirrored ? [-n[0], n[1], n[2]] : n;
+  }
+  /** Dabs a quarter of the brush apart along the pointer's path (paint-stroke.mjs: by distance only, so
+   * a stroke paints the same however fast it is drawn or how often the pointer reports). */
+  function paintTo(stroke, sample, invert) {
+    for (const dab of spacedDabs(stroke, sample, Math.max(2, brush().radius / 4))) paintDab(stroke, dab.x, dab.y, invert, dab.pressure);
+    draw();
   }
   /** Every point the brush could reach, as [part, point, where, bone] (a Mirror part's
    * other half is its source point with the other side's bone), with the stroke state per part. */
@@ -3337,7 +3373,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (e.button === 0 && paintingNow() && brush().mode === 'fill') { fillWeights(p); return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'sample') { sampleWeight(p); setPaintTool(brush().back ?? 'set'); return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'gradient') { drag = {kind: 'gradient', start: p, end: null}; return; }
-    if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', before: snapshot(), parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey}; paintTo(drag, p, drag.invert); return; }
+    if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey, where: where()}; paintTo(drag, pointerSample(p, e), drag.invert); return; }
     // Pose mode: drag a bone to turn it (a joint shared with its parent turns the parent, as on the stage).
     if (e.button === 0 && S.mode === 'bones' && S.posing) {
       const hit = pick(p.x, p.y);
@@ -3363,7 +3399,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (S.modal?.kind === 'slide') { S.modal.mouse = p; applyEdgeSlide(); return; }
     if (S.brushResize) { moveBrushResize(p); return; }
     if (!drag) { if (paintingNow() || S.connect) draw(); return; }
-    if (drag.kind === 'paint') { paintTo(drag, p, drag.invert); return; }
+    if (drag.kind === 'paint') { paintTo(drag, pointerSample(p, e), drag.invert); return; }
     if (drag.kind === 'pointbox') { if (drag.end || Math.hypot(p.x - drag.start.x, p.y - drag.start.y) >= 4) { drag.end = p; draw(); } return; }
     if (drag.kind === 'gradient') { drag.end = p; draw(); return; }
     if (drag.kind === 'pose') { poseDrag(drag, p); return; }
@@ -3388,7 +3424,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (d.kind === 'orbit' && d.button === 2 && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { viewMenu(d.start, e); return; }
     if (d.kind === 'gradient') { if (d.end) applyGradient(d.start, d.end); draw(); return; }
     if (d.kind === 'pointbox') { if (d.end) boxPaintPoints(d.start, d.end, d); else pickPaintPoint(d.start, d.add); draw(); return; }
-    if (d.kind === 'paint') { if (d.touched.size) { S.lastOp = null; S.undo.push(d.before); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
+    if (d.kind === 'paint') { if (d.touched.size) { S.lastOp = null; S.undo.push(strokeUndo(d)); if (S.undo.length > 120) S.undo.shift(); S.redo = []; touch(); } return; }
     if (d.maskClick && (({x, y}) => Math.hypot(x - d.start.x, y - d.start.y))(local(e)) < 4) { const poly = pickPolygon(S.polys, d.start.x, d.start.y); if (poly) selectPart(poly.item.partId, true); return; }
     if (d.kind === 'press' && S.mode === 'edit' && (e.ctrlKey || e.metaKey)) addPointAt(d.start);
     else if (d.kind === 'press') clickSelect(d.start.x, d.start.y, e);

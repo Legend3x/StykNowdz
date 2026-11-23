@@ -891,8 +891,9 @@ step. Strength and Reach are sliders, previewed live, saved on release.
 - **The painting toolbar**, as in Photoshop: while painting, a rail of tools runs
   down the left of the view (Add, Remove, Smooth, Set, then Gradient, Fill,
   Sample and Select points) and the tool's options sit in a bar along its top
-  (the bone being painted, Amount, Size, Strength, Falloff, Seen only, Mirror
-  painting, Picked only, Stop painting); the properties panel keeps starting
+  (the bone being painted, Amount, Size, Strength, Falloff, Seen only, Front
+  faces only, Accumulate, Pen strength, Pen size, Mirror painting, Auto
+  Normalize, Multi-Paint, Lock relative, Picked only, Stop painting); the properties panel keeps starting
   and stopping, the part highlight and Back to automatic. The rail's buttons
   carry `data-paint-tool`, not `data-tool`, which the app's own tool rail
   answers to. Sample goes back to the tool you had once it has taken the
@@ -905,6 +906,34 @@ step. Strength and Reach are sliders, previewed live, saved on release.
   stroke). Off, the brush is a ball as wide as the circle around the surface
   point under it, as before. **Falloff**: Smooth (the old fade), Sharp or
   Constant (the whole circle evenly). The brush can be as small as 2 pixels.
+- **Brush strokes** (`src/modeler/paint-stroke.mjs`), as Blender's:
+  - **Spacing**: dabs fall a quarter of the brush apart along the pointer's
+    path, by distance only, the leftover carried from one pointer move to the
+    next. A stroke paints the same however fast it is drawn and however often
+    the pointer reports (`tests/modeler-paint-stroke.test.mjs`; the browser
+    test draws one stroke with 4 and with 60 pointer moves and gets the same
+    weights). Before, every pointer move painted at least one dab, so a slow
+    stroke or a fast mouse painted harder.
+  - **Strength** is used as set: a dab gives Strength × falloff × pressure.
+    Before, it was halved in the code (Strength 1 acted as 0.5).
+  - **Accumulate** (off by default, as Blender's weight brushes): off, a
+    stroke works from the weight each point had when the stroke first reached
+    it, by the strongest dab it has had, so going over a spot again in the same
+    stroke adds nothing unless the dab is stronger: Add at Strength 0.5 takes
+    a point halfway to 1 per stroke. On, every dab goes on from the last, as
+    before (and as painting from code, Gradient and Fill, which pass
+    `accumulate` to `startStroke` and default to on). Smooth always goes on.
+  - **Pen strength** (on) and **Pen size** (off): a pen's pressure scales
+    Strength and the brush's size. A mouse or a finger counts as full pressure
+    (browsers report 0.5 for a pressed mouse button, which is ignored).
+  - **Front faces only** (off by default, as Blender's): a point is painted
+    only where its surface (its normal, averaged from the faces around it) turns
+    towards the viewer. Seen only also skips points something else hides.
+  - **Undo**: a stroke's undo step holds only the points it changed (their
+    stored weights from before, or none), with the selection, as
+    `{"weights": …}`; undoing one keeps the same points as they are now for
+    redo. Before, every stroke saved the whole model as text at its start.
+    Other edits still save the whole model.
 - Blender's quick tools, with its keys, while painting:
   - **Gradient** (a brush; Blender's Weights > Gradient (Linear)): drag a line;
     points behind its start get the Amount, fading to none at its end, and

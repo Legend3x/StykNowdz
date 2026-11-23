@@ -28,7 +28,7 @@
  * points to automatic. */
 import {completeSkin, autoWeights, otherSide, isMerged} from './armature.mjs';
 import {transformMesh, objectMatrix} from './mesh.mjs';
-import {setStoredWeights, clearStoredWeights, storedCount} from './weight-manager.mjs';
+import {setStoredWeights, clearStoredWeights, storedCount, storedWeights} from './weight-manager.mjs';
 import {autoNormalizeOn, isGroupLocked} from './vertex-groups.mjs';
 
 export const PAINT_MODES = Object.freeze(['add', 'remove', 'smooth', 'set']);
@@ -59,7 +59,7 @@ export const groupWeightIn = (pairs, bones, average = false) => {
 /** What a stroke needs for one part: every point's current weights, and (when
  * asked) where weight goes if a bone gives up a point it had alone. `bone` is the
  * one painted unless paintPoint names another (a mirrored side). */
-export function startStroke(model, part, bone) {
+export function startStroke(model, part, bone, {accumulate = true} = {}) {
   const skin = completeSkin(model, part);
   const neighbours = part.mesh.verts.map(() => new Set());
   for (const f of part.mesh.faces) for (let i = 0; i < f.v.length; i++) { const a = f.v[i], b = f.v[(i + 1) % f.v.length]; neighbours[a].add(b); neighbours[b].add(a); }
@@ -72,7 +72,9 @@ export function startStroke(model, part, bone) {
     return pairs;
   };
   const locked = new Set(model.bones.filter(b => isGroupLocked(model, b.id)).map(b => b.id));
-  return {model, part, bone, skin, neighbours, fallback, bones: new Set(model.bones.map(b => b.id)), locked, autoNormalize: autoNormalizeOn(model), handOff: handOffOn(model), touched: new Set()};
+  return {model, part, bone, skin, neighbours, fallback, bones: new Set(model.bones.map(b => b.id)), locked, autoNormalize: autoNormalizeOn(model), handOff: handOffOn(model),
+    // Accumulate (see reached); each changed point's stored weights from before the stroke, for its undo step.
+    accumulate, start: new Map(), alpha: new Map(), before: new Map(), touched: new Set()};
 }
 
 /** A point's weights with `bone` at `w`, the rest scaled to share what is left. */
@@ -142,13 +144,14 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
   } else throw new Error(`Unknown paint mode “${mode}”.`);
   // Smooth and Set name weights out of the whole point; the free share is what can change.
   if (mode !== 'add' && mode !== 'remove') target = Math.min(1, target / free);
-  const next = now + (target - now) * clamp01(amount);
-  if (Math.abs(next - now) * free < 1e-4) return false;
+  const next = reached(stroke, `${v}:${bone}`, mode, now, target, clamp01(amount));
+  if (next === null || Math.abs(next - now) * free < 1e-4) return false;
   const fallback = stroke.handOff === false ? () => [] : () => stroke.fallback(v, bone).filter(([b]) => !held.has(b));
   const changed = next < now ? lowered(stroke.model, pairs, bone, now - next, fallback, held, stroke.handOff !== false) ?? withWeight(pairs, bone, next, fallback) : withWeight(pairs, bone, next, fallback);
   const result = [...(kept.length ? [...kept, ...changed.map(([b, x]) => [b, Math.round(x * free * 1e5) / 1e5])].filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1]) : changed), ...aside];
   // Nothing could take the weight (a bone alone on the point, Hand off off): unchanged.
   if (sameWeights(result, skin[v])) return false;
+  remember(stroke, v);
   skin[v] = result;
   setStoredWeights(part.mesh, v, skin[v]);
   stroke.touched.add(v);
@@ -171,12 +174,34 @@ function targetOf(stroke, v, mode, value, valueAt) {
 }
 
 const round5 = x => Math.round(x * 1e5) / 1e5;
+
+/** Where a mode takes a point's weight (`now`) towards `target` with this dab's `amount`.
+ * With Accumulate on (startStroke's default, and painting from code), each dab goes on from
+ * where the last left the point. Off (Blender's default for brush strokes; the brush passes it):
+ * a stroke works from the weight the point had when the stroke first reached it, by the strongest
+ * amount any dab has given it, so going over a spot again in the same stroke adds nothing unless
+ * the dab is stronger. Smooth always goes on from where the point is. Null: nothing new. */
+function reached(stroke, key, mode, now, target, amount) {
+  if (stroke.accumulate !== false || mode === 'smooth') return now + (target - now) * amount;
+  const had = stroke.alpha.get(key);
+  if (had !== undefined && amount <= had) return null;
+  if (had === undefined) stroke.start.set(key, now);
+  stroke.alpha.set(key, amount);
+  const base = stroke.start.get(key);
+  return base + (target - base) * amount;
+}
+
+/** Keep a point's stored weights from before the stroke changed it (null: it had none). */
+function remember(stroke, v) {
+  if (stroke.before && !stroke.before.has(v)) stroke.before.set(v, storedWeights(stroke.part.mesh, v)?.map(p => p.slice()) ?? null);
+}
 /** Whether two weight lists give every bone the same weight (to 1e-5). */
 function sameWeights(a, b) {
   const m = new Map((b ?? []).filter(([, x]) => x > 0));
   return (a ?? []).filter(([, x]) => x > 0).length === m.size && (a ?? []).every(([id, x]) => !(x > 0) || Math.abs((m.get(id) ?? -1) - x) < 1e-5);
 }
 function store(stroke, v, pairs) {
+  remember(stroke, v);
   stroke.skin[v] = pairs.filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1]);
   setStoredWeights(stroke.part.mesh, v, stroke.skin[v]);
   stroke.touched.add(v);
@@ -188,7 +213,9 @@ function paintAlone(stroke, v, mode, amount, bone, value) {
   const pairs = stroke.skin[v] ?? [], now = weightIn(pairs, bone);
   const target = targetOf(stroke, v, mode, value, u => weightIn(stroke.skin[u], bone));
   if (target === null) return false;
-  const next = clamp01(now + (target - now) * clamp01(amount));
+  const reach = reached(stroke, `${v}:${bone}`, mode, now, target, clamp01(amount));
+  if (reach === null) return false;
+  const next = clamp01(reach);
   if (Math.abs(next - now) < 1e-4) return false;
   return store(stroke, v, [...pairs.filter(([b]) => b !== bone), ...(next > 1e-4 ? [[bone, round5(next)]] : [])]);
 }
@@ -206,7 +233,9 @@ function paintSeveral(stroke, v, mode, amount, bones, value) {
   if (now <= 0) return false;
   const target = targetOf(stroke, v, mode, value, u => groupWeightIn(stroke.skin[u], bones, average));
   if (target === null) return false;
-  let next = Math.max(MULTI_PAINT_MIN, now + (target - now) * clamp01(amount));
+  const reach = reached(stroke, `${v}:${bones.join('+')}`, mode, now, target, clamp01(amount));
+  if (reach === null) return false;
+  let next = Math.max(MULTI_PAINT_MIN, reach);
   // No bone of the group past 1.
   const most = Math.max(...mine.map(([, x]) => x));
   next = Math.min(next, now / most);
