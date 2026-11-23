@@ -134,13 +134,18 @@ export function summaryOf(value) {
   return {n: xs.length, sum, placed, size};
 }
 
-/** Whether two summaries match: the same count, and the sums within 0.000001 (the position-weighted
- * one within 0.001). Node versions differ by far less (about 0.0000002 over every posed point of an
- * example); one weight or coordinate off by more than 0.000001 shows. */
-export function sameSummary(a, b) {
+/** Whether two summaries match: the same count, and the sums within `tolerance` (the
+ * position-weighted one within 1000 times that). Node versions differ by far less (about 0.0000002
+ * over every posed point of an example); one weight or coordinate off by more than `tolerance`
+ * shows. Stage positions are single precision, so they get toleranceOf's larger one. */
+export function sameSummary(a, b, tolerance = 1e-6) {
   if (!a || !b || a.n !== b.n) return false;
-  return Math.abs(a.sum - b.sum) <= 1e-6 && Math.abs(a.size - b.size) <= 1e-6 && Math.abs(a.placed - b.placed) <= 1e-3;
+  return Math.abs(a.sum - b.sum) <= tolerance && Math.abs(a.size - b.size) <= tolerance && Math.abs(a.placed - b.placed) <= tolerance * 1e3;
 }
+
+/** The tolerance for one result: 0.01 stage pixel (0.0001 model units) for stage positions, which
+ * are single precision and may differ in their last digit between Node versions; else 0.000001. */
+export const toleranceOf = key => (key.endsWith('.stage') ? 1e-2 : 1e-6);
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
   const results = await goldenResults();
@@ -148,6 +153,6 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
   else if (process.argv[2] === 'dump') writeFileSync(process.argv[3], JSON.stringify(results));
   else {
     const expected = JSON.parse(readFileSync(FIXTURE, 'utf8'));
-    for (const [k, v] of Object.entries(results)) console.log(sameSummary(expected[k], summaryOf(v)) ? 'same   ' : 'CHANGED', k);
+    for (const [k, v] of Object.entries(results)) console.log(sameSummary(expected[k], summaryOf(v), toleranceOf(k)) ? 'same   ' : 'CHANGED', k);
   }
 }
