@@ -21,7 +21,7 @@ import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
-import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES, handOffOn, groupWeightIn} from './weight-paint.mjs';
+import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES, BLENDS, invertedBrush, handOffOn, groupWeightIn} from './weight-paint.mjs';
 import {remapStoredWeights, normalizeStoredWeights, setStoredWeights, clearStoredWeights, storedWeights} from './weight-manager.mjs';
 import {pointerSample, spacedDabs, facesViewer} from './paint-stroke.mjs';
 import {autoNormalizeOn, isGroupLocked, setGroupLock} from './vertex-groups.mjs';
@@ -818,7 +818,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
   }
 
   // ---------- weight painting ----------
-  const brush = () => S.brush ??= {on: false, mode: 'add', radius: 60, strength: .5, value: 1, falloff: 'smooth', seen: true};
+  const brush = () => S.brush ??= {on: false, mode: 'draw', blend: 'mix', radius: 60, strength: .5, value: 1, falloff: 'smooth', seen: true};
   /** Paint what the selected bone moves, in the colours of "Show what the selected bone moves". */
   /** The bones being painted: the selected one, or with Multi-Paint every selected bone (by id). */
   const paintBones = () => { const ids = model.bones.filter(b => S.bones.has(b.id)).map(b => b.id); return brush().multi && ids.length > 1 ? ids : ids[0]; };
@@ -863,8 +863,20 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('label', {class: 'modeler-check', title: t("modeler.handOffHint")}, [el('input', {type: 'checkbox', 'data-hand-off': '', checked: handOffOn(model), onchange: e => setPaintOption('handOff', e.target.checked)}), t("modeler.handOff")]),
     ].filter(Boolean);
   }
-  /** The painting tools: brushes (Add, Remove, Smooth, Set), then Gradient, Fill, Sample and Select points. */
-  const PAINT_TOOLS = [['add', 'brush'], ['remove', 'eraser'], ['smooth', 'droplet'], ['set', 'level'], ['gradient', 'gradient'], ['fill', 'paint-bucket'], ['sample', 'eyedropper'], ['select', 'select-points']];
+  /** The painting tools: brushes (Draw, Smooth), then Gradient, Fill, Sample and Select points. */
+  const PAINT_TOOLS = [['draw', 'brush'], ['smooth', 'droplet'], ['gradient', 'gradient'], ['fill', 'paint-bucket'], ['sample', 'eyedropper'], ['select', 'select-points']];
+  const BRUSH_TOOLS = ['draw', 'smooth'];
+  /** Draw's presets, as the Add, Remove and Set tools were: Mix to all (1), to none (0), or to Amount. */
+  const DRAW_PRESETS = [['add', 'brush', 1], ['remove', 'eraser', 0], ['set', 'level', null]];
+  /** The preset the Draw brush is on now, if any. */
+  const drawPreset = B => (B.blend ?? 'mix') !== 'mix' ? null : B.value === 1 ? 'add' : B.value === 0 ? 'remove' : 'set';
+  function setDrawPreset(name) {
+    const B = brush(), preset = DRAW_PRESETS.find(([n]) => n === name);
+    B.blend = 'mix';
+    // Set goes back to the last Amount it painted (at first a half), so it isn't Add or Remove again.
+    B.value = preset[2] ?? B.setValue ?? .5;
+    setPaintTool('draw');
+  }
   function setPaintTool(mode) {
     const B = brush();
     if (mode !== 'sample') B.back = mode;
@@ -882,7 +894,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     paintRail.replaceChildren(...PAINT_TOOLS.flatMap(([mode, name], i) => {
       const label = t(`modeler.brush.${mode}`), b = iconButton(name, `${label}: ${t(`modeler.brush.${mode}Hint`)}`, () => setPaintTool(mode), 'modeler-paint-tool');
       b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(B.mode === mode)); b.dataset.paintTool = mode;
-      return i === 4 ? [el('span', {class: 'modeler-paint-rail-gap', 'aria-hidden': 'true'}), b] : [b];
+      return i === BRUSH_TOOLS.length ? [el('span', {class: 'modeler-paint-rail-gap', 'aria-hidden': 'true'}), b] : [b];
     }));
     const value = (label, v, min, max, step, set, title, format = x => x.toFixed(2)) => {
       const shown = el('output', {class: 'modeler-paint-value', text: format(v)});
@@ -890,13 +902,22 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
         el('input', {type: 'range', min: String(min), max: String(max), step: String(step), value: String(v), oninput: e => { set(Number(e.target.value)); shown.textContent = format(Number(e.target.value)); draw(); }}), shown]);
     };
     const toggle = (name, label, pressed, onclick, title) => { const b = iconButton(name, title ?? label, onclick, 'modeler-paint-toggle'); b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(Boolean(pressed))); b.append(el('span', {text: label})); return b; };
-    const painting = [].concat(paintBones() ?? []).map(boneById).filter(Boolean), brushTool = ['add', 'remove', 'smooth', 'set'].includes(B.mode), amount = ['set', 'gradient', 'fill'].includes(B.mode);
+    const painting = [].concat(paintBones() ?? []).map(boneById).filter(Boolean), brushTool = BRUSH_TOOLS.includes(B.mode), amount = ['draw', 'gradient', 'fill'].includes(B.mode);
+    const preset = B.mode === 'draw' ? drawPreset(B) : null;
     const gap = () => el('span', {class: 'modeler-paint-divider', 'aria-hidden': 'true'});
     paintBar.replaceChildren(...[
       el('span', {class: 'modeler-paint-bone', title: B.multi ? t("modeler.multiPaintBonesHint") : t("modeler.paintBoneHint")}, [glyph('joints'), el('span', {text: painting.map(b => b.name).join(' + ')})]),
       gap(),
       el('span', {class: 'modeler-paint-tool-name', text: t(`modeler.brush.${B.mode}`)}),
-      amount ? value(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; }, t("modeler.brushValueHint")) : null,
+      // Draw: Blender's Blend menu, and the old Add, Remove and Set tools as presets of it.
+      B.mode === 'draw' ? el('span', {class: 'modeler-paint-presets', role: 'group', 'aria-label': t("modeler.drawPresets")}, DRAW_PRESETS.map(([name, icon]) => {
+        // Icons only (their names in the tooltip), to keep the bar short.
+        const label = t(`modeler.brush.${name}`), b = iconButton(icon, `${label}: ${t(`modeler.brush.${name}Hint`)}`, () => setDrawPreset(name), 'modeler-paint-preset');
+        b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', String(preset === name)); b.dataset.drawPreset = name; return b;
+      })) : null,
+      B.mode === 'draw' ? el('label', {class: 'modeler-paint-field', title: t("modeler.blendHint")}, [el('span', {text: t("modeler.blend")}),
+        el('select', {class: 'modeler-paint-select', 'data-blend': '', onchange: e => { B.blend = e.target.value; renderPaintTools(); }}, BLENDS.map(m => el('option', {value: m, selected: (B.blend ?? 'mix') === m}, t(`modeler.blend.${m}`))))]) : null,
+      amount ? value(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; if (B.mode === 'draw') syncPresets(); }, t("modeler.brushValueHint")) : null,
       brushTool ? value(t("modeler.brushRadius"), B.radius, 2, 200, 1, v => { B.radius = v; }, t("modeler.brushRadiusHint"), x => `${Math.round(x)}`) : null,
       brushTool ? value(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }, t("modeler.brushStrengthHint")) : null,
       brushTool ? el('label', {class: 'modeler-paint-field', title: t("modeler.brushFalloffHint")}, [el('span', {text: t("modeler.brushFalloff")}),
@@ -920,6 +941,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('span', {class: 'modeler-spacer'}),
       button(t("modeler.weightPaintStop"), () => setPainting(false)),
     ].filter(Boolean));
+  }
+  /** The presets' pressed state, after the Amount slider moved. */
+  function syncPresets() {
+    const now = drawPreset(brush());
+    if (now === 'set') brush().setValue = brush().value;
+    for (const b of paintBar.querySelectorAll('[data-draw-preset]')) b.setAttribute('aria-pressed', String(b.dataset.drawPreset === now));
   }
   function setPainting(on) {
     const B = brush(); B.on = on;
@@ -957,7 +984,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const B = brush(), hit = surfaceAt(x, y); if (!hit) return false;
     // A pen's pressure: Strength (Pen strength, on) and the brush's size (Pen size, off), as Blender's pressure buttons.
     const press = B.penStrength === false ? 1 : pressure, radius = B.radius * (B.penSize ? Math.max(.05, pressure) : 1);
-    const reach = radius * frame.unitsPerPixel(hit), bone = paintBones(), mode = invert && B.mode === 'add' ? 'remove' : invert && B.mode === 'remove' ? 'add' : B.mode;
+    // Draw paints Amount with its blend; Ctrl paints the opposite (invertedBrush: Add's 1 becomes Remove's 0).
+    const reach = radius * frame.unitsPerPixel(hit), bone = paintBones(), draws = {blend: B.blend ?? 'mix', value: B.value};
+    const mode = {mode: B.mode, ...(B.mode === 'draw' && invert ? invertedBrush(draws) : draws)};
     let changed = dabAt(stroke, hit, reach, bone, mode, false, {x, y, radius, press});
     const other = mirrorBone(model, bone);
     if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, mode, true, null, press) || changed;
@@ -983,6 +1012,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
    * the view shows there, so it doesn't reach round to the back or into a piece behind; otherwise it is a
    * ball as wide as the circle, around the surface point under it. */
   function dabAt(stroke, hit, reach, bone, mode, mirrorDab, at2d = null, pressed = at2d?.press ?? 1) {
+    // mode: {mode, blend, value} (paintPoint's).
     const B = brush(), mask = paintMask(), picked = pointMask(), falloff = FALLOFF[B.falloff] ?? FALLOFF.smooth, flat = B.seen !== false && at2d && !mirrorDab, radius = at2d?.radius ?? B.radius;
     // The mirrored dab of Mirror painting paints the mirror images of the picked points.
     const only = picked && mirrorDab ? (stroke.mirrorPicked ??= mirroredKeys(picked)) : picked;
@@ -1011,7 +1041,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           if (!state) { state = startStroke(model, q, bone, {accumulate: Boolean(B.accumulate)}); stroke.parts.set(q.id, state); }
           const fall = falloff(t0);
           // Strength as set (Blender's: no hidden factor), by the falloff and a pen's pressure.
-          if (paintPoint(state, v, mode, B.strength * fall * pressed, {bone: which, value: B.value})) { changed = true; stroke.touched.add(q.id); }
+          if (paintPoint(state, v, mode.mode, B.strength * fall * pressed, {bone: which, value: mode.value, blend: mode.blend})) { changed = true; stroke.touched.add(q.id); }
         }
       }
     }
@@ -1227,7 +1257,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       ctx.fillStyle = '#1e40ff'; ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
       return;
     }
-    if (!['add', 'remove', 'smooth', 'set'].includes(brush().mode)) return;
+    if (!BRUSH_TOOLS.includes(brush().mode)) return;
     const p = S.pointer; if (!p) return;
     ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(p.x, p.y, brush().radius, 0, Math.PI * 2); ctx.stroke();
@@ -3371,7 +3401,7 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     // With Paint only selected points, a Shift+click on a point adds or drops it instead.
     if (e.button === 0 && paintingNow() && e.shiftKey) { if (brush().points && pointNear(p)) { pickPaintPoint(p, true); return; } const h = pick(p.x, p.y); if (h?.bone) { if (brush().multi) { if (!S.bones.has(h.bone)) S.bones.add(h.bone); else if (S.bones.size > 1) S.bones.delete(h.bone); } else S.bones = new Set([h.bone]); renderProps(); renderPaintTools(); setStatus(); draw(); } return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'fill') { fillWeights(p); return; }
-    if (e.button === 0 && paintingNow() && brush().mode === 'sample') { sampleWeight(p); setPaintTool(brush().back ?? 'set'); return; }
+    if (e.button === 0 && paintingNow() && brush().mode === 'sample') { sampleWeight(p); setPaintTool(brush().back ?? 'draw'); return; }
     if (e.button === 0 && paintingNow() && brush().mode === 'gradient') { drag = {kind: 'gradient', start: p, end: null}; return; }
     if (e.button === 0 && paintingNow()) { drag = {kind: 'paint', parts: new Map(), touched: new Set(), last: null, invert: e.ctrlKey || e.metaKey, where: where()}; paintTo(drag, pointerSample(p, e), drag.invert); return; }
     // Pose mode: drag a bone to turn it (a joint shared with its parent turns the parent, as on the stage).

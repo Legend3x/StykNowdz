@@ -22,17 +22,61 @@
  *   A point where they have no weight can't be painted, and they never go
  *   all the way to zero (Blender's rules).
  *
+ * - Blend (Blender's Draw brush): the draw mode takes a point's weight towards
+ *   Amount with one of Blender's blends (BLENDS, blendWeight): Mix, Add,
+ *   Subtract, Lighten, Darken or Multiply. The add, remove and set modes are
+ *   Draw with Mix at 1, 0 and Amount (the brush's Add, Remove and Set presets).
+ *
  * startStroke(model, part, bone) → stroke state for one part and bone (or an
- * array of bones: Multi-Paint); paintPoint(stroke, v, mode, amount) changes one
- * point (mode add, remove, smooth or set); clearPainted(part, verts?) returns
- * points to automatic. */
+ * array of bones: Multi-Paint); paintPoint(stroke, v, mode, amount, {value, blend})
+ * changes one point (mode draw, smooth, or the presets add, remove and set);
+ * clearPainted(part, verts?) returns points to automatic. */
 import {completeSkin, autoWeights, otherSide, isMerged} from './armature.mjs';
 import {transformMesh, objectMatrix} from './mesh.mjs';
 import {setStoredWeights, clearStoredWeights, storedCount, storedWeights} from './weight-manager.mjs';
 import {autoNormalizeOn, isGroupLocked} from './vertex-groups.mjs';
 
-export const PAINT_MODES = Object.freeze(['add', 'remove', 'smooth', 'set']);
+export const PAINT_MODES = Object.freeze(['draw', 'smooth', 'add', 'remove', 'set']);
+/** Blender's weight paint blends, in the order of its Blend menu. */
+export const BLENDS = Object.freeze(['mix', 'add', 'subtract', 'lighten', 'darken', 'multiply']);
 const clamp01 = x => Math.max(0, Math.min(1, x));
+
+/** A dab with `alpha` (its strength there, 0–1) on a weight, painting `value`: Blender's weight
+ * blends (paint_weight's wval_*). Mix goes `alpha` of the way to value; Add and Subtract add or take
+ * value × alpha; Lighten and Darken mix only where the weight is below or above value; Multiply
+ * scales the weight by value, alpha of the way. Not clamped: the caller keeps it within 0–1. */
+export function blendWeight(blend, weight, value, alpha) {
+  switch (blend) {
+    case 'mix': return weight + (value - weight) * alpha;
+    case 'add': return weight + value * alpha;
+    case 'subtract': return weight - value * alpha;
+    case 'lighten': return weight < value ? weight + (value - weight) * alpha : weight;
+    case 'darken': return weight > value ? weight + (value - weight) * alpha : weight;
+    case 'multiply': return (1 - alpha + alpha * value) * weight;
+  }
+  throw new Error(`Unknown blend “${blend}”.`);
+}
+
+/** What a mode paints: {blend, value} (Draw, and its presets add, remove and set), or {smooth: true}. */
+export function brushOf(mode, value = 1, blend = 'mix') {
+  if (mode === 'add') return {blend: 'mix', value: 1};
+  if (mode === 'remove') return {blend: 'mix', value: 0};
+  if (mode === 'set') return {blend: 'mix', value: clamp01(value)};
+  if (mode === 'draw') { if (!BLENDS.includes(blend)) throw new Error(`Unknown blend “${blend}”.`); return {blend, value: clamp01(value)}; }
+  if (mode === 'smooth') return {smooth: true, blend: 'mix'};
+  throw new Error(`Unknown paint mode “${mode}”.`);
+}
+
+/** The opposite of a Draw brush (Ctrl while painting): Mix paints 1 − Amount, Lighten and Darken
+ * swap (at 1 − Amount), Add and Subtract swap; Multiply is its own opposite's undo, so it stays. */
+export function invertedBrush({blend, value}) {
+  if (blend === 'mix') return {blend, value: 1 - value};
+  if (blend === 'lighten') return {blend: 'darken', value: 1 - value};
+  if (blend === 'darken') return {blend: 'lighten', value: 1 - value};
+  if (blend === 'add') return {blend: 'subtract', value};
+  if (blend === 'subtract') return {blend: 'add', value};
+  return {blend, value};
+}
 const weightIn = (pairs, bone) => pairs?.find(([b]) => b === bone)?.[1] ?? 0;
 
 /** The bone on the other side of the middle (Arm.R for Arm.L), or the bone itself. For
@@ -117,15 +161,15 @@ function lowered(model, pairs, bone, amount, fallback, held = new Set(), handOff
   return kept.map(([b, x]) => [b, Math.round(x / sum * 1e5) / 1e5]);
 }
 
-/** Paint one point: `amount` (0–1) of the way towards all (add), none (remove),
- * its neighbours' average (smooth) or `value` (set). `bone` defaults to the
- * stroke's bone (a Mirror copy paints the other side's bone). True if it changed. */
-export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value = 1} = {}) {
-  const {skin, part} = stroke;
+/** Paint one point with a dab of `amount` (0–1): Draw blends the weight with `value` by `blend`
+ * (add, remove and set: Mix at 1, 0 and value); smooth mixes it towards its neighbours' average.
+ * `bone` defaults to the stroke's bone (a Mirror copy paints the other side's bone). True if it changed. */
+export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value = 1, blend = 'mix'} = {}) {
+  const {skin, part} = stroke, brush = brushOf(mode, value, blend);
   // A locked group can't be painted (Blender refuses too).
   if (listOf(bone).some(b => stroke.locked?.has(b))) return false;
-  if (Array.isArray(bone)) { if (bone.length > 1) return paintSeveral(stroke, v, mode, amount, bone, value); bone = bone[0]; }
-  if (stroke.autoNormalize === false) return paintAlone(stroke, v, mode, amount, bone, value);
+  if (Array.isArray(bone)) { if (bone.length > 1) return paintSeveral(stroke, v, brush, amount, bone); bone = bone[0]; }
+  if (stroke.autoNormalize === false) return paintAlone(stroke, v, brush, amount, bone);
   // Weights in groups without a bone move nothing: painting a bone leaves them as they are.
   const aside = (skin[v] ?? []).filter(([b]) => !stroke.bones.has(b)), all = (skin[v] ?? []).filter(([b]) => stroke.bones.has(b));
   // A merged bone's weights are frozen, as are a locked group's: painting another bone shares only what they leave.
@@ -133,19 +177,14 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
   const kept = all.filter(([b]) => held.has(b)), free = 1 - kept.reduce((t, [, x]) => t + x, 0);
   if (free <= 1e-4) return false;
   const pairs = all.filter(([b]) => !held.has(b)).map(([b, x]) => [b, x / free]), now = weightIn(pairs, bone);
-  let target;
-  if (mode === 'add') target = 1;
-  else if (mode === 'remove') target = 0;
-  else if (mode === 'set') target = clamp01(value);
-  else if (mode === 'smooth') {
-    const around = [...stroke.neighbours[v]];
-    if (!around.length) return false;
-    target = around.reduce((t, u) => t + weightIn(skin[u], bone), 0) / around.length;
-  } else throw new Error(`Unknown paint mode “${mode}”.`);
-  // Smooth and Set name weights out of the whole point; the free share is what can change.
-  if (mode !== 'add' && mode !== 'remove') target = Math.min(1, target / free);
-  const next = reached(stroke, `${v}:${bone}`, mode, now, target, clamp01(amount));
-  if (next === null || Math.abs(next - now) * free < 1e-4) return false;
+  let target = valueOf(stroke, v, brush, u => weightIn(skin[u], bone));
+  if (target === null) return false;
+  // Weights are named out of the whole point; the free share is what can change (Multiply's value is a factor).
+  if (brush.blend !== 'multiply') target = Math.min(1, target / free);
+  const reach = reached(stroke, `${v}:${bone}`, brush, now, target, clamp01(amount));
+  if (reach === null) return false;
+  const next = clamp01(reach);
+  if (Math.abs(next - now) * free < 1e-4) return false;
   const fallback = stroke.handOff === false ? () => [] : () => stroke.fallback(v, bone).filter(([b]) => !held.has(b));
   const changed = next < now ? lowered(stroke.model, pairs, bone, now - next, fallback, held, stroke.handOff !== false) ?? withWeight(pairs, bone, next, fallback) : withWeight(pairs, bone, next, fallback);
   const result = [...(kept.length ? [...kept, ...changed.map(([b, x]) => [b, Math.round(x * free * 1e5) / 1e5])].filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1]) : changed), ...aside];
@@ -164,31 +203,28 @@ function heldFor(stroke, bones) {
   return new Set(stroke.model.bones.filter(b => !painted.has(b.id) && (isMerged(b) || stroke.locked?.has(b.id))).map(b => b.id));
 }
 
-/** Where a mode takes a weight `now` (smooth: the neighbours' average of `valueAt`). Null: no target. */
-function targetOf(stroke, v, mode, value, valueAt) {
-  if (mode === 'add') return 1;
-  if (mode === 'remove') return 0;
-  if (mode === 'set') return clamp01(value);
-  if (mode === 'smooth') { const around = [...stroke.neighbours[v]]; return around.length ? around.reduce((t, u) => t + valueAt(u), 0) / around.length : null; }
-  throw new Error(`Unknown paint mode “${mode}”.`);
+/** The value a brush paints at point v: its Amount, or for smooth the neighbours' average of `valueAt`. Null: none. */
+function valueOf(stroke, v, brush, valueAt) {
+  if (!brush.smooth) return brush.value;
+  const around = [...stroke.neighbours[v]];
+  return around.length ? around.reduce((t, u) => t + valueAt(u), 0) / around.length : null;
 }
 
 const round5 = x => Math.round(x * 1e5) / 1e5;
 
-/** Where a mode takes a point's weight (`now`) towards `target` with this dab's `amount`.
+/** Where a brush takes a point's weight (`now`), painting `value` with this dab's `amount` (blendWeight).
  * With Accumulate on (startStroke's default, and painting from code), each dab goes on from
  * where the last left the point. Off (Blender's default for brush strokes; the brush passes it):
- * a stroke works from the weight the point had when the stroke first reached it, by the strongest
+ * a stroke blends the weight the point had when the stroke first reached it, by the strongest
  * amount any dab has given it, so going over a spot again in the same stroke adds nothing unless
  * the dab is stronger. Smooth always goes on from where the point is. Null: nothing new. */
-function reached(stroke, key, mode, now, target, amount) {
-  if (stroke.accumulate !== false || mode === 'smooth') return now + (target - now) * amount;
+function reached(stroke, key, brush, now, value, amount) {
+  if (stroke.accumulate !== false || brush.smooth) return blendWeight(brush.blend, now, value, amount);
   const had = stroke.alpha.get(key);
   if (had !== undefined && amount <= had) return null;
   if (had === undefined) stroke.start.set(key, now);
   stroke.alpha.set(key, amount);
-  const base = stroke.start.get(key);
-  return base + (target - base) * amount;
+  return blendWeight(brush.blend, stroke.start.get(key), value, amount);
 }
 
 /** Keep a point's stored weights from before the stroke changed it (null: it had none). */
@@ -209,11 +245,11 @@ function store(stroke, v, pairs) {
 }
 
 /** Auto Normalize off: only the bone's own weight changes (0 to 1); every other weight stays. */
-function paintAlone(stroke, v, mode, amount, bone, value) {
+function paintAlone(stroke, v, brush, amount, bone) {
   const pairs = stroke.skin[v] ?? [], now = weightIn(pairs, bone);
-  const target = targetOf(stroke, v, mode, value, u => weightIn(stroke.skin[u], bone));
+  const target = valueOf(stroke, v, brush, u => weightIn(stroke.skin[u], bone));
   if (target === null) return false;
-  const reach = reached(stroke, `${v}:${bone}`, mode, now, target, clamp01(amount));
+  const reach = reached(stroke, `${v}:${bone}`, brush, now, target, clamp01(amount));
   if (reach === null) return false;
   const next = clamp01(reach);
   if (Math.abs(next - now) < 1e-4) return false;
@@ -226,14 +262,14 @@ export const MULTI_PAINT_MIN = .001;
 /** Multi-Paint: `bones` change together, each in proportion to what it has, as one weight: their
  * sum with Auto Normalize (the other bones then share the rest, Merged and locked ones kept), their
  * average without (the other bones untouched). A point where they have nothing is left alone. */
-function paintSeveral(stroke, v, mode, amount, bones, value) {
+function paintSeveral(stroke, v, brush, amount, bones) {
   const average = stroke.autoNormalize === false, group = new Set(bones);
   const pairs = (stroke.skin[v] ?? []).map(p => p.slice()), mine = pairs.filter(([b]) => group.has(b) && stroke.bones.has(b));
   const now = groupWeightIn(mine, bones, average);
   if (now <= 0) return false;
-  const target = targetOf(stroke, v, mode, value, u => groupWeightIn(stroke.skin[u], bones, average));
+  const target = valueOf(stroke, v, brush, u => groupWeightIn(stroke.skin[u], bones, average));
   if (target === null) return false;
-  const reach = reached(stroke, `${v}:${bones.join('+')}`, mode, now, target, clamp01(amount));
+  const reach = reached(stroke, `${v}:${bones.join('+')}`, brush, now, target, clamp01(amount));
   if (reach === null) return false;
   let next = Math.max(MULTI_PAINT_MIN, reach);
   // No bone of the group past 1.

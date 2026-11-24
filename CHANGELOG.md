@@ -15,6 +15,7 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - Save a 3D Nowdz skeleton to its own file and load it back, or onto another model.
 - Weight brush strokes in 3D Nowdz paint the same however fast you draw them, and Strength now means full strength at 1.
 - Accumulate, Front faces only and pen pressure for 3D Nowdz's weight brushes, as in Blender.
+- 3D Nowdz's weight brushes are now one Draw brush with Blender's blend modes: Mix, Add, Subtract, Lighten, Darken and Multiply. Add, Remove and Set are its presets.
 - Weight painting in 3D Nowdz gains Blender's options: Auto Normalize, Lock weights for a bone, Multi-Paint, Lock relative and Normalize all.
 - Zero weights in black, in 3D Nowdz's Bones panel, shows exactly which points a bone doesn't move at all.
 - Turn off Preserve volume in 3D Nowdz's Bones panel to bend joints Blender's default way; the Pose preview, your animation and Blender follow it.

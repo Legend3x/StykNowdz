@@ -872,10 +872,9 @@ meet at the figure's root.
 Bones mode, one bone selected, Weight painting > **Paint weights**: drag to
 paint how much that bone moves each point, in the colours of "Show what the
 selected bone moves" (red all, blue none), as Blender's Weight Paint mode.
-Brushes: **Add**, **Remove**, **Smooth** (towards the neighbours' average) and
-**Set** (to Amount); Size (pixels on screen) and Strength. Ctrl paints the other
-way (Add ↔ Remove), Shift+click picks another bone, and a stroke is one undo
-step. Strength and Reach are sliders, previewed live, saved on release.
+Brushes: **Draw** (Amount, mixed in by Blend) and **Smooth** (towards the
+neighbours' average); Size (pixels on screen) and Strength. Ctrl paints the
+other way, Shift+click picks another bone, and a stroke is one undo step. Strength and Reach are sliders, previewed live, saved on release.
 
 - The brush is a sphere around the surface point under the pointer (its radius
   the brush circle at that depth), as Blender's default, so it never paints
@@ -889,9 +888,9 @@ step. Strength and Reach are sliders, previewed live, saved on release.
 - **Mirror painting** paints the same spot on the other side with the other
   side's bone (Shoulder.L ↔ Shoulder.R), as X-Mirror in Blender.
 - **The painting toolbar**, as in Photoshop: while painting, a rail of tools runs
-  down the left of the view (Add, Remove, Smooth, Set, then Gradient, Fill,
-  Sample and Select points) and the tool's options sit in a bar along its top
-  (the bone being painted, Amount, Size, Strength, Falloff, Seen only, Front
+  down the left of the view (Draw, Smooth, then Gradient, Fill, Sample and
+  Select points) and the tool's options sit in a bar along its top (the bone
+  being painted, Draw's Add/Remove/Set presets and Blend, Amount, Size, Strength, Falloff, Seen only, Front
   faces only, Accumulate, Pen strength, Pen size, Mirror painting, Auto
   Normalize, Multi-Paint, Lock relative, Picked only, Stop painting); the properties panel keeps starting
   and stopping, the part highlight and Back to automatic. The rail's buttons
@@ -933,6 +932,30 @@ step. Strength and Reach are sliders, previewed live, saved on release.
     stored weights from before, or none), with the selection, as
     `{"weights": …}`; undoing one keeps the same points as they are now for
     redo. Before, every stroke saved the whole model as text at its start.
+- **Draw and its blends** (`blendWeight`, `brushOf`, `invertedBrush` in
+  `weight-paint.mjs`), as Blender's Draw brush. A dab of strength *a*
+  (Strength × falloff × pressure) painting Amount *p* on a weight *w*:
+  - **Mix**: *w* + (*p* − *w*)·*a*, `alpha` of the way to Amount.
+  - **Add** / **Subtract**: *w* ± *p*·*a*.
+  - **Lighten** / **Darken**: Mix, but only where *w* is below / above *p*.
+  - **Multiply**: *w*·(1 − *a* + *a*·*p*).
+
+  The result is kept within 0–1; with Auto Normalize the other bones share
+  the rest as before, and with Multi-Paint the bones' sum (or average) is
+  blended. Accumulate off blends the weight the stroke found with the
+  strongest dab, as Blender (`tests/modeler-weight-blend.test.mjs` checks each
+  blend against Blender's own formulas). Under Auto Normalize, Amount (but not
+  Multiply's factor) is a share of the whole point: with Merged or locked
+  bones holding part of it, it's capped at what is free, as Set always was.
+  - **Presets**: the old **Add**, **Remove** and **Set** tools are Draw with
+    Mix at 1, 0 and Amount (Set comes back to the last Amount it painted,
+    at first 0.5). `paintPoint` still takes `add`, `remove` and `set`, and
+    they give exactly the weights Draw does, so painting from code and the
+    golden results are unchanged. The bar shows which preset Draw is on.
+  - **Ctrl** paints the opposite: Mix at 1 − Amount (so Add paints as
+    Remove), Lighten and Darken swap at 1 − Amount, Add and Subtract swap,
+    Multiply is unchanged. (Our choice; it keeps Ctrl's old Add ↔ Remove.)
+  - Sample (and Shift+X) sets Amount and goes back to Draw.
     Other edits still save the whole model.
 - Blender's quick tools, with its keys, while painting:
   - **Gradient** (a brush; Blender's Weights > Gradient (Linear)): drag a line;

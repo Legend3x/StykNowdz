@@ -239,6 +239,10 @@
   .modeler-paint-bar .modeler-paint-toggle { inline-size: auto; padding-inline: 8px; gap: 5px; }
   .modeler-paint-bar .modeler-paint-toggle svg { inline-size: 16px; block-size: 16px; }
   .modeler-paint-bar .modeler-spacer { flex: 1; }
+  .modeler-paint-presets { display: inline-flex; gap: 2px; padding: 1px; border: 1px solid var(--line-control); border-radius: var(--radius-sm); }
+  .modeler-paint-presets .modeler-paint-preset { inline-size: 28px; block-size: 28px; padding: 0; justify-content: center; border-radius: var(--radius-sm); }
+  .modeler-paint-presets .modeler-paint-preset svg { inline-size: 16px; block-size: 16px; }
+  .modeler-paint-presets .modeler-paint-preset[aria-pressed="true"] { background: var(--surface-selected); color: var(--accent-text-strong); box-shadow: inset 0 0 0 1px var(--accent-text-strong); }
   /* The second view: a small read-only view in the corner of the stage. */
   .modeler-second { position: absolute; inset-block-end: var(--space-3); inset-inline-end: var(--space-3); inline-size: min(32%, 300px); aspect-ratio: 4 / 3;
     border: 1px solid var(--line-control); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-stage); pointer-events: none; box-shadow: var(--shadow-thumb); }

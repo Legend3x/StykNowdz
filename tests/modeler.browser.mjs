@@ -35,6 +35,10 @@ try {
     window.m = document.querySelector('.modeler').modeler;
     window.button = text => [...document.querySelectorAll('.modeler button')].find(x => x.textContent.trim() === text);
     window.tool = name => document.querySelector(`.modeler-paint-tool[data-paint-tool="${name}"]`);
+    // Draw's presets (Add, Remove, Set): the Draw tool, then the preset in its bar.
+    // With painting off the bar is hidden (not built): the preset is set as the button would.
+    window.preset = name => { tool('draw').click(); const b = document.querySelector(`.modeler-paint-bar:not([hidden]) [data-draw-preset="${name}"]`);
+      if (b) b.click(); else Object.assign(m.state.brush, {mode: 'draw', blend: 'mix'}, name === 'set' ? {} : {value: name === 'add' ? 1 : 0}); };
     window.allValid = () => m.model.parts.every(p => T.validateMesh(p.mesh, {print: false}).ok);
   });
 
@@ -91,7 +95,7 @@ try {
       const sliders = [...document.querySelectorAll('.modeler-live input[type=range]')].length;
       const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
       const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
-      button('Paint weights').click(); await wait(50); tool('remove').click(); await wait(50);
+      button('Paint weights').click(); await wait(50); preset('remove'); await wait(50);
       return {sliders, from: at([.05, 1.24, .13]), to: at([.15, 1.24, .13]), undo: m.state.undo.length};
     });
     await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to); await page.mouse.up();
@@ -110,7 +114,7 @@ try {
       m.setMode('bones'); m.setView('front'); m.state.camera.target = [0, 1.2, 0]; m.state.camera.dist = 1.6; m.state.parts = new Set();
       const chest = m.model.bones.find(b => b.name === 'Chest'); m.state.bones = new Set([chest.id]); m.refresh(); await wait(100);
       if (!m.state.brush?.on) button('Paint weights').click();
-      await wait(50); tool('add').click(); await wait(50);
+      await wait(50); preset('add'); await wait(50);
       const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
       const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
       window.strokeWeights = () => JSON.stringify(m.model.parts.map(p => [p.id, p.mesh.vdata?.skin ?? {}]));
@@ -133,6 +137,44 @@ try {
     const second = await page.evaluate(async () => { await wait(50); const w = strokeWeights(); press('z', {ctrlKey: true}); await wait(50); return w; });
     assert.deepEqual({...first, weights: undefined}, {weights: undefined, painted: true, steps: 0, small: true, undone: true, redone: true});
     assert.equal(second, first.weights, 'the same stroke drawn with 60 pointer moves instead of 4 paints the same weights');
+  });
+  await step('Draw: one brush with Blender\'s Blend menu; Add, Remove and Set are its presets; Darken never raises, Ctrl (Lighten) never lowers', async () => {
+    const setup = await page.evaluate(async () => {
+      const rail = [...document.querySelectorAll('.modeler-paint-tool')].map(b => b.dataset.paintTool);
+      const pressed = () => [...document.querySelectorAll('.modeler-paint-bar [data-draw-preset]')].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.drawPreset);
+      preset('add'); await wait(20); const add = pressed();
+      preset('set'); await wait(20); const set = {pressed: pressed(), value: m.state.brush.value};
+      const blend = document.querySelector('.modeler-paint-bar [data-blend]'), options = [...blend.options].map(o => o.value);
+      blend.value = 'darken'; blend.dispatchEvent(new Event('change', {bubbles: true})); await wait(20);
+      const amount = [...document.querySelectorAll('.modeler-paint-bar .modeler-paint-field')].find(l => l.textContent.startsWith('Amount')).querySelector('input');
+      amount.value = '0.3'; amount.dispatchEvent(new Event('input', {bubbles: true}));
+      m.state.brush.strength = 1;
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
+      const {completeSkin} = await import('/src/modeler/armature.mjs'), chest = m.model.bones.find(b => b.name === 'Chest').id;
+      window.chestWeights = () => m.model.parts.flatMap(p => { const skin = completeSkin(m.model, p); return p.mesh.verts.map((_, v) => skin[v]?.find(([b]) => b === chest)?.[1] ?? 0); });
+      window.blendStart = chestWeights();
+      return {rail, add, set, options, darken: {blend: m.state.brush.blend, value: m.state.brush.value, pressed: pressed()}, from: at([-.12, 1.18, .13]), to: at([.12, 1.24, .13])};
+    });
+    assert.deepEqual(setup.rail, ['draw', 'smooth', 'gradient', 'fill', 'sample', 'select']);
+    assert.deepEqual(setup.add, ['add']);
+    assert.deepEqual(setup.set, {pressed: ['set'], value: .5});
+    assert.deepEqual(setup.options, ['mix', 'add', 'subtract', 'lighten', 'darken', 'multiply']);
+    assert.deepEqual(setup.darken, {blend: 'darken', value: .3, pressed: []});
+    const stroke = async ctrl => { if (ctrl) await page.keyboard.down('Control'); await page.mouse.move(...setup.from); await page.mouse.down(); await page.mouse.move(...setup.to, {steps: 12}); await page.mouse.up(); if (ctrl) await page.keyboard.up('Control'); };
+    const compare = () => page.evaluate(async () => {
+      await wait(50); const now = chestWeights(), was = blendStart;
+      window.blendStart = now;
+      return {up: now.filter((w, i) => w > was[i] + 1e-4).length, down: now.filter((w, i) => w < was[i] - 1e-4).length, over: now.filter((w, i) => w < was[i] - 1e-4 && w < .3 - 1e-4).length};
+    });
+    await stroke(false);
+    const darken = await compare();
+    assert.ok(darken.down > 0 && darken.up === 0, `Darken at 0.3 only lowers (${JSON.stringify(darken)})`);
+    assert.equal(darken.over, 0, 'and never below 0.3');
+    await stroke(true);
+    const lighten = await compare();
+    assert.ok(lighten.up > 0 && lighten.down === 0, `Ctrl: Lighten at 0.7 only raises (${JSON.stringify(lighten)})`);
+    await page.evaluate(async () => { press('z', {ctrlKey: true}); await wait(30); press('z', {ctrlKey: true}); await wait(30); preset('add'); });
   });
   await step('Weights: Gradient fades a bone along one piece, Ctrl+X fills the piece under the pointer, Shift+X samples, F sizes the brush', async () => {
     const setup = await page.evaluate(async () => {
@@ -203,7 +245,7 @@ try {
     });
     assert.ok(loaded.same, 'the bone comes back where the file has it, with the same id');
     assert.ok(loaded.painted >= 2, 'and the painted points keep their weights');
-    await page.evaluate(() => { tool('add').click(); const only = document.querySelector('.modeler-paint-bar [aria-label="Picked only"]'); if (only?.getAttribute('aria-pressed') === 'true') only.click(); });
+    await page.evaluate(() => { preset('add'); const only = document.querySelector('.modeler-paint-bar [aria-label="Picked only"]'); if (only?.getAttribute('aria-pressed') === 'true') only.click(); });
   });
   await step('Pose: dragging a bone bends the model, changes nothing, and Stop posing puts it back', async () => {
     const setup = await page.evaluate(async () => {
