@@ -21,9 +21,9 @@ import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
-import {startStroke, paintPoint, clearPainted, paintedCount, mirrorBone, PAINT_MODES, BLENDS, invertedBrush, handOffOn, groupWeightIn} from './weight-paint.mjs';
+import {startStroke, startDab, paintPoint, pointsAround, dabAverage, clearPainted, paintedCount, mirrorBone, PAINT_MODES, BLENDS, invertedBrush, handOffOn, groupWeightIn} from './weight-paint.mjs';
 import {remapStoredWeights, normalizeStoredWeights, setStoredWeights, clearStoredWeights, storedWeights} from './weight-manager.mjs';
-import {pointerSample, spacedDabs, facesViewer} from './paint-stroke.mjs';
+import {pointerSample, spacedDabs, facesViewer, smearSource} from './paint-stroke.mjs';
 import {autoNormalizeOn, isGroupLocked, setGroupLock} from './vertex-groups.mjs';
 import {poseFrames, posedBy, posedMesh, turnBone, axisAngle, isPosed} from './pose.mjs';
 import {defaultCamera, cameraFrame, VIEWS, paint, pickPolygon, insidePolygon, segmentPixelDistance, VIEW_COLORS, openOf, referenceCorners} from './viewport.mjs';
@@ -863,9 +863,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('label', {class: 'modeler-check', title: t("modeler.handOffHint")}, [el('input', {type: 'checkbox', 'data-hand-off': '', checked: handOffOn(model), onchange: e => setPaintOption('handOff', e.target.checked)}), t("modeler.handOff")]),
     ].filter(Boolean);
   }
-  /** The painting tools: brushes (Draw, Smooth), then Gradient, Fill, Sample and Select points. */
-  const PAINT_TOOLS = [['draw', 'brush'], ['smooth', 'droplet'], ['gradient', 'gradient'], ['fill', 'paint-bucket'], ['sample', 'eyedropper'], ['select', 'select-points']];
-  const BRUSH_TOOLS = ['draw', 'smooth'];
+  /** The painting tools: brushes (Draw, Blur, Average, Smear, as Blender's), then Gradient, Fill, Sample and Select points. */
+  const PAINT_TOOLS = [['draw', 'brush'], ['blur', 'droplet'], ['average', 'center'], ['smear', 'hand'], ['gradient', 'gradient'], ['fill', 'paint-bucket'], ['sample', 'eyedropper'], ['select', 'select-points']];
+  const BRUSH_TOOLS = ['draw', 'blur', 'average', 'smear'];
   /** Draw's presets, as the Add, Remove and Set tools were: Mix to all (1), to none (0), or to Amount. */
   const DRAW_PRESETS = [['add', 'brush', 1], ['remove', 'eraser', 0], ['set', 'level', null]];
   /** The preset the Draw brush is on now, if any. */
@@ -925,7 +925,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       brushTool ? toggle('eye', t("modeler.brushSeen"), B.seen !== false, () => { B.seen = B.seen === false; renderPaintTools(); }, t("modeler.brushSeenHint")) : null,
       // Blender's stroke options (paint-stroke.mjs): Front Faces Only, Accumulate, and a pen's pressure for Strength and size.
       brushTool ? toggle('square', t("modeler.frontFaces"), Boolean(B.front), () => { B.front = !B.front; renderPaintTools(); }, t("modeler.frontFacesHint")) : null,
-      brushTool && B.mode !== 'smooth' ? toggle('plus', t("modeler.accumulate"), Boolean(B.accumulate), () => { B.accumulate = !B.accumulate; renderPaintTools(); }, t("modeler.accumulateHint")) : null,
+      // Blur and Smear always build up (Smear as Blender's); Draw and Average follow Accumulate.
+      ['draw', 'average'].includes(B.mode) ? toggle('plus', t("modeler.accumulate"), Boolean(B.accumulate), () => { B.accumulate = !B.accumulate; renderPaintTools(); }, t("modeler.accumulateHint")) : null,
       brushTool ? toggle('brush', t("modeler.penStrength"), B.penStrength !== false, () => { B.penStrength = B.penStrength === false; renderPaintTools(); }, t("modeler.penStrengthHint")) : null,
       brushTool ? toggle('circle', t("modeler.penSize"), Boolean(B.penSize), () => { B.penSize = !B.penSize; renderPaintTools(); }, t("modeler.penSizeHint")) : null,
       B.mode === 'select' ? el('span', {class: 'modeler-paint-note', text: S.paintPoints?.size ? t("modeler.paintPointsPicked", {count: S.paintPoints.size}) : t("modeler.paintPointsNone")}) : null,
@@ -986,10 +987,14 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const press = B.penStrength === false ? 1 : pressure, radius = B.radius * (B.penSize ? Math.max(.05, pressure) : 1);
     // Draw paints Amount with its blend; Ctrl paints the opposite (invertedBrush: Add's 1 becomes Remove's 0).
     const reach = radius * frame.unitsPerPixel(hit), bone = paintBones(), draws = {blend: B.blend ?? 'mix', value: B.value};
-    const mode = {mode: B.mode, ...(B.mode === 'draw' && invert ? invertedBrush(draws) : draws)};
+    // Smear drags along the brush's way since the last dab (none on the first: it waits for the brush to move).
+    const dir = stroke.lastHit ? M.sub(hit, stroke.lastHit) : null; stroke.lastHit = hit;
+    const mode = {mode: B.mode, ...(B.mode === 'draw' && invert ? invertedBrush(draws) : draws), dir};
+    // Blur and Smear read the weights as this dab found them (both dabs of Mirror painting).
+    for (const state of stroke.parts.values()) startDab(state);
     let changed = dabAt(stroke, hit, reach, bone, mode, false, {x, y, radius, press});
     const other = mirrorBone(model, bone);
-    if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, mode, true, null, press) || changed;
+    if (B.mirror && (other !== bone || Math.abs(hit[0]) > reach)) changed = dabAt(stroke, [-hit[0], hit[1], hit[2]], reach, other, {...mode, dir: dir && [-dir[0], dir[1], dir[2]]}, true, null, press) || changed;
     if (changed) for (const id of stroke.touched) for (const key of [...S.cache.keys()]) if (typeof key === "string" && key.startsWith(`w${id}:`)) S.cache.delete(key);
     return changed;
   }
@@ -1012,11 +1017,12 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
    * the view shows there, so it doesn't reach round to the back or into a piece behind; otherwise it is a
    * ball as wide as the circle, around the surface point under it. */
   function dabAt(stroke, hit, reach, bone, mode, mirrorDab, at2d = null, pressed = at2d?.press ?? 1) {
-    // mode: {mode, blend, value} (paintPoint's).
+    // mode: {mode, blend, value} (paintPoint's; average and smear are worked out below), and Smear's direction (dir).
     const B = brush(), mask = paintMask(), picked = pointMask(), falloff = FALLOFF[B.falloff] ?? FALLOFF.smooth, flat = B.seen !== false && at2d && !mirrorDab, radius = at2d?.radius ?? B.radius;
     // The mirrored dab of Mirror painting paints the mirror images of the picked points.
     const only = picked && mirrorDab ? (stroke.mirrorPicked ??= mirroredKeys(picked)) : picked;
-    let changed = false;
+    // First every point the dab reaches, with its strength there; then they are painted.
+    const hits = [];
     for (const q of model.parts) {
       if (q.visible === false || !q.mesh.faces.length || (mask && !mask.has(q.id))) continue;
       if (only && ![...only].some(k => k.startsWith(`${q.id}:`))) continue;
@@ -1038,12 +1044,26 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
           } else { t0 = Math.hypot(at[0] - hit[0], at[1] - hit[1], at[2] - hit[2]) / reach; if (t0 > 1) continue; }
           // Front Faces Only: the point's surface must face the viewer.
           if (B.front && !facesViewer(normalAt(stroke, q, v, k === 1), frame.toEye(at))) continue;
-          if (!state) { state = startStroke(model, q, bone, {accumulate: Boolean(B.accumulate)}); stroke.parts.set(q.id, state); }
-          const fall = falloff(t0);
+          if (!state) { state = startStroke(model, q, bone, {accumulate: Boolean(B.accumulate)}); startDab(state); stroke.parts.set(q.id, state); }
           // Strength as set (Blender's: no hidden factor), by the falloff and a pen's pressure.
-          if (paintPoint(state, v, mode.mode, B.strength * fall * pressed, {bone: which, value: mode.value, blend: mode.blend})) { changed = true; stroke.touched.add(q.id); }
+          hits.push({q, state, v, k, at, which, to, alpha: B.strength * falloff(t0) * pressed});
         }
       }
+    }
+    // Average: Draw (Mix) with the mean weight under the brush, as the dab found it.
+    const average = mode.mode === 'average' ? dabAverage(hits.map(s => [s.state, s.v, s.which])) : null;
+    if (mode.mode === 'average' && average === null) return false;
+    let changed = false;
+    for (const {q, state, v, k, at, which, to, alpha} of hits) {
+      let done;
+      if (mode.mode === 'average') done = paintPoint(state, v, 'draw', alpha, {bone: which, value: average, blend: 'mix'});
+      else if (mode.mode === 'smear') {
+        // The neighbour behind the point along the stroke (as the view shows them; a Mirror half's mirrored).
+        const place = u => { const p = to(q.mesh.verts[u]); return k === 1 ? [-p[0], p[1], p[2]] : p; };
+        const from = smearSource(at, pointsAround(state, v).map(u => [u, place(u)]), mode.dir, frame.toEye(at));
+        done = from !== null && paintPoint(state, v, 'smear', alpha, {bone: which, from});
+      } else done = paintPoint(state, v, mode.mode, alpha, {bone: which, value: mode.value, blend: mode.blend});
+      if (done) { changed = true; stroke.touched.add(q.id); }
     }
     return changed;
   }

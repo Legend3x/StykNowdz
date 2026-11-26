@@ -43,3 +43,25 @@ export function facesViewer(normal, toEye) {
   if (!normal || !(normal[0] || normal[1] || normal[2])) return true;
   return normal[0] * toEye[0] + normal[1] * toEye[1] + normal[2] * toEye[2] > 0;
 }
+
+/** Smear's source for a point at `at`: of its neighbours (`around`, [id, position] pairs), the one behind
+ * it along the stroke, whose weight it is dragged towards. As Blender's: both the stroke's direction
+ * `dir` and each point − neighbour are flattened onto the view plane (`normal` towards the viewer), and
+ * the neighbour that lines up best with the stroke, if any does at all, wins. Null: none (no movement
+ * yet, or every neighbour is ahead). */
+export function smearSource(at, around, dir, normal) {
+  const n = unit(normal), flat = d => (n ? sub(d, scale(n, dot(d, n))) : d), way = unit(flat(dir ?? [0, 0, 0]));
+  if (!way) return null;
+  let best = 0, source = null;
+  for (const [id, p] of around) {
+    const o = unit(flat(sub(at, p)));
+    if (!o) continue;
+    const d = dot(o, way);
+    if (d > best) { best = d; source = id; }
+  }
+  return source;
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const unit = d => { if (!d) return null; const l = Math.hypot(d[0], d[1], d[2]); return l > 1e-12 ? scale(d, 1 / l) : null; };

@@ -156,7 +156,7 @@ try {
       window.blendStart = chestWeights();
       return {rail, add, set, options, darken: {blend: m.state.brush.blend, value: m.state.brush.value, pressed: pressed()}, from: at([-.12, 1.18, .13]), to: at([.12, 1.24, .13])};
     });
-    assert.deepEqual(setup.rail, ['draw', 'smooth', 'gradient', 'fill', 'sample', 'select']);
+    assert.deepEqual(setup.rail, ['draw', 'blur', 'average', 'smear', 'gradient', 'fill', 'sample', 'select']);
     assert.deepEqual(setup.add, ['add']);
     assert.deepEqual(setup.set, {pressed: ['set'], value: .5});
     assert.deepEqual(setup.options, ['mix', 'add', 'subtract', 'lighten', 'darken', 'multiply']);
@@ -175,6 +175,61 @@ try {
     const lighten = await compare();
     assert.ok(lighten.up > 0 && lighten.down === 0, `Ctrl: Lighten at 0.7 only raises (${JSON.stringify(lighten)})`);
     await page.evaluate(async () => { press('z', {ctrlKey: true}); await wait(30); press('z', {ctrlKey: true}); await wait(30); preset('add'); });
+  });
+  await step('Blur, Average and Smear (Blender\'s): Blur and Average even out what they touch, Smear drags weight along the stroke', async () => {
+    const setup = await page.evaluate(async () => {
+      m.setView('front'); m.state.camera.target = [0, 1.2, 0]; m.state.camera.dist = 1.6; m.refresh(); await wait(50);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
+      const {completeSkin} = await import('/src/modeler/armature.mjs'), chest = m.model.bones.find(b => b.name === 'Chest').id;
+      // Each Torso point's place on screen and its neighbours (the corners of the faces around it).
+      const torso = m.model.parts.find(q => q.name === 'Torso'), to = (await import('/src/modeler/mesh.mjs')).objectTransform(torso);
+      window.torsoScreen = torso.mesh.verts.map(p => f.project(to(p)));
+      window.torsoAround = torso.mesh.verts.map((_, v) => [...new Set(torso.mesh.faces.filter(g => g.v.includes(v)).flatMap(g => g.v))].filter(u => u !== v));
+      window.torsoChest = () => { const p = m.model.parts.find(q => q.name === 'Torso'), skin = completeSkin(m.model, p); return p.mesh.verts.map((_, v) => skin[v]?.find(([b]) => b === chest)?.[1] ?? 0); };
+      const accumulate = {};
+      for (const name of ['draw', 'blur', 'average', 'smear']) { tool(name).click(); await wait(20); accumulate[name] = [...document.querySelectorAll('.modeler-paint-bar button')].some(b => b.textContent.trim() === 'Accumulate'); }
+      return {accumulate, low: at([0, 1.02, .14]), high: at([0, 1.32, .14])};
+    });
+    assert.deepEqual(setup.accumulate, {draw: true, blur: false, average: true, smear: false}, 'Accumulate shows for Draw and Average; Blur and Smear always build up');
+    const run = async (name, from, to, behind = 0) => {
+      await page.evaluate(n => { tool(n).click(); m.state.brush.strength = 1; window.toolStart = {w: torsoChest(), undo: m.state.undo.length}; }, name);
+      await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(...to, {steps: 15}); await page.mouse.up();
+      return page.evaluate(async behind => {
+        await wait(50);
+        const now = torsoChest(), was = toolStart.w, changed = now.map((_, i) => i).filter(i => Math.abs(now[i] - was[i]) > 1e-4);
+        const spread = w => Math.max(...changed.map(i => w[i])) - Math.min(...changed.map(i => w[i]));
+        const out = {changed: changed.length, up: changed.filter(i => now[i] > was[i]).length, down: changed.filter(i => now[i] < was[i]).length, spreadWas: spread(was), spreadNow: spread(now), steps: m.state.undo.length - toolStart.undo};
+        press('z', {ctrlKey: true}); await wait(50);
+        out.undone = torsoChest().every((x, i) => Math.abs(x - was[i]) < 1e-9);
+        // Smear: each changed point moved towards what a neighbour behind it along the stroke had (behind: -1 above it on screen, 1 below).
+        if (behind) out.fromBehind = changed.every(i => torsoAround[i].some(u => Math.sign(torsoScreen[u].y - torsoScreen[i].y) === behind && (now[i] - was[i]) * (was[u] - was[i]) > 0 && Math.abs(now[i] - was[i]) <= Math.abs(was[u] - was[i]) + 1e-4));
+        return out;
+      }, behind);
+    };
+    const blur = await run('blur', setup.low, setup.high), average = await run('average', setup.low, setup.high);
+    // One Smear dab (the first has no direction yet; dabs are 15 px apart), so each point moves straight towards
+    // its source's weight: a nudge of 20 px up, then one down, from the middle of the chest.
+    // Aimed at a front Torso point with neighbours of other weights above and below it on screen.
+    const mid = await page.evaluate(() => {
+      const w = torsoChest(), box = document.querySelector('.modeler canvas').getBoundingClientRect();
+      const differs = (v, side) => torsoAround[v].some(u => Math.sign(torsoScreen[u].y - torsoScreen[v].y) === side && Math.abs(w[u] - w[v]) > .02);
+      const front = (p, v) => m.model.parts.find(q => q.name === 'Torso').mesh.verts[v][2] > 0;
+      const v = torsoScreen.map((q, i) => i).filter(i => front(null, i) && differs(i, 1) && differs(i, -1)).sort((a, b) => Math.abs(torsoScreen[a].x - box.width / 2) - Math.abs(torsoScreen[b].x - box.width / 2))[0];
+      return [box.left + torsoScreen[v].x, box.top + torsoScreen[v].y];
+    });
+    const up = await run('smear', [mid[0], mid[1] + 8], [mid[0], mid[1] - 12], 1), down = await run('smear', [mid[0], mid[1] - 8], [mid[0], mid[1] + 12], -1);
+    for (const [name, r] of [['Blur', blur], ['Average', average], ['Smear up', up], ['Smear down', down]]) {
+      assert.ok(r.changed > 0, `${name} changed the chest (${JSON.stringify(r)})`);
+      assert.equal(r.steps, 1, `${name}: one undo step`);
+      assert.ok(r.undone, `${name}: undo puts it back`);
+    }
+    assert.ok(blur.spreadNow < blur.spreadWas, `Blur narrows the weights it touched (${JSON.stringify(blur)})`);
+    assert.ok(average.spreadNow < average.spreadWas, `Average narrows them too (${JSON.stringify(average)})`);
+    // Smear moves each point towards a neighbour behind it: below it when dragged up, above it when dragged down.
+    assert.ok(up.fromBehind, `Smear upwards takes weight from below (${JSON.stringify(up)})`);
+    assert.ok(down.fromBehind, `Smear downwards takes weight from above (${JSON.stringify(down)})`);
+    await page.evaluate(() => preset('add'));
   });
   await step('Weights: Gradient fades a bone along one piece, Ctrl+X fills the piece under the pointer, Shift+X samples, F sizes the brush', async () => {
     const setup = await page.evaluate(async () => {

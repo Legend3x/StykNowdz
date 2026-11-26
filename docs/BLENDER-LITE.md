@@ -872,8 +872,8 @@ meet at the figure's root.
 Bones mode, one bone selected, Weight painting > **Paint weights**: drag to
 paint how much that bone moves each point, in the colours of "Show what the
 selected bone moves" (red all, blue none), as Blender's Weight Paint mode.
-Brushes: **Draw** (Amount, mixed in by Blend) and **Smooth** (towards the
-neighbours' average); Size (pixels on screen) and Strength. Ctrl paints the
+Brushes, as Blender's: **Draw** (Amount, mixed in by Blend), **Blur**,
+**Average** and **Smear**; Size (pixels on screen) and Strength. Ctrl paints the
 other way, Shift+click picks another bone, and a stroke is one undo step. Strength and Reach are sliders, previewed live, saved on release.
 
 - The brush is a sphere around the surface point under the pointer (its radius
@@ -888,8 +888,8 @@ other way, Shift+click picks another bone, and a stroke is one undo step. Streng
 - **Mirror painting** paints the same spot on the other side with the other
   side's bone (Shoulder.L ↔ Shoulder.R), as X-Mirror in Blender.
 - **The painting toolbar**, as in Photoshop: while painting, a rail of tools runs
-  down the left of the view (Draw, Smooth, then Gradient, Fill, Sample and
-  Select points) and the tool's options sit in a bar along its top (the bone
+  down the left of the view (Draw, Blur, Average, Smear, then Gradient, Fill,
+  Sample and Select points) and the tool's options sit in a bar along its top (the bone
   being painted, Draw's Add/Remove/Set presets and Blend, Amount, Size, Strength, Falloff, Seen only, Front
   faces only, Accumulate, Pen strength, Pen size, Mirror painting, Auto
   Normalize, Multi-Paint, Lock relative, Picked only, Stop painting); the properties panel keeps starting
@@ -921,7 +921,9 @@ other way, Shift+click picks another bone, and a stroke is one undo step. Streng
     stroke adds nothing unless the dab is stronger: Add at Strength 0.5 takes
     a point halfway to 1 per stroke. On, every dab goes on from the last, as
     before (and as painting from code, Gradient and Fill, which pass
-    `accumulate` to `startStroke` and default to on). Smooth always goes on.
+    `accumulate` to `startStroke` and default to on). Blur and Smear always
+    go on (Smear as Blender's; Blur as the old Smooth did), so the toggle
+    shows only for Draw and Average.
   - **Pen strength** (on) and **Pen size** (off): a pen's pressure scales
     Strength and the brush's size. A mouse or a finger counts as full pressure
     (browsers report 0.5 for a pressed mouse button, which is ignored).
@@ -956,6 +958,30 @@ other way, Shift+click picks another bone, and a stroke is one undo step. Streng
     Remove), Lighten and Darken swap at 1 − Amount, Add and Subtract swap,
     Multiply is unchanged. (Our choice; it keeps Ctrl's old Add ↔ Remove.)
   - Sample (and Shift+X) sets Amount and goes back to Draw.
+- **Blur, Average and Smear**, as Blender's (`weight-paint.mjs`; Smear's
+  source in `paint-stroke.mjs`; `tests/modeler-weight-blur.test.mjs`). Each
+  dab mixes the points it reaches towards a weight, by Strength × falloff ×
+  pressure:
+  - **Blur**: the average over every corner of every face around the point,
+    the point's own corners included (a point on more faces counts more), as
+    Blender's. Loose points have nothing to blur with and stay.
+  - **Average**: Draw (Mix) with the mean weight of all the points under the
+    dab (every part it reaches; each Mirror half with its own side's bone).
+  - **Smear**: of the points sharing a face with the point, the one behind it
+    along the brush's way since the last dab, as the view shows them (both
+    flattened onto the view plane, so depth doesn't count); the one lining up
+    best with the stroke wins, and none if every neighbour is ahead. The first
+    dab of a stroke has no way yet and smears nothing. Mirror painting's
+    second dab smears the mirrored way.
+  - **The dab's starting weights** (`startDab`): Blur, Smear and Average read
+    every point's weights as they were when the dab began (a point's old list
+    is kept the first time the dab changes it), as Blender's precomputed
+    weights, so the order the points are painted in doesn't matter. Before,
+    Smooth read the weights as it changed them, so the first points painted
+    in a dab pulled the later ones. Mirror painting's two dabs share one start.
+  - `paintPoint` still takes `smooth` (the edge neighbours' average, read as
+    they are) for painting from code; the golden results use it. The brush
+    no longer offers it: Blur replaces it.
     Other edits still save the whole model.
 - Blender's quick tools, with its keys, while painting:
   - **Gradient** (a brush; Blender's Weights > Gradient (Linear)): drag a line;
@@ -1130,8 +1156,8 @@ loops or missing parents loads with those bones hung from the root.
   the model, through the Weight Manager), keeping every bone it has, and its
   bones always add up to 1 (Auto Normalize): weight taken from the
   bone goes to the bones already there, or where it had the point alone, to the
-  bones that would have it without it. Weight taken away (Remove, or Set and
-  Smooth lowering it) goes only to bones that don't ride on the painted bone
+  bones that would have it without it. Weight taken away (Remove, or any
+  brush lowering it) goes only to bones that don't ride on the painted bone
   (`ridersOf`: everything below it), else to its parent, so an erased spot
   really stops moving when the bone turns: erasing Shoulder.L from the chest
   gives it to the Chest, not to UpperArm.L, which the shoulder carries along.

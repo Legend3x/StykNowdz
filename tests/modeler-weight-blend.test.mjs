@@ -27,7 +27,7 @@ test('each blend gives Blender\'s result for a weight, Amount and dab strength',
     near(blendWeight(blend, w, p, a), BLENDER[blend](w, p, a), `${blend} w=${w} amount=${p} alpha=${a}`);
   assert.throws(() => blendWeight('screen', .5, .5, .5), /Unknown blend/);
   assert.throws(() => brushOf('draw', .5, 'overlay'), /Unknown blend/);
-  assert.throws(() => brushOf('blur'), /Unknown paint mode/);
+  assert.throws(() => brushOf('scribble'), /Unknown paint mode/);
 });
 
 test('Add, Remove and Set are Draw with Mix at 1, 0 and the Amount: the same weights everywhere', async () => {

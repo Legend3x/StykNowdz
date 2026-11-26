@@ -79,7 +79,7 @@ test('smooth and set brushes', async () => {
   const around = [...stroke.neighbours[v]], mean = around.reduce((t, u) => t + (stroke.skin[u]?.find(([b]) => b === shoulder.id)?.[1] ?? 0), 0) / around.length;
   paintPoint(stroke, v, 'smooth', 1);
   assert.ok(Math.abs((stroke.skin[v].find(([b]) => b === shoulder.id)?.[1] ?? 0) - mean) < 1e-3);
-  assert.throws(() => paintPoint(stroke, v, 'blur', 1), /Unknown paint mode/);
+  assert.throws(() => paintPoint(stroke, v, 'scribble', 1), /Unknown paint mode/);
 });
 
 test('erasing a shoulder gives the points to bones that stay still, not to the upper arm it carries', async () => {

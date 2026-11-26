@@ -27,16 +27,24 @@
  *   Subtract, Lighten, Darken or Multiply. The add, remove and set modes are
  *   Draw with Mix at 1, 0 and Amount (the brush's Add, Remove and Set presets).
  *
+ * - Blur, Smear and Average (Blender's): blur mixes a point towards the average
+ *   of the corners of the faces around it; smear towards one neighbour, the
+ *   one behind it along the stroke (smearSource in paint-stroke.mjs); Average
+ *   is Draw with the average under the brush (weightAt). Blur and Smear read
+ *   the weights as they were when the dab began (startDab), as Blender's
+ *   precomputed weights, so the order points are painted in doesn't matter.
+ *   smooth (edge neighbours' average, read as they are) is kept for code.
+ *
  * startStroke(model, part, bone) → stroke state for one part and bone (or an
- * array of bones: Multi-Paint); paintPoint(stroke, v, mode, amount, {value, blend})
- * changes one point (mode draw, smooth, or the presets add, remove and set);
- * clearPainted(part, verts?) returns points to automatic. */
+ * array of bones: Multi-Paint); paintPoint(stroke, v, mode, amount, {value, blend, from})
+ * changes one point (mode draw, blur, smear, smooth, or the presets add, remove
+ * and set); clearPainted(part, verts?) returns points to automatic. */
 import {completeSkin, autoWeights, otherSide, isMerged} from './armature.mjs';
 import {transformMesh, objectMatrix} from './mesh.mjs';
 import {setStoredWeights, clearStoredWeights, storedCount, storedWeights} from './weight-manager.mjs';
 import {autoNormalizeOn, isGroupLocked} from './vertex-groups.mjs';
 
-export const PAINT_MODES = Object.freeze(['draw', 'smooth', 'add', 'remove', 'set']);
+export const PAINT_MODES = Object.freeze(['draw', 'blur', 'smear', 'smooth', 'add', 'remove', 'set']);
 /** Blender's weight paint blends, in the order of its Blend menu. */
 export const BLENDS = Object.freeze(['mix', 'add', 'subtract', 'lighten', 'darken', 'multiply']);
 const clamp01 = x => Math.max(0, Math.min(1, x));
@@ -57,13 +65,16 @@ export function blendWeight(blend, weight, value, alpha) {
   throw new Error(`Unknown blend “${blend}”.`);
 }
 
-/** What a mode paints: {blend, value} (Draw, and its presets add, remove and set), or {smooth: true}. */
-export function brushOf(mode, value = 1, blend = 'mix') {
+/** What a mode paints: {blend, value} (Draw, and its presets add, remove and set), or for the
+ * brushes that take weight from around the point {blend: 'mix', from} (they always build up). */
+export function brushOf(mode, value = 1, blend = 'mix', from = null) {
   if (mode === 'add') return {blend: 'mix', value: 1};
   if (mode === 'remove') return {blend: 'mix', value: 0};
   if (mode === 'set') return {blend: 'mix', value: clamp01(value)};
   if (mode === 'draw') { if (!BLENDS.includes(blend)) throw new Error(`Unknown blend “${blend}”.`); return {blend, value: clamp01(value)}; }
-  if (mode === 'smooth') return {smooth: true, blend: 'mix'};
+  if (mode === 'smooth') return {from: 'edges', blend: 'mix'};
+  if (mode === 'blur') return {from: 'faces', blend: 'mix'};
+  if (mode === 'smear') { if (!Number.isInteger(from)) throw new Error('Smear needs the point it takes weight from.'); return {from: 'point', point: from, blend: 'mix'}; }
   throw new Error(`Unknown paint mode “${mode}”.`);
 }
 
@@ -118,7 +129,45 @@ export function startStroke(model, part, bone, {accumulate = true} = {}) {
   const locked = new Set(model.bones.filter(b => isGroupLocked(model, b.id)).map(b => b.id));
   return {model, part, bone, skin, neighbours, fallback, bones: new Set(model.bones.map(b => b.id)), locked, autoNormalize: autoNormalizeOn(model), handOff: handOffOn(model),
     // Accumulate (see reached); each changed point's stored weights from before the stroke, for its undo step.
-    accumulate, start: new Map(), alpha: new Map(), before: new Map(), touched: new Set()};
+    accumulate, start: new Map(), alpha: new Map(), before: new Map(), touched: new Set(),
+    // The weights as they were when the dab began (startDab), for Blur and Smear; null: read them as they are.
+    dabCopy: null};
+}
+
+/** A new dab begins: Blur and Smear read every point's weights as they are now until the next one
+ * (a point's old weights are kept the first time the dab changes it). */
+export function startDab(stroke) { stroke.dabCopy = new Map(); }
+
+/** A point's weights as the dab found them. */
+const pairsAt = (stroke, v) => (stroke.dabCopy?.has(v) ? stroke.dabCopy.get(v) : stroke.skin[v]);
+
+/** A point's weight for `bone` as the dab found it, out of the whole point (several bones, Multi-Paint:
+ * their sum, or their average with Auto Normalize off). */
+export function weightAt(stroke, v, bone) {
+  return Array.isArray(bone) && bone.length > 1 ? groupWeightIn(pairsAt(stroke, v), bone, stroke.autoNormalize === false) : weightIn(pairsAt(stroke, v), listOf(bone)[0]);
+}
+
+/** The faces around each point, by index (built once per stroke). */
+function facesAround(stroke, v) {
+  if (!stroke.vertFaces) {
+    stroke.vertFaces = stroke.part.mesh.verts.map(() => []);
+    stroke.part.mesh.faces.forEach((f, i) => { for (const u of new Set(f.v)) stroke.vertFaces[u].push(i); });
+  }
+  return stroke.vertFaces[v];
+}
+
+/** The other points of the faces around a point (Smear's candidates, as Blender's). */
+export function pointsAround(stroke, v) {
+  const out = new Set();
+  for (const i of facesAround(stroke, v)) for (const u of stroke.part.mesh.faces[i].v) if (u !== v) out.add(u);
+  return [...out];
+}
+
+/** Average's value for a dab: the mean weight of the points under it, as the dab found them.
+ * `spots` lists [stroke, point, bone]. Null when there are none. */
+export function dabAverage(spots) {
+  if (!spots.length) return null;
+  return spots.reduce((t, [stroke, v, bone]) => t + weightAt(stroke, v, bone), 0) / spots.length;
 }
 
 /** A point's weights with `bone` at `w`, the rest scaled to share what is left. */
@@ -162,10 +211,11 @@ function lowered(model, pairs, bone, amount, fallback, held = new Set(), handOff
 }
 
 /** Paint one point with a dab of `amount` (0–1): Draw blends the weight with `value` by `blend`
- * (add, remove and set: Mix at 1, 0 and value); smooth mixes it towards its neighbours' average.
+ * (add, remove and set: Mix at 1, 0 and value); blur mixes it towards the average of the face corners
+ * around it, smear towards point `from`, smooth towards its edge neighbours' average.
  * `bone` defaults to the stroke's bone (a Mirror copy paints the other side's bone). True if it changed. */
-export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value = 1, blend = 'mix'} = {}) {
-  const {skin, part} = stroke, brush = brushOf(mode, value, blend);
+export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value = 1, blend = 'mix', from = null} = {}) {
+  const {skin, part} = stroke, brush = brushOf(mode, value, blend, from);
   // A locked group can't be painted (Blender refuses too).
   if (listOf(bone).some(b => stroke.locked?.has(b))) return false;
   if (Array.isArray(bone)) { if (bone.length > 1) return paintSeveral(stroke, v, brush, amount, bone); bone = bone[0]; }
@@ -177,7 +227,7 @@ export function paintPoint(stroke, v, mode, amount, {bone = stroke.bone, value =
   const kept = all.filter(([b]) => held.has(b)), free = 1 - kept.reduce((t, [, x]) => t + x, 0);
   if (free <= 1e-4) return false;
   const pairs = all.filter(([b]) => !held.has(b)).map(([b, x]) => [b, x / free]), now = weightIn(pairs, bone);
-  let target = valueOf(stroke, v, brush, u => weightIn(skin[u], bone));
+  let target = valueOf(stroke, v, brush, u => weightIn(pairsAt(stroke, u), bone));
   if (target === null) return false;
   // Weights are named out of the whole point; the free share is what can change (Multiply's value is a factor).
   if (brush.blend !== 'multiply') target = Math.min(1, target / free);
@@ -203,9 +253,18 @@ function heldFor(stroke, bones) {
   return new Set(stroke.model.bones.filter(b => !painted.has(b.id) && (isMerged(b) || stroke.locked?.has(b.id))).map(b => b.id));
 }
 
-/** The value a brush paints at point v: its Amount, or for smooth the neighbours' average of `valueAt`. Null: none. */
+/** The value a brush paints at point v, `valueAt` giving a point's weight: Draw's Amount; for smear
+ * point `from`'s; for blur the average over every corner of every face around v (v's own corners
+ * too, so a point on more faces counts more, as Blender's); for smooth the edge neighbours' average.
+ * Null: nothing to take (a loose point). */
 function valueOf(stroke, v, brush, valueAt) {
-  if (!brush.smooth) return brush.value;
+  if (!brush.from) return brush.value;
+  if (brush.from === 'point') return valueAt(brush.point);
+  if (brush.from === 'faces') {
+    let sum = 0, n = 0;
+    for (const i of facesAround(stroke, v)) for (const u of stroke.part.mesh.faces[i].v) { sum += valueAt(u); n++; }
+    return n ? sum / n : null;
+  }
   const around = [...stroke.neighbours[v]];
   return around.length ? around.reduce((t, u) => t + valueAt(u), 0) / around.length : null;
 }
@@ -217,9 +276,10 @@ const round5 = x => Math.round(x * 1e5) / 1e5;
  * where the last left the point. Off (Blender's default for brush strokes; the brush passes it):
  * a stroke blends the weight the point had when the stroke first reached it, by the strongest
  * amount any dab has given it, so going over a spot again in the same stroke adds nothing unless
- * the dab is stronger. Smooth always goes on from where the point is. Null: nothing new. */
+ * the dab is stronger. Blur, Smear and Smooth always go on from where the point is (Smear as
+ * Blender's; Blur as Smooth always did). Null: nothing new. */
 function reached(stroke, key, brush, now, value, amount) {
-  if (stroke.accumulate !== false || brush.smooth) return blendWeight(brush.blend, now, value, amount);
+  if (stroke.accumulate !== false || brush.from) return blendWeight(brush.blend, now, value, amount);
   const had = stroke.alpha.get(key);
   if (had !== undefined && amount <= had) return null;
   if (had === undefined) stroke.start.set(key, now);
@@ -227,8 +287,10 @@ function reached(stroke, key, brush, now, value, amount) {
   return blendWeight(brush.blend, stroke.start.get(key), value, amount);
 }
 
-/** Keep a point's stored weights from before the stroke changed it (null: it had none). */
+/** Keep a point's stored weights from before the stroke changed it (null: it had none), and its
+ * weights from before this dab (Blur and Smear read those). Weight lists are replaced, never changed. */
 function remember(stroke, v) {
+  if (stroke.dabCopy && !stroke.dabCopy.has(v)) stroke.dabCopy.set(v, stroke.skin[v]);
   if (stroke.before && !stroke.before.has(v)) stroke.before.set(v, storedWeights(stroke.part.mesh, v)?.map(p => p.slice()) ?? null);
 }
 /** Whether two weight lists give every bone the same weight (to 1e-5). */
@@ -247,7 +309,7 @@ function store(stroke, v, pairs) {
 /** Auto Normalize off: only the bone's own weight changes (0 to 1); every other weight stays. */
 function paintAlone(stroke, v, brush, amount, bone) {
   const pairs = stroke.skin[v] ?? [], now = weightIn(pairs, bone);
-  const target = valueOf(stroke, v, brush, u => weightIn(stroke.skin[u], bone));
+  const target = valueOf(stroke, v, brush, u => weightIn(pairsAt(stroke, u), bone));
   if (target === null) return false;
   const reach = reached(stroke, `${v}:${bone}`, brush, now, target, clamp01(amount));
   if (reach === null) return false;
@@ -267,7 +329,7 @@ function paintSeveral(stroke, v, brush, amount, bones) {
   const pairs = (stroke.skin[v] ?? []).map(p => p.slice()), mine = pairs.filter(([b]) => group.has(b) && stroke.bones.has(b));
   const now = groupWeightIn(mine, bones, average);
   if (now <= 0) return false;
-  const target = valueOf(stroke, v, brush, u => groupWeightIn(stroke.skin[u], bones, average));
+  const target = valueOf(stroke, v, brush, u => groupWeightIn(pairsAt(stroke, u), bones, average));
   if (target === null) return false;
   const reach = reached(stroke, `${v}:${bones.join('+')}`, brush, now, target, clamp01(amount));
   if (reach === null) return false;
