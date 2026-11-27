@@ -888,7 +888,8 @@ other way, Shift+click picks another bone, and a stroke is one undo step. Streng
 - **Mirror painting** paints the same spot on the other side with the other
   side's bone (Shoulder.L ↔ Shoulder.R), as X-Mirror in Blender.
 - **The painting toolbar**, as in Photoshop: while painting, a rail of tools runs
-  down the left of the view (Draw, Blur, Average, Smear, then Gradient, Fill,
+  down the left of the view (Draw, Blur, Average, Smear, then Gradient (Linear
+  or Radial), Fill,
   Sample and Select points) and the tool's options sit in a bar along its top (the bone
   being painted, Draw's Add/Remove/Set presets and Blend, Amount, Size, Strength, Falloff, Seen only, Front
   faces only, Accumulate, Pen strength, Pen size, Mirror painting, Auto
@@ -984,16 +985,29 @@ other way, Shift+click picks another bone, and a stroke is one undo step. Streng
     no longer offers it: Blur replaces it.
     Other edits still save the whole model.
 - Blender's quick tools, with its keys, while painting:
-  - **Gradient** (a brush; Blender's Weights > Gradient (Linear)): drag a line;
-    points behind its start get the Amount, fading to none at its end, and
-    points past the end keep theirs. Only the piece the line starts on (its
-    connected points, found on the part whose shown surface is under the
-    pointer, since a smoothed sleeve's own points lie nearer a forearm inside
-    it), or the highlighted parts, change, as Blender works on one object.
-    Every point of that piece changes, seen or not.
-  - **Fill** (**Ctrl+X**, Blender's Set Weight): the Amount (1 unless Set or
-    Gradient shows another) on the highlighted parts, or else on the piece
-    under the pointer.
+  - **Gradient** (a tool; Blender's Weight Gradient, `weight-tools.mjs`):
+    drag a line. **Type** Linear places each point along the line (behind
+    the start counts as the start), Radial by its distance from the start
+    over the line's length (a dashed circle shows where it ends). The
+    brush's **Falloff** of that place mixes the point's own weight towards
+    the Amount: all Amount at the start, its own weight at the end, and
+    points at or past the end keep theirs. Before, Gradient faded to none
+    and points just inside the end dropped to 0 beside points just past it
+    keeping their weight (a seam); now it fades back to what was there.
+    Blender also multiplies by the brush's Strength; here Gradient leaves
+    Strength out (its default 0.5 would halve every gradient), so the start
+    gets the Amount as before.
+  - **This piece only** (Gradient and Fill; on, as they always worked): only
+    the piece the line starts on (else the piece it ends on), or the piece
+    under the pointer for Fill, changes: its connected points, found on the
+    part whose shown surface is under the pointer, since a smoothed sleeve's
+    own points lie nearer a forearm inside it. Every point of that piece
+    changes, seen or not. Highlighted parts are the piece instead. Off: the
+    whole model (or the highlighted parts), as Blender works on a whole
+    object. Picked points (below) always limit both.
+  - **Fill** (**Ctrl+X**, Blender's Set Weight): the Amount on the picked
+    points, else on the piece under the pointer (This piece only) or the
+    whole model. Its button says what it fills.
   - **Sample** (**Shift+X**): the Amount becomes the bone's weight at the point
     under the pointer.
   - **F** / **Shift+F**: the brush size / strength follows the pointer's
@@ -1002,6 +1016,28 @@ other way, Shift+click picks another bone, and a stroke is one undo step. Streng
   Gradient and Fill set weights exactly (no Strength) and take Mirror painting
   along: the mirror image (found by position) gets the other side's bone. Each
   is one undo step.
+- **Weights** (the Weight painting panel; Blender's Weights menu,
+  `weight-tools.mjs`, `tests/modeler-weight-tools.test.mjs`). Each works on
+  the picked points, else the highlighted parts, else every visible part, and
+  is one undo step (none when nothing changes):
+  - **Invert**, **Levels** (Gain × (weight + Offset)) and **Quantize** (to
+    Steps even levels, a half rounding up) change the painted bone (Multi-Paint:
+    the painted bones together), each point set as Fill sets it, so Auto
+    Normalize, locks, Merged bones and Hand off hold. Invert gives points the
+    bone didn't move all of it, as Blender's Add Weights.
+  - **Clean**: every bone's weights at or below Limit (0.01 here; Blender's is
+    0, which only takes zeros) leave the point, locked bones staying; Keep
+    single keeps a point's largest rather than none. With Auto Normalize the
+    rest are scaled to fill the share again.
+  - **Mirror** (Blender's Mirror Vertex Group with Flip Names, for every
+    bone): a point takes its mirror image's weights (the point nearest
+    (−x, y, z), across parts too, within 0.1% of the model's size), each bone
+    swapped for its other side's. **Swap sides** exchanges both sides at once,
+    as Blender; **Left → Right** and **Right → Left** copy one side over the
+    other (left is +X, where .L bones are). A Mirror part is left as it is:
+    its two halves are one set of points, always mirror images. Points with no
+    mirror image, or where a locked bone would change, stay; the message says
+    how many.
 - **Paint only selected points** (Blender's vertex selection masking): the
   model's points show as dots; a click (no drag) picks the point nearest the
   surface under the pointer within 12 pixels, Shift+click adds or drops one

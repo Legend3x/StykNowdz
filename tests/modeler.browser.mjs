@@ -231,11 +231,117 @@ try {
     assert.ok(down.fromBehind, `Smear downwards takes weight from above (${JSON.stringify(down)})`);
     await page.evaluate(() => preset('add'));
   });
+  await step('Gradient Linear and Radial fade back to the weights already there; This piece only; the Weights tools (Invert, Clean, Quantize, Mirror)', async () => {
+    const setup = await page.evaluate(async () => {
+      m.setView('front'); m.state.camera.target = [0, 1.2, 0]; m.state.camera.dist = 1.6; m.refresh(); await wait(50);
+      const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
+      const f = cameraFrame(m.state.camera, box.width, box.height), {objectTransform} = await import('/src/modeler/mesh.mjs');
+      const {completeSkin} = await import('/src/modeler/armature.mjs'), chest = m.model.bones.find(b => b.name === 'Chest').id;
+      window.gradientScreen = p => { const q = f.project(p); return {x: q.x, y: q.y}; };
+      window.torsoPoints = () => { const p = m.model.parts.find(q => q.name === 'Torso'), to = objectTransform(p); return p.mesh.verts.map(v => gradientScreen(to(v))); };
+      window.skinOf = name => { const p = m.model.parts.find(q => q.name === name), skin = completeSkin(m.model, p); return p.mesh.verts.map((_, v) => skin[v] ?? []); };
+      window.chestOf = name => skinOf(name).map(pairs => pairs.find(([b]) => b === chest)?.[1] ?? 0);
+      tool('gradient').click(); await wait(20);
+      const bar = document.querySelector('.modeler-paint-bar'), pieceOnly = [...bar.querySelectorAll('button')].find(b => b.textContent.trim() === 'This piece only');
+      const types = [...bar.querySelector('[data-gradient-type]').options].map(o => o.value), falloff = [...bar.querySelectorAll('.modeler-paint-field')].some(l => l.textContent.startsWith('Falloff'));
+      const at = p => { const q = gradientScreen(p); return [box.left + q.x, box.top + q.y]; };
+      return {types, falloff, pieceOnly: pieceOnly?.getAttribute('aria-pressed'), left: at([-.16, 1.12, .14]), right: at([.14, 1.12, .14]), mid: at([0, 1.12, .14]), box: [box.left, box.top]};
+    });
+    assert.deepEqual(setup.types, ['linear', 'radial']);
+    assert.ok(setup.falloff, 'Gradient shows Falloff');
+    assert.equal(setup.pieceOnly, 'true', 'This piece only is on by default (as Gradient and Fill always worked)');
+    const gradient = async (type, from, to) => {
+      await page.evaluate(t => { const s = document.querySelector('.modeler-paint-bar [data-gradient-type]'); s.value = t; s.dispatchEvent(new Event('change', {bubbles: true})); m.state.brush.value = 1; window.gradientStart = chestOf('Torso'); }, type);
+      await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(...to, {steps: 6}); await page.mouse.up();
+      return page.evaluate(async ([type, a, b]) => {
+        await wait(50);
+        const {gradientFactor} = await import('/src/modeler/weight-tools.mjs'), now = chestOf('Torso'), was = gradientStart, pts = torsoPoints();
+        const out = {changed: 0, keptPast: true, full: true, between: true, past: 0, start: 0};
+        pts.forEach((s, i) => {
+          const t = gradientFactor(type, s, a, b);
+          if (Math.abs(now[i] - was[i]) > 1e-4) out.changed++;
+          if (t >= 1) { out.past++; if (Math.abs(now[i] - was[i]) > 1e-4) out.keptPast = false; }
+          else if (t <= 0) { out.start++; if (Math.abs(now[i] - 1) > 2e-3) out.full = false; }
+          else if (now[i] < was[i] - 1e-4 || now[i] > 1 + 1e-6) out.between = false;
+        });
+        press('z', {ctrlKey: true}); await wait(40);
+        out.undone = chestOf('Torso').every((x, i) => Math.abs(x - was[i]) < 1e-9);
+        return out;
+      }, [type, {x: from[0] - setup.box[0], y: from[1] - setup.box[1]}, {x: to[0] - setup.box[0], y: to[1] - setup.box[1]}]);
+    };
+    const linear = await gradient('linear', setup.left, setup.right), radial = await gradient('radial', setup.mid, setup.right);
+    for (const [name, r] of [['Linear', linear], ['Radial', radial]]) {
+      assert.ok(r.changed > 0 && r.past > 0, `${name} changed points and left some past its end (${JSON.stringify(r)})`);
+      assert.ok(r.keptPast, `${name}: points at or past the end keep their weights (no seam)`);
+      assert.ok(r.full, `${name}: points at the start get all of Amount`);
+      assert.ok(r.between, `${name}: points between go part of the way, from their own weight towards Amount`);
+      assert.ok(r.undone, `${name}: one undo step`);
+    }
+    // This piece only off: Fill sets the whole model, every part alike (Amount 1: all Chest).
+    const fill = await page.evaluate(async () => {
+      tool('fill').click(); await wait(20);
+      [...document.querySelectorAll('.modeler-paint-bar button')].find(b => b.textContent.trim() === 'This piece only').click(); await wait(20);
+      m.state.brush.value = 1;
+      const names = [...new Set(m.model.parts.filter(q => q.visible !== false && q.mesh.faces.length).map(q => q.name))], was = Object.fromEntries(names.map(n => [n, chestOf(n)]));
+      [...document.querySelectorAll('.modeler-paint-bar button')].find(b => b.textContent.trim() === 'Fill the whole model').click(); await wait(50);
+      const changed = names.filter(n => chestOf(n).some((x, i) => Math.abs(x - was[n][i]) > 1e-4));
+      const out = {changed, all: changed.every(n => chestOf(n).every(x => x > .999)), parts: names.length};
+      press('z', {ctrlKey: true}); await wait(40);
+      out.undone = names.every(n => chestOf(n).every((x, i) => Math.abs(x - was[n][i]) < 1e-9));
+      [...document.querySelectorAll('.modeler-paint-bar button')].find(b => b.textContent.trim() === 'This piece only').click(); await wait(20);
+      m.state.brush.value = 1;
+      return out;
+    });
+    assert.ok(fill.changed.length >= 5, `with This piece only off, Fill reaches the whole model, not one piece (${JSON.stringify(fill)})`);
+    assert.ok(fill.all, 'every part it reached is all Chest now');
+    assert.ok(fill.undone, 'one undo step puts it all back');
+    // The Weights tools in the Weight painting panel, each one undo step. Juniper's torso is symmetric, so first a
+    // linear gradient (kept, then undone at the end) makes its left side lean on Chest for Mirror to have work.
+    const start = await page.evaluate(async () => { tool('gradient').click(); await wait(20); const s = document.querySelector('.modeler-paint-bar [data-gradient-type]'); s.value = 'linear'; s.dispatchEvent(new Event('change', {bubbles: true})); m.state.brush.value = 1; return {skin: skinOf('Torso'), undo: m.state.undo.length}; });
+    await page.mouse.move(...setup.right); await page.mouse.down(); await page.mouse.move(...setup.mid, {steps: 6}); await page.mouse.up();
+    const tools = await page.evaluate(async () => {
+      const steps = {}, run = async name => { const before = m.state.undo.length; document.querySelector(`[data-weight-tool="${name}"]`).click(); await wait(60); steps[name] = (steps[name] ?? 0) + m.state.undo.length - before; };
+      const undo = async () => { press('z', {ctrlKey: true}); await wait(40); };
+      const names = [...document.querySelectorAll('[data-weight-tool]')].map(b => b.dataset.weightTool);
+      const was = chestOf('Torso'), all = skinOf('Torso'), out = {names, steps};
+      await run('quantize');
+      out.quantized = chestOf('Torso').every(x => Math.abs(x * 4 - Math.round(x * 4)) < 2e-3);
+      out.quantizeChanged = chestOf('Torso').some((x, i) => Math.abs(x - was[i]) > 1e-4);
+      await undo(); out.quantizeUndone = chestOf('Torso').every((x, i) => Math.abs(x - was[i]) < 1e-9);
+      await run('invert');
+      out.inverted = chestOf('Torso').every((x, i) => Math.abs(x - (1 - was[i])) < 2e-3);
+      await undo();
+      await run('clean');
+      out.cleaned = skinOf('Torso').every(pairs => pairs.every(([, w]) => w > .01));
+      await undo();
+      const sel = document.querySelector('[data-mirror-way]'); out.ways = [...sel.options].map(o => o.value);
+      await run('mirror'); const once = skinOf('Torso'); await run('mirror');
+      const key = list => list.map(pairs => [...pairs].sort((a, b) => a[0] - b[0]).map(([b, w]) => `${b}:${w.toFixed(4)}`).join(',')).join('|');
+      out.mirrorBack = key(skinOf('Torso')) === key(all);
+      out.mirrorChanged = key(once) !== key(all);
+      await undo(); await undo();
+      out.allUndone = key(skinOf('Torso')) === key(all);
+      return out;
+    });
+    const end = await page.evaluate(async start => { press('z', {ctrlKey: true}); await wait(40); const key = list => JSON.stringify(list); return {back: key(skinOf('Torso')) === key(start.skin), undo: m.state.undo.length - start.undo, mode: m.state.mode}; }, start);
+    assert.deepEqual(end, {back: true, undo: 0, mode: 'bones'}, 'undoing the lopsided gradient puts the torso back, nothing more');
+    assert.deepEqual(tools.names, ['invert', 'clean', 'levels', 'quantize', 'mirror']);
+    assert.deepEqual(tools.ways, ['swap', 'leftToRight', 'rightToLeft']);
+    assert.ok(tools.quantized && tools.quantizeChanged && tools.quantizeUndone, `Quantize rounds Chest to quarters, and undoes (${JSON.stringify(tools)})`);
+    assert.ok(tools.inverted, 'Invert turns Chest around');
+    assert.ok(tools.cleaned, 'Clean leaves no weight at or below 0.01');
+    assert.ok(tools.mirrorChanged, 'Mirror (Swap sides) moves the lopsided weights to the other side');
+    assert.ok(tools.mirrorBack, 'Mirror (Swap sides) twice is where it began');
+    assert.deepEqual(tools.steps, {quantize: 1, invert: 1, clean: 1, mirror: 2}, 'each tool that changes something is one undo step');
+    assert.ok(tools.allUndone, 'and undoes step by step');
+    await page.evaluate(() => preset('add'));
+  });
   await step('Weights: Gradient fades a bone along one piece, Ctrl+X fills the piece under the pointer, Shift+X samples, F sizes the brush', async () => {
     const setup = await page.evaluate(async () => {
       const fore = m.model.bones.find(b => b.name === 'LowerArm.L'); m.state.bones = new Set([fore.id]); m.state.parts = new Set(); m.refresh(); await wait(100);
       if (!m.state.brush?.on) button('Paint weights').click();
-      await wait(50); tool('gradient').click(); await wait(50);
+      // The forearm is all LowerArm.L: a gradient of Amount 0 takes it off from the line's start, fading back to it.
+      await wait(50); tool('gradient').click(); m.state.brush.value = 0; await wait(50);
       const box = document.querySelector('.modeler canvas').getBoundingClientRect(), {cameraFrame} = await import('/src/modeler/viewport.mjs');
       const f = cameraFrame(m.state.camera, box.width, box.height), at = p => { const q = f.project(p); return [box.left + q.x, box.top + q.y]; };
       const lerp = k => fore.head.map((v, i) => v + (fore.tail[i] - v) * k);
@@ -251,11 +357,11 @@ try {
     await page.mouse.move(...setup.from); await page.evaluate(() => press('f')); await page.mouse.move(setup.from[0] + 70, setup.from[1]); await page.mouse.down(); await page.mouse.up();
     const resized = await page.evaluate(() => m.state.brush.radius);
     assert.ok(Math.abs(resized - 70) <= 2, `brush ${resized}`);
-    // Shift+X at the line's start samples the full weight; Ctrl+X with Amount 0 empties the piece (the sleeve
-    // the line started on), in one step.
+    // Shift+X at the line's start samples what the gradient put there (its Amount, 0); Ctrl+X with Amount 0 empties
+    // the piece (the sleeve the line started on), in one step.
     await page.mouse.move(...setup.from);
     const fill = await page.evaluate(async name => {
-      press('X', {shiftKey: true}); const sampled = m.state.brush.value;
+      m.state.brush.value = .5; press('X', {shiftKey: true}); const sampled = m.state.brush.value;
       m.state.brush.value = 0; const before = m.state.undo.length; press('x', {ctrlKey: true}); await wait(100);
       const {partWeights} = await import('/src/modeler/armature.mjs'), {evaluatePart} = await import('/src/modeler/model.mjs');
       const fore = m.model.bones.find(b => b.name === 'LowerArm.L'), piece = m.model.parts.find(p => p.name === 'Forearm');
@@ -263,7 +369,7 @@ try {
       let most = 0; for (let v = 0; v < mesh.verts.length; v++) if (mesh.verts[v][0] > 0) for (let k = 0; k < 4; k++) if (w.bones[v * 4 + k] === fore.id) most = Math.max(most, w.weights[v * 4 + k]);
       return {sampled, steps: m.state.undo.length - before, most};
     }, changed[0]);
-    assert.deepEqual({...fill, most: fill.most < .01}, {sampled: 1, steps: 1, most: true});
+    assert.deepEqual({...fill, most: fill.most < .01}, {sampled: 0, steps: 1, most: true});
   });
   await step('Weights: Paint only selected points: clicks pick points, Ctrl+X sets just those, a skeleton file loads back', async () => {
     const setup = await page.evaluate(async () => {

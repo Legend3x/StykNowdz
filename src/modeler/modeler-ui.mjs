@@ -10,7 +10,7 @@ import {createUVEditor} from './uv-editor.mjs';
 import * as M from './mesh.mjs';
 import {PRIMITIVES, PRIMITIVE_SETTINGS, primitiveDefaults, primitiveSettings, baseCharacter, DEFAULT_PALETTE} from './primitives.mjs';
 import {emptyModel, addPart, evaluatePart, evaluateModel, readModel, SMOOTH_MAX} from './model.mjs';
-import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged, skinningMethod, groupWeights} from './armature.mjs';
+import {sideResolver, addBone, boneOrder, deleteBones, symmetrizeBones, humanoidSkeleton, baseCharacterSkeleton, partWeights, sideOf, otherSide, faceSkeleton, setFace, faceOf, FACE_CUTS, pullOf, setPull, STRENGTH_MAX, boneState, isMerged, skinningMethod, groupWeights, completeSkin} from './armature.mjs';
 import {addFolder, folderOf, foldersWithin, partsIn, moveToFolder, nestFolder, ungroupFolder, deleteFolder, dropEmptyFolders, bonesBelow, groupBone, looseBone, mergeBone, unmergeBone,
   originOf, setOrigin, connections, tracedLines, lineOf, otherEnd, swapChoiceOf, hiddenBySwap, showChoice, swapSetProblem, makeSwapSet, plainFolder, choiceKey, choicesOf} from './layers.mjs';
 import {starterFace, stickToFace, faceFrame, facePart} from './face-sets.mjs';
@@ -21,7 +21,8 @@ import {exportObj, importObj} from './obj-format.mjs';
 import {exportGlb, importGltf} from './gltf-format.mjs';
 import {startBlenderLink, applyBlenderLink} from './blender-link.mjs';
 import {engineRequest, applyEngineResult, chainOf} from './blender-engine.mjs';
-import {startStroke, startDab, paintPoint, pointsAround, dabAverage, clearPainted, paintedCount, mirrorBone, PAINT_MODES, BLENDS, invertedBrush, handOffOn, groupWeightIn} from './weight-paint.mjs';
+import {GRADIENT_TYPES, MIRROR_WAYS, gradientFactor, gradientWeight, invertWeight, levelsWeight, quantizeWeight, cleanPairs, mirroredPairs, mirrorPartners, mirrorTakes} from './weight-tools.mjs';
+import {startStroke, startDab, paintPoint, pointsAround, dabAverage, weightAt, clearPainted, paintedCount, mirrorBone, PAINT_MODES, BLENDS, invertedBrush, handOffOn, groupWeightIn} from './weight-paint.mjs';
 import {remapStoredWeights, normalizeStoredWeights, setStoredWeights, clearStoredWeights, storedWeights} from './weight-manager.mjs';
 import {pointerSample, spacedDabs, facesViewer, smearSource} from './paint-stroke.mjs';
 import {autoNormalizeOn, isGroupLocked, setGroupLock} from './vertex-groups.mjs';
@@ -843,6 +844,79 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     commit(() => { for (const q of model.parts) if (!S.parts.size || S.parts.has(q.id)) n += normalizeStoredWeights(q.mesh, {deform: new Set(model.bones.map(b => b.id)), locked}); S.cache.clear(); });
     toast(t("modeler.normalizedAll", {count: n}));
   }
+  /** Blender's Weights menu (weight-tools.mjs), on the picked points, else the highlighted parts, else the whole model. */
+  const weightToolOptions = () => S.weightTools ??= {limit: .01, keepSingle: true, offset: 0, gain: 1, steps: 4, mirror: 'swap'};
+  function weightToolsPanel() {
+    const W = weightToolOptions(), run = (name, fn) => { const b = button(t(`modeler.weightTool.${name}`), fn, {title: t(`modeler.weightTool.${name}Hint`)}); b.dataset.weightTool = name; return b; };
+    return [
+      el('h4', {class: 'modeler-subhead', text: t("modeler.weightTools")}),
+      el('p', {class: 'modeler-hint', text: t("modeler.weightToolsWhere")}),
+      el('div', {class: 'modeler-actions'}, [run('invert', () => changeWeights('invert', invertWeight))]),
+      el('div', {class: 'modeler-actions'}, [run('clean', cleanWeights),
+        field(t("modeler.weightTool.limit"), W.limit, v => { W.limit = Math.max(0, Math.min(1, v)); }, {step: .01, min: 0, max: 1}),
+        el('label', {class: 'modeler-check', title: t("modeler.weightTool.keepSingleHint")}, [el('input', {type: 'checkbox', checked: W.keepSingle, onchange: e => { W.keepSingle = e.target.checked; }}), t("modeler.weightTool.keepSingle")])]),
+      el('div', {class: 'modeler-actions'}, [run('levels', () => changeWeights('levels', w => levelsWeight(w, W))),
+        field(t("modeler.weightTool.offset"), W.offset, v => { W.offset = Math.max(-1, Math.min(1, v)); }, {step: .05, min: -1, max: 1}),
+        field(t("modeler.weightTool.gain"), W.gain, v => { W.gain = Math.max(0, Math.min(10, v)); }, {step: .05, min: 0, max: 10})]),
+      el('div', {class: 'modeler-actions'}, [run('quantize', () => changeWeights('quantize', w => quantizeWeight(w, W.steps))),
+        field(t("modeler.weightTool.steps"), W.steps, v => { W.steps = Math.max(1, Math.min(1000, Math.round(v))); }, {step: 1, min: 1, max: 1000})]),
+      el('div', {class: 'modeler-actions'}, [run('mirror', mirrorWeights),
+        el('select', {class: 'modeler-select', 'data-mirror-way': '', title: t("modeler.weightTool.mirrorWayHint"), onchange: e => { W.mirror = e.target.value; }}, MIRROR_WAYS.map(w => el('option', {value: w, selected: W.mirror === w}, t(`modeler.weightTool.mirror.${w}`))))]),
+    ];
+  }
+  /** Invert, Levels, Quantize: the painted bone's weight at each point becomes `fn` of it (as Fill sets it). */
+  function changeWeights(name, fn) {
+    const n = setWeights(paintSpots(paintBones(), {mirror: false}), (sp, now) => { const next = fn(now); return Math.abs(next - now) < 1e-6 ? null : next; });
+    toast(t("modeler.weightToolDone", {tool: t(`modeler.weightTool.${name}`), count: n}));
+  }
+  /** The parts the Weights tools work on, and a test for a point of one (the picked points, else every point). */
+  function weightToolParts() {
+    const mask = paintMask(), only = pointMask();
+    return {parts: model.parts.filter(q => q.visible !== false && q.mesh.faces.length && (!mask || mask.has(q.id))), has: (q, v) => !only || only.has(`${q.id}:${v}:0`) || only.has(`${q.id}:${v}:1`)};
+  }
+  /** Clean: every bone's weights at or below Limit leave the points (locked bones stay); with Auto Normalize the rest close up. */
+  function cleanWeights() {
+    const W = weightToolOptions(), locked = lockedGroups(), normalize = autoNormalizeOn(model), {parts, has} = weightToolParts();
+    const changes = [];
+    for (const q of parts) {
+      const skin = completeSkin(model, q);
+      q.mesh.verts.forEach((_, v) => {
+        if (!has(q, v) || !skin[v]?.length) return;
+        const next = cleanPairs(skin[v], {limit: W.limit, keepSingle: W.keepSingle, locked, normalize});
+        if (next !== skin[v]) changes.push([q, v, next]);
+      });
+    }
+    // An undo step only when something changes.
+    if (changes.length) commit(() => { for (const [q, v, next] of changes) setStoredWeights(q.mesh, v, next); S.cache.clear(); });
+    toast(t("modeler.weightToolDone", {tool: t("modeler.weightTool.clean"), count: changes.length}));
+  }
+  /** Mirror (Blender's Mirror Vertex Group, with Flip Names): points take their mirror image's weights, each
+   * bone swapped for its other side's, both ways at once (Swap sides) or one side over the other. A Mirror
+   * part's halves always match, so it is left as it is; points with a locked bone changing are left too. */
+  function mirrorWeights() {
+    const W = weightToolOptions(), locked = lockedGroups(), {parts, has} = weightToolParts(), points = [], skins = new Map();
+    for (const q of parts) {
+      if (q.mirror) continue;
+      const to = M.objectTransform(q); skins.set(q.id, completeSkin(model, q));
+      q.mesh.verts.forEach((v, i) => points.push({key: `${q.id}:${i}`, q, v: i, at: to(v)}));
+    }
+    const box = points.length ? M.bounds(points.map(p => p.at)) : null, eps = box ? Math.max(1e-4, 1e-3 * Math.hypot(...M.sub(box.max, box.min))) : 1e-4;
+    const partners = mirrorPartners(points, eps), byKey = new Map(points.map(p => [p.key, p])), flip = id => mirrorBone(model, id);
+    const changes = [];
+    let alone = 0, held = 0;
+    for (const p of points) {
+      if (!has(p.q, p.v) || !mirrorTakes(W.mirror, p.at[0], eps)) continue;
+      const o = byKey.get(partners.get(p.key));
+      if (!o) { alone++; continue; }
+      const now = skins.get(p.q.id)[p.v] ?? [], next = mirroredPairs(skins.get(o.q.id)[o.v] ?? [], flip);
+      const of = (pairs, b) => pairs.find(([x]) => x === b)?.[1] ?? 0, bones = new Set([...now, ...next].map(([b]) => b));
+      if ([...bones].every(b => Math.abs(of(now, b) - of(next, b)) < 1e-6)) continue;
+      if ([...bones].some(b => locked.has(b) && Math.abs(of(now, b) - of(next, b)) >= 1e-6)) { held++; continue; }
+      changes.push([p.q, p.v, next]);
+    }
+    if (changes.length) commit(() => { for (const [q, v, next] of changes) setStoredWeights(q.mesh, v, next); S.cache.clear(); });
+    toast([t("modeler.weightToolDone", {tool: t("modeler.weightTool.mirror"), count: changes.length}), alone ? t("modeler.weightMirrorAlone", {count: alone}) : '', held ? t("modeler.weightMirrorLocked", {count: held}) : ''].filter(Boolean).join(' '));
+  }
   function weightPaintTools(bone) {
     const B = brush(), painted = model.parts.reduce((n, q) => n + paintedCount(q), 0);
     if (isMerged(bone)) return [el('p', {class: 'modeler-hint', text: t("modeler.mergedNoPaint", {bone: bone.name})})];
@@ -861,6 +935,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       el('label', {class: 'modeler-check', title: t("modeler.normalizeKeepHint")}, [el('input', {type: 'checkbox', checked: Boolean(S.normalizeKeep), onchange: e => { S.normalizeKeep = e.target.checked; }}), t("modeler.normalizeKeep")]),
       // Hand off: not in Blender, so it is an option (on, as 3D Nowdz has always painted).
       el('label', {class: 'modeler-check', title: t("modeler.handOffHint")}, [el('input', {type: 'checkbox', 'data-hand-off': '', checked: handOffOn(model), onchange: e => setPaintOption('handOff', e.target.checked)}), t("modeler.handOff")]),
+      // Blender's Weights menu, last: its own heading, so Hand off above stays with Normalize all.
+      ...weightToolsPanel(),
     ].filter(Boolean);
   }
   /** The painting tools: brushes (Draw, Blur, Average, Smear, as Blender's), then Gradient, Fill, Sample and Select points. */
@@ -920,7 +996,10 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       amount ? value(t("modeler.brushValue"), B.value, 0, 1, .05, v => { B.value = v; if (B.mode === 'draw') syncPresets(); }, t("modeler.brushValueHint")) : null,
       brushTool ? value(t("modeler.brushRadius"), B.radius, 2, 200, 1, v => { B.radius = v; }, t("modeler.brushRadiusHint"), x => `${Math.round(x)}`) : null,
       brushTool ? value(t("modeler.brushStrength"), B.strength, .02, 1, .02, v => { B.strength = v; }, t("modeler.brushStrengthHint")) : null,
-      brushTool ? el('label', {class: 'modeler-paint-field', title: t("modeler.brushFalloffHint")}, [el('span', {text: t("modeler.brushFalloff")}),
+      // Gradient (Blender's): Linear or Radial, its fade shaped by the brush's Falloff.
+      B.mode === 'gradient' ? el('label', {class: 'modeler-paint-field', title: t("modeler.gradientTypeHint")}, [el('span', {text: t("modeler.gradientType")}),
+        el('select', {class: 'modeler-paint-select', 'data-gradient-type': '', onchange: e => { B.gradient = e.target.value; }}, GRADIENT_TYPES.map(g => el('option', {value: g, selected: (B.gradient ?? 'linear') === g}, t(`modeler.gradientType.${g}`))))]) : null,
+      brushTool || B.mode === 'gradient' ? el('label', {class: 'modeler-paint-field', title: t("modeler.brushFalloffHint")}, [el('span', {text: t("modeler.brushFalloff")}),
         el('select', {class: 'modeler-paint-select', onchange: e => { B.falloff = e.target.value; draw(); }}, ['smooth', 'sharp', 'constant'].map(f => el('option', {value: f, selected: (B.falloff ?? 'smooth') === f}, t(`modeler.falloff.${f}`))))]) : null,
       brushTool ? toggle('eye', t("modeler.brushSeen"), B.seen !== false, () => { B.seen = B.seen === false; renderPaintTools(); }, t("modeler.brushSeenHint")) : null,
       // Blender's stroke options (paint-stroke.mjs): Front Faces Only, Accumulate, and a pen's pressure for Strength and size.
@@ -931,7 +1010,9 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
       brushTool ? toggle('circle', t("modeler.penSize"), Boolean(B.penSize), () => { B.penSize = !B.penSize; renderPaintTools(); }, t("modeler.penSizeHint")) : null,
       B.mode === 'select' ? el('span', {class: 'modeler-paint-note', text: S.paintPoints?.size ? t("modeler.paintPointsPicked", {count: S.paintPoints.size}) : t("modeler.paintPointsNone")}) : null,
       B.mode === 'select' && S.paintPoints?.size ? button(t("modeler.paintPointsClear"), () => selectAllPaintPoints(false)) : null,
-      B.mode === 'fill' ? button(t("modeler.weightFillNow"), () => fillWeights(null), {title: t("modeler.weightFillHint")}) : null,
+      ['gradient', 'fill'].includes(B.mode) ? toggle('shapes', t("modeler.pieceOnly"), B.pieceOnly !== false, () => { B.pieceOnly = B.pieceOnly === false; renderPaintTools(); }, t("modeler.pieceOnlyHint")) : null,
+      // Fill without pointing: says what it fills (the picked points, else with This piece only off the whole model, else the highlighted parts).
+      B.mode === 'fill' ? button(t(pointMask() || B.pieceOnly !== false && !paintMask() ? "modeler.weightFillNow" : B.pieceOnly === false ? "modeler.weightFillModel" : "modeler.weightFillParts"), () => fillWeights(null), {title: t("modeler.weightFillHint")}) : null,
       gap(),
       toggle('flip', t("modeler.mirrorPaint"), B.mirror, () => { B.mirror = !B.mirror; renderPaintTools(); }, t("modeler.mirrorPaintHint")),
       // Blender's Weight Paint options: Auto Normalize (saved with the model), Multi-Paint and Lock-Relative.
@@ -1098,15 +1179,17 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     }
     return out;
   }
-  /** Set weights exactly (Gradient, Fill): `amountAt(spot)` gives each spot's value, or null to leave it. */
+  /** Set weights exactly (Gradient, Fill, the Weights tools): `amountAt(spot, now)` gives each spot's value from
+   * its weight now (for the spot's bone, out of the whole point), or null to leave it. */
   function setWeights(spots, amountAt) {
     const before = snapshot(), states = new Map(), touched = new Set(), bone = paintBones();
     const only = pointMask();
     for (const spot of spots) {
       if (only && !spot[4] && !only.has(spotKey(spot))) continue;
-      const [q, v, , which] = spot, value = amountAt(spot); if (value === null) continue;
+      const [q, v, , which] = spot;
       let state = states.get(q.id);
       if (!state) { state = startStroke(model, q, bone); states.set(q.id, state); }
+      const value = amountAt(spot, weightAt(state, v, which)); if (value === null) continue;
       if (paintPoint(state, v, 'set', 1, {bone: which, value})) touched.add(q.id);
     }
     if (!touched.size) return 0;
@@ -1204,28 +1287,30 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     const [q, v, , which] = near, piece = M.linkedVerts(q.mesh, new Set([v]));
     return withMirror(spots, sp => !sp[4] && sp[0] === q && piece.has(sp[1]) && sp[3] === which);
   }
-  /** Gradient (Blender's Weights > Gradient (Linear)): the Amount behind the line's start, fading to
-   * none at its end, on the piece the line starts on (as Blender works on one object) or the highlighted
-   * parts; points past the end keep their weights. */
+  /** Where Gradient and Fill work, as a test for spots: the picked points (Paint only selected points) with their
+   * mirror images; else with This piece only (on, as they always worked) the piece under `pointer` or the
+   * highlighted parts (null: nothing there); else the whole model, or the highlighted parts (Blender's object). */
+  function weightScope(spots, pointer) {
+    if (pointMask()) return withMirror(spots, sp => !sp[4] && pointMask().has(spotKey(sp)));
+    if (brush().pieceOnly !== false) return pieceAt(spots, pointer);
+    return () => true;
+  }
+  /** Gradient (Blender's Weight Gradient, Linear or Radial): each point's own weight mixed towards Amount by the
+   * brush's falloff of where it lies, all Amount at the start (and behind a linear one), its own weight at the
+   * end and past it. On weightScope's points (the piece the line starts on, or else ends on). */
   function applyGradient(a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy, B = brush();
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy, B = brush(), type = B.gradient ?? 'linear', falloff = FALLOFF[B.falloff] ?? FALLOFF.smooth;
     if (len2 < 16) return;
-    const spots = paintSpots(paintBones()), inside = pieceAt(spots, a) ?? pieceAt(spots, b);
+    const spots = paintSpots(paintBones()), inside = weightScope(spots, a) ?? weightScope(spots, b);
     if (!inside) { toast(t("modeler.weightGradientWhere")); return; }
     // Mirror painting: the mirror image's points follow the mirrored line.
-    const n = setWeights(spots, sp => {
-      if (!inside(sp)) return null;
-      const s = frame.project(sp[2]), t0 = ((s.x - a.x) * dx + (s.y - a.y) * dy) / len2;
-      return t0 >= 1 ? null : B.value * (1 - Math.max(0, t0));
-    });
+    const n = setWeights(spots, (sp, now) => inside(sp) ? gradientWeight(now, gradientFactor(type, frame.project(sp[2]), a, b), B.value, {falloff}) : null);
     toast(t("modeler.weightGradientDone", {count: n}));
   }
-  /** Fill (Blender's Set Weight, Ctrl+X): Amount on the highlighted parts, or else on the piece
-   * under the pointer, with its mirror image on the other side. */
+  /** Fill (Blender's Set Weight, Ctrl+X): Amount on weightScope's points (with This piece only, the piece under
+   * the pointer and its mirror image on the other side). */
   function fillWeights(pointer) {
-    const spots = paintSpots(paintBones());
-    if (pointMask()) { toast(t("modeler.weightFilled", {count: setWeights(spots, sp => withMirror(spots, sp => !sp[4] && pointMask().has(spotKey(sp)))(sp) ? brush().value : null)})); return; }
-    const inside = pieceAt(spots, pointer);
+    const spots = paintSpots(paintBones()), inside = weightScope(spots, pointer);
     if (!inside) { toast(t("modeler.weightFillWhere")); return; }
     toast(t("modeler.weightFilled", {count: setWeights(spots, sp => (inside(sp) ? brush().value : null))}));
   }
@@ -1273,6 +1358,8 @@ export function openModeler({host = document.body, top = 0, model: initial = nul
     if (drag?.kind === 'gradient' && drag.end) {
       const {start: a, end: b} = drag;
       ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      // Radial: the circle where the fade ends.
+      if (brush().gradient === 'radial') { ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(a.x, a.y, Math.hypot(b.x - a.x, b.y - a.y), 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       ctx.fillStyle = '#e53935'; ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#1e40ff'; ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
       return;

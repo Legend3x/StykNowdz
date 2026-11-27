@@ -17,6 +17,8 @@ What's new in each version of StykNowdz. StykNowdz is built on StykAnimate; its 
 - Accumulate, Front faces only and pen pressure for 3D Nowdz's weight brushes, as in Blender.
 - 3D Nowdz's weight brushes are now one Draw brush with Blender's blend modes: Mix, Add, Subtract, Lighten, Darken and Multiply. Add, Remove and Set are its presets.
 - Blur, Average and Smear weight brushes in 3D Nowdz, as in Blender. Blur replaces Smooth and softens evenly, however the brush crosses the model.
+- 3D Nowdz's weight Gradient can be Linear or Radial and fades back to the weights already there, without a hard edge where it ends. Gradient and Fill can now reach the whole model.
+- Invert, Clean, Levels, Quantize and Mirror for weights, in the Weight painting panel, as in Blender's Weights menu.
 - Weight painting in 3D Nowdz gains Blender's options: Auto Normalize, Lock weights for a bone, Multi-Paint, Lock relative and Normalize all.
 - Zero weights in black, in 3D Nowdz's Bones panel, shows exactly which points a bone doesn't move at all.
 - Turn off Preserve volume in 3D Nowdz's Bones panel to bend joints Blender's default way; the Pose preview, your animation and Blender follow it.
